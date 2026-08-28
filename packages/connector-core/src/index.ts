@@ -1,5 +1,6 @@
 export * from "./cloudFunctions/index.ts";
 export * from "./errors/index.ts";
+export type { SelectItem } from "./listing/types.ts";
 export * from "./logger.ts";
 export * from "./securityPerimeters/common/middleware.ts";
 export * from "./securityPerimeters/common/securityPerimeter.ts";
