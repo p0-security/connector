@@ -35,8 +35,7 @@ type CustomConnectorSchema = ResourceRootSchema<
 export type ConnectorPrimitives =
   ResourceRootConnectorPrimitives<CustomConnectorSchema>;
 
-/** The tRPC router type the control plane compiles a Custom Application connector's client against. */
-export type CustomConnectorRouter = ResourceRootRouter<CustomConnectorSchema>;
+export type AccessRouter = ResourceRootRouter<CustomConnectorSchema>;
 
 export const connectorParsers = newZodResourceRootParsers({
   userBody: UserBodySchema,
