@@ -1,5 +1,5 @@
 import connectorCorePackageJson from "../package.json" with { type: "json" };
-import type { AnyConnectorTRPCInstance } from "./securityPerimeters/common/trpc.ts";
+import type { AnyConnectorTRPCInstance } from "./security-perimeters/common/trpc.ts";
 
 const makeConnectorMetadata = (params: {
   connectorVersion: string;

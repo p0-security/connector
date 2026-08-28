@@ -2,7 +2,7 @@ import type { TRPCClient } from "@trpc/client";
 import { createTRPCClient } from "@trpc/client";
 
 import { action } from "../common/client.ts";
-import type { SecurityPerimeter } from "../common/securityPerimeter.ts";
+import type { SecurityPerimeter } from "../common/security-perimeter.ts";
 import type { SecretManagementParsers } from "./parsers.ts";
 import type { SecretManagementSchema } from "./schema.ts";
 import type { SecretManagementRouter } from "./trpc.ts";

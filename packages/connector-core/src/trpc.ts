@@ -7,12 +7,12 @@ import type { ResourceRootRouter } from "./index.ts";
 import type {
   AnyConnectorTRPCInstance,
   ConnectorContext,
-} from "./securityPerimeters/common/trpc.ts";
-import type { ResourceHierarchyRouter } from "./securityPerimeters/resourceHierarchy/trpc.ts";
-import type { SecretManagementRouter } from "./securityPerimeters/secretManagement/trpc.ts";
-import type { UserProvisioningRouter } from "./securityPerimeters/userProvisioning/trpc.ts";
+} from "./security-perimeters/common/trpc.ts";
+import type { ResourceHierarchyRouter } from "./security-perimeters/resource-hierarchy/trpc.ts";
+import type { SecretManagementRouter } from "./security-perimeters/secret-management/trpc.ts";
+import type { UserProvisioningRouter } from "./security-perimeters/user-provisioning/trpc.ts";
 
-export type { ConnectorContext } from "./securityPerimeters/common/trpc.ts";
+export type { ConnectorContext } from "./security-perimeters/common/trpc.ts";
 
 /**
  * Builds the tRPC root instance a connector should use
