@@ -1,4 +1,4 @@
-import connectorPackageJson from "../package.json" with { type: "json" };
+import connectorCorePackageJson from "../package.json" with { type: "json" };
 import type { AnyConnectorTRPCInstance } from "./securityPerimeters/common/trpc.ts";
 
 const makeConnectorMetadata = (params: {
@@ -14,16 +14,14 @@ const makeConnectorMetadata = (params: {
 
 export const newMetadataRouter = (
   t: AnyConnectorTRPCInstance,
-  connectorVersion: string
+  connectorVersion: string,
+  frameworkVersion: string = connectorCorePackageJson.version
 ) => {
   const { router, procedure } = t;
 
   return router({
     get: procedure.query(() =>
-      makeConnectorMetadata({
-        connectorVersion,
-        frameworkVersion: connectorPackageJson.version,
-      })
+      makeConnectorMetadata({ connectorVersion, frameworkVersion })
     ),
   });
 };
