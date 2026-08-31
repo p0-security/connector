@@ -28,12 +28,12 @@ const verifyToken = () => {
 };
 
 /**
- * Creates a Cloud Run service that exposes a tRPC router over Express at /trpc,
- * gated by bearer-token auth and with a /health endpoint.
+ * Creates a Cloud Run service that exposes a tRPC router over Express at `/trpc`,
+ * gated by bearer-token auth and with a `/health` endpoint.
  * @summary Creates a Cloud Run service that exposes a tRPC router over Express.
  * @category Cloud Functions
  *
- * @param moduleName Name reported by /health and used in logs.
+ * @param moduleName Name reported by `/health` and used in logs.
  * @param router The tRPC router to mount.
  * @param createContext Optional context factory; receives the Express adapter's options.
  */
@@ -50,14 +50,11 @@ export const runCloudRunConnector = <T>(
     })
   );
 
-  const middlewares: RequestHandler[] = [];
-  if (!process.env.SKIP_VERIFY_TOKEN) {
-    middlewares.push(
-      bearerAuthzMiddleware(async (token: string) => {
-        return verifyToken()(token);
-      })
-    );
-  }
+  const middlewares: RequestHandler[] = [
+    bearerAuthzMiddleware(async (token: string) => {
+      return verifyToken()(token);
+    }),
+  ];
 
   return runExpressApp(moduleName, { "/trpc": trpcRouter }, middlewares);
 };
