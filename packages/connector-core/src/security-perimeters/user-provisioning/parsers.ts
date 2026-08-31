@@ -16,9 +16,11 @@ export type UserProvisioningParsers<Schema extends UserProvisioningSchema> = {
 } & {
   [T in keyof Schema as Uncapitalize<T & string>]: JSONParser<Schema[T]>;
 } & {
-  [T in keyof UserProvisioningSecurityPerimeter<Schema> as Uncapitalize<
-    T & string
-  >]: JSONParser<
+  [
+    T in keyof UserProvisioningSecurityPerimeter<Schema> as Uncapitalize<
+      T & string
+    >
+  ]: JSONParser<
     OneArgFuncParameter<UserProvisioningSecurityPerimeter<Schema>[T]>
   >;
 };

@@ -1,8 +1,8 @@
 import {
-  newZodResourceRootParsers,
   type ResourceRootConnectorPrimitives,
   type ResourceRootRouter,
   type ResourceRootSchema,
+  newZodResourceRootParsers,
 } from "@p0security/connector-core";
 import { z } from "zod";
 

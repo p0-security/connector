@@ -1,0 +1,23 @@
+name: "Yarn Monorepo Setup"
+description: "Initialize the yarn monorepo, setting up the node environment and caching dependencies."
+runs:
+  using: "composite"
+  steps:
+    - name: Setup yarn
+      run: corepack enable yarn && corepack install
+      shell: bash
+    # The lockfile is committed as `.yarn.lock` and `yarn.lock` is gitignored,
+    # so the symlink has to be recreated before yarn (or the setup-node cache)
+    # can see it. Mirrors the `:show-lockfile` script.
+    - name: Show lockfile
+      run: ln -s .yarn.lock yarn.lock
+      shell: bash
+    - name: Setup Node.js
+      uses: actions/setup-node@v5
+      with:
+        node-version-file: ".nvmrc"
+        cache: yarn
+        cache-dependency-path: yarn.lock
+    - name: Install dependencies
+      run: yarn install --immutable
+      shell: bash

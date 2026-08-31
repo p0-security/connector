@@ -13,9 +13,11 @@ export type SecretManagementParsers<Schema extends SecretManagementSchema> = {
 } & {
   [T in keyof Schema as Uncapitalize<T & string>]: JSONParser<Schema[T]>;
 } & {
-  [T in keyof SecretManagementSecurityPerimeter<Schema> as Uncapitalize<
-    T & string
-  >]: JSONParser<
+  [
+    T in keyof SecretManagementSecurityPerimeter<Schema> as Uncapitalize<
+      T & string
+    >
+  ]: JSONParser<
     OneArgFuncParameter<SecretManagementSecurityPerimeter<Schema>[T]>
   >;
 };

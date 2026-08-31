@@ -24,9 +24,9 @@ export type ResourceRootParsers<Schema extends ResourceRootSchema> = {
 } & {
   [T in keyof Schema as Uncapitalize<T & string>]: JSONParser<Schema[T]>;
 } & {
-  [T in keyof ResourceRootSecurityPerimeter<Schema> as Uncapitalize<
-    T & string
-  >]: JSONParser<OneArgFuncParameter<ResourceRootSecurityPerimeter<Schema>[T]>>;
+  [
+    T in keyof ResourceRootSecurityPerimeter<Schema> as Uncapitalize<T & string>
+  ]: JSONParser<OneArgFuncParameter<ResourceRootSecurityPerimeter<Schema>[T]>>;
 };
 
 /**

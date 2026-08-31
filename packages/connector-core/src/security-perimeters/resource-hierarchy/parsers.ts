@@ -24,9 +24,11 @@ export type ResourceHierarchyParsers<Schema extends ResourceHierarchySchema> = {
 } & {
   [T in keyof Schema as Uncapitalize<T & string>]: JSONParser<Schema[T]>;
 } & {
-  [T in keyof ResourceHierarchySecurityPerimeter<Schema> as Uncapitalize<
-    T & string
-  >]: JSONParser<
+  [
+    T in keyof ResourceHierarchySecurityPerimeter<Schema> as Uncapitalize<
+      T & string
+    >
+  ]: JSONParser<
     OneArgFuncParameter<ResourceHierarchySecurityPerimeter<Schema>[T]>
   >;
 };
