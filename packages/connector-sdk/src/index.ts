@@ -10,6 +10,7 @@ export {
 } from "@p0security/connector-core";
 export type {
   ConnectorContext,
+  ConnectorErrorType,
   Logger,
   ResourceRootSchemaOf,
   SelectItem,

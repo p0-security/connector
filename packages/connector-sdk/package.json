@@ -2,10 +2,39 @@
   "name": "@p0security/connector-sdk",
   "version": "0.0.1",
   "description": "P0's published SDK for building a Custom Application connector.",
+  "author": "P0 Security",
+  "keywords": [
+    "p0",
+    "p0security",
+    "connector",
+    "sdk"
+  ],
+  "homepage": "https://github.com/p0-security/connector/tree/main/packages/connector-sdk",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/p0-security/connector.git",
+    "directory": "packages/connector-sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/p0-security/connector/issues"
+  },
   "type": "module",
+  "files": [
+    "dist",
+    "src",
+    "!**/__tests__"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     "@p0security/development": "./src/index.ts",
     "default": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=24"
   },
   "scripts": {
     "build": "tsc --build",

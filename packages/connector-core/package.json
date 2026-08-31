@@ -2,10 +2,33 @@
   "name": "@p0security/connector-core",
   "version": "0.0.1",
   "description": "P0's connector core library",
+  "author": "P0 Security",
+  "homepage": "https://github.com/p0-security/connector/tree/main/packages/connector-core",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/p0-security/connector.git",
+    "directory": "packages/connector-core"
+  },
+  "bugs": {
+    "url": "https://github.com/p0-security/connector/issues"
+  },
   "type": "module",
+  "files": [
+    "dist",
+    "src",
+    "!**/__tests__"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     "@p0security/development": "./src/index.ts",
     "default": "./dist/index.js"
+  },
+  "engines": {
+    "node": ">=24"
   },
   "scripts": {
     "build": "tsc --build",
@@ -21,13 +44,13 @@
     "express": "^4.22.1",
     "google-auth-library": "10.5.0",
     "pino": "^9.14.0",
+    "type-fest": "^5.4.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
     "esbuild": "^0.27.2",
     "prettier": "^3.8.1",
-    "type-fest": "^5.4.1",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   },
