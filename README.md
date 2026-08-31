@@ -23,3 +23,12 @@ which runs the full lint and test suites, verifies the versions, and publishes b
 
 **Requires the `NPM_TOKEN` repository secret** — an npm automation token with publish rights to the
 `@p0security` scope.
+
+## License
+
+Copyright © 2026-present P0 Security
+
+This project is free software: you may redistribute it and/or modify it under the terms of the GNU
+Lesser General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. See [LICENSE](LICENSE) and
+[LICENSE.GPL](LICENSE.GPL).

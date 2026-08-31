@@ -2,6 +2,7 @@
   "name": "connector",
   "version": "0.0.0",
   "description": "P0's connector framework",
+  "license": "LGPL-3.0-or-later",
   "repository": "git@github.com:p0-security/connector.git",
   "private": true,
   "type": "module",
