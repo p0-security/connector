@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    // Needed for the RequestInit type, which is used in the linkFromCloudFunc
+    "lib": ["DOM", "DOM.Iterable", "ES2022.Error"]
+  },
+  "exclude": ["dist"]
+}
