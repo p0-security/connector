@@ -1,7 +1,7 @@
 import type { TRPCClient } from "@trpc/client";
 
 import { action } from "../common/client.ts";
-import type { SecurityPerimeter } from "../common/securityPerimeter.ts";
+import type { SecurityPerimeter } from "../common/security-perimeter.ts";
 import type { ResourceHierarchyParsers } from "./parsers.ts";
 import type { ResourceHierarchySchema } from "./schema.ts";
 import type { ResourceHierarchyRouter } from "./trpc.ts";

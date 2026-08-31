@@ -1,4 +1,4 @@
-import type { SecurityPerimeter } from "./securityPerimeter.ts";
+import type { SecurityPerimeter } from "./security-perimeter.ts";
 import type { AnyConnectorTRPCInstance, ConnectorContext } from "./trpc.ts";
 
 /**
