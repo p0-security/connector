@@ -13,7 +13,8 @@
     ":show-lockfile": "ln -s .yarn.lock yarn.lock",
     ":hide-lockfile": "rm yarn.lock",
     ":clean-node-modules": "find . -name 'node_modules' -type d -prune -print -exec rm -rf '{}' \\;",
-    ":lint:code": "eslint . --max-warnings 0"
+    ":lint:code": "eslint . --max-warnings 0",
+    ":typecheck": "yarn workspaces foreach --all --topological run typecheck"
   },
   "workspaces": [
     "packages/*"

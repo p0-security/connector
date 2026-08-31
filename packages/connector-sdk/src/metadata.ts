@@ -1,6 +1,6 @@
 import {
-  newMetadataRouter as newCoreMetadataRouter,
   type AnyConnectorTRPCInstance,
+  newMetadataRouter as newCoreMetadataRouter,
 } from "@p0security/connector-core";
 
 import sdkPackageJson from "../package.json" with { type: "json" };

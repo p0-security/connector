@@ -1,0 +1,44 @@
+on:
+  pull_request:
+  workflow_call:
+
+name: Lint
+
+jobs:
+  format:
+    name: Lint formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+      - name: Setup yarn
+        uses: ./.github/actions/yarn-setup
+      - name: Verify formatting
+        run: yarn :format:lint
+
+  eslint:
+    name: Check ESLint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+      - name: Setup yarn
+        uses: ./.github/actions/yarn-setup
+      - name: Verify eslint
+        run: yarn :lint:code
+
+  typecheck:
+    name: Type-check packages
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+      - name: Setup yarn
+        uses: ./.github/actions/yarn-setup
+      # `customConditions` in tsconfig.base.json resolves workspace deps to
+      # their `src`, so no `yarn :build` is needed before type-checking.
+      - name: Type-check
+        run: yarn :typecheck

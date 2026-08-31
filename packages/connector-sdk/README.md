@@ -14,11 +14,21 @@ import type { ConnectorPrimitives } from "@p0security/connector-sdk";
 
 const primitives: ConnectorPrimitives = {
   validation: (context) => ({ user: null /* or a UserNamespaceValidation */ }),
-  getUser: async (context, userBody) => { /* return an existing user's id, or null */ },
-  createUser: async (context, userBody) => { /* provision a user, return its id */ },
-  deleteUser: async (context, userId) => { /* clean up, or no-op */ },
-  setPoliciesForUser: async (context, userId, policies) => { /* replace, not append */ },
-  list: async (query) => { /* the policy catalogue for the request-access picker */ },
+  getUser: async (context, userBody) => {
+    /* return an existing user's id, or null */
+  },
+  createUser: async (context, userBody) => {
+    /* provision a user, return its id */
+  },
+  deleteUser: async (context, userId) => {
+    /* clean up, or no-op */
+  },
+  setPoliciesForUser: async (context, userId, policies) => {
+    /* replace, not append */
+  },
+  list: async (query) => {
+    /* the policy catalogue for the request-access picker */
+  },
 };
 ```
 
@@ -34,7 +44,7 @@ so encode whatever structure you need into it yourself.
 2. **`setPoliciesForUser` must be a real replace, not an append.** A revoke that leaves policies
    standing is invisible to P0.
 3. **Scope every policy operation by `context.appId`.** `setPoliciesForUser` replaces the policy
-   set for that *(application, user)* pair, not for the user globally — the most common mistake,
+   set for that _(application, user)_ pair, not for the user globally — the most common mistake,
    because it works perfectly with one Custom Application and breaks silently the moment a tenant
    installs a second one against the same deployment.
 4. **Returning `user: null` from `validation` skips namespace checking entirely** — P0 may then
@@ -79,6 +89,7 @@ import {
   newCustomConnectorRouter,
   runCloudRunConnector, // or: newCloudFunction, for AWS Lambda
 } from "@p0security/connector-sdk";
+
 import packageJson from "../package.json" with { type: "json" };
 
 const router = newCustomConnectorRouter({
@@ -124,7 +135,7 @@ newCustomConnectorRouter({
 
 ## What P0 does not do
 
-P0 proves at install time that it can *invoke* your connector — nothing more. It does not verify
+P0 proves at install time that it can _invoke_ your connector — nothing more. It does not verify
 your connector can reach your target, does not read your target, and does not detect a connector
 that reports success without actually granting anything. Test your own `list` and access flow
 against your real target before you deploy. See each primitive's JSDoc for what P0 is trusting you
