@@ -6,7 +6,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    ":build": "yarn workspaces foreach --all run build",
+    ":build": "yarn workspaces foreach --all --topological run build",
     ":test": "NODE_ENV=unit FORCE_COLOR=1 vitest run",
     ":format": "prettier --write '**/*.{html,js,ts,json,less,md}'",
     ":format:lint": "prettier --check '**/*.{html,js,ts,json,less,md}'",
@@ -14,7 +14,8 @@
     ":hide-lockfile": "rm yarn.lock",
     ":clean-node-modules": "find . -name 'node_modules' -type d -prune -print -exec rm -rf '{}' \\;",
     ":lint:code": "eslint . --max-warnings 0",
-    ":typecheck": "yarn workspaces foreach --all --topological run typecheck"
+    ":typecheck": "yarn workspaces foreach --all --topological run typecheck",
+    ":publish": "yarn :build && yarn workspaces foreach --all --topological --no-private npm publish --tolerate-republish"
   },
   "workspaces": [
     "packages/*"
