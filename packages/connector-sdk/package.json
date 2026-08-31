@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "description": "P0's published SDK for building a Custom Application connector.",
   "author": "P0 Security",
+  "license": "LGPL-3.0-or-later",
   "keywords": [
     "p0",
     "p0security",

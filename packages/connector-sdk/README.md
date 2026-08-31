@@ -140,3 +140,12 @@ your connector can reach your target, does not read your target, and does not de
 that reports success without actually granting anything. Test your own `list` and access flow
 against your real target before you deploy. See each primitive's JSDoc for what P0 is trusting you
 to get right, since nothing else will catch it.
+
+## License
+
+Copyright © 2026-present P0 Security
+
+This library is free software: you may redistribute it and/or modify it under the terms of the GNU
+Lesser General Public License as published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version. See [LICENSE](LICENSE) and
+[LICENSE.GPL](LICENSE.GPL).
