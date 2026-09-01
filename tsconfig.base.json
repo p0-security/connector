@@ -6,6 +6,6 @@
     "noImplicitReturns": true,
     "verbatimModuleSyntax": true,
     "rewriteRelativeImportExtensions": true,
-    "customConditions": ["@p0security/development"]
+    "customConditions": ["@p0security/connector-development"]
   }
 }
