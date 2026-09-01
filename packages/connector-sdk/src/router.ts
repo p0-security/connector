@@ -1,31 +1,61 @@
 import {
   type ConnectorContext,
+  type ResourceRootConnectorPrimitives,
   newConnectorRouter,
   newConnectorTRPC,
   newResourceRootRouter,
 } from "@p0security/connector-core";
 
+import { CUSTOM_APP_ACCESS, CUSTOM_APP_NAMESPACE } from "./constants.ts";
 import { newMetadataRouter } from "./metadata.ts";
-import { type ConnectorPrimitives, connectorParsers } from "./schema.ts";
+import type {
+  CustomAppAccessSchema,
+  CustomAppConnectorActions,
+} from "./schema.ts";
+import { CustomAppConnectorSpec } from "./spec.ts";
 
-export const newCustomConnectorRouter = (params: {
-  primitives:
-    ConnectorPrimitives | ((ctx: ConnectorContext) => ConnectorPrimitives);
+export type CustomAppConnectorParams = {
+  /**
+   * Builds the actions this connector implements, once per request. Taking a
+   * factory rather than a plain object means anything request-scoped — a
+   * target-system client carrying `ctx.logger`, a per-request connection — has
+   * somewhere to live, and no connector has to restructure later to get it.
+   */
+  actions: (ctx: ConnectorContext) => CustomAppConnectorActions;
+  /** Conventionally your own `package.json` version. */
   connectorVersion: string;
-}) => {
+};
+
+/**
+ * Adapts the custom application connector's actions to the framework contract.
+ */
+const toResourceRootPrimitives = (
+  actions: CustomAppConnectorActions
+): ResourceRootConnectorPrimitives<CustomAppAccessSchema> => ({
+  ...actions,
+  validation: () => ({ user: null }),
+});
+
+export const newCustomAppConnectorRouter = (
+  params: CustomAppConnectorParams
+) => {
   const t = newConnectorTRPC();
-  const getPrimitives =
-    typeof params.primitives === "function"
-      ? params.primitives
-      : () => params.primitives as ConnectorPrimitives;
 
   return newConnectorRouter(
-    "app",
+    CUSTOM_APP_NAMESPACE,
     t,
-    { access: newResourceRootRouter(t, connectorParsers, getPrimitives) },
+    {
+      [CUSTOM_APP_ACCESS]: newResourceRootRouter(
+        t,
+        CustomAppConnectorSpec[CUSTOM_APP_ACCESS],
+        (ctx) => toResourceRootPrimitives(params.actions(ctx))
+      ),
+    },
     t.router({}),
     newMetadataRouter(t, params.connectorVersion)
   );
 };
 
-export type CustomConnectorRouter = ReturnType<typeof newCustomConnectorRouter>;
+export type CustomAppConnectorRouter = ReturnType<
+  typeof newCustomAppConnectorRouter
+>;

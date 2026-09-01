@@ -1,33 +1,23 @@
-export {
-  ConnectorError,
-  createLogger,
-  newConnectorRouter,
-  newConnectorTRPC,
-  newCloudFunction,
-  newResourceRootRouter,
-  newZodResourceRootParsers,
-  runCloudRunConnector,
-} from "@p0security/connector-core";
+export { ConnectorError, createLogger } from "@p0security/connector-core";
 export type {
   ConnectorContext,
   ConnectorErrorType,
   Logger,
-  ResourceRootSchemaOf,
   SelectItem,
 } from "@p0security/connector-core";
 
-export { newMetadataRouter } from "./metadata.ts";
-
-export { newCustomConnectorRouter } from "./router.ts";
-export type { CustomConnectorRouter } from "./router.ts";
-
 export {
-  connectorParsers,
-  ListerQuerySchema,
-  ListerResponseSchema,
-  PolicySchema,
-  RequestContextSchema,
-  UserBodySchema,
-  UserIdSchema,
+  newCustomAppCloudRunServer,
+  newCustomAppLambdaHandler,
+} from "./deploy.ts";
+export type { CustomAppConnectorParams } from "./router.ts";
+
+export type {
+  CustomAppConnectorActions,
+  ListerQuery,
+  ListerResponse,
+  Policy,
+  RequestContext,
+  UserBody,
+  UserId,
 } from "./schema.ts";
-export type { AccessRouter, ConnectorPrimitives } from "./schema.ts";
