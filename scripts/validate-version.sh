@@ -1,39 +1,39 @@
 #!/usr/bin/env bash
-# Validates the version to publish and prints it (without a leading "v") to
-# stdout, so callers can capture it into a step output.
+# Validates VERSION against the package.json version.
 #
-# Inputs (env):
-#   PKG_VERSION  version from packages/connector-core/package.json
-#   EVENT_NAME   github.event_name ("release" or "workflow_dispatch")
-#   VERSION      github.event.release.tag_name (release) or
-#                inputs.version (workflow_dispatch)
+# Inputs (environment variables):
+#   VERSION     - the version to validate (e.g. v0.26.1-alpha.0 or v0.26.1)
+#   EVENT_NAME  - the GitHub Actions event name (workflow_dispatch or release)
+#   PKG_VERSION - the current version from package.json (e.g. 0.26.1)
+#
+# On success, echoes VERSION so callers can capture it as an output.
+
 set -euo pipefail
+NUMERIC_VERSION="${VERSION#v}"
+NUMERIC_VERSION="${NUMERIC_VERSION%%-*}"
 
-RELEASE_RE='^[0-9]+\.[0-9]+\.[0-9]+$'
-PRERELEASE_TAG_RE='^v[0-9]+\.[0-9]+\.[0-9]+-[0-9A-Za-z.-]+$'
+version_gt() {
+  [ "$(printf '%s\n' "$1" "$2" | sort -V | head -1)" != "$1" ]
+}
 
-if ! [[ "$PKG_VERSION" =~ $RELEASE_RE ]]; then
-  echo "::error::Version $PKG_VERSION is not in major.minor.patch format. Package versions must be plain semver, e.g. 1.2.3." >&2
-  exit 1
+if [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+  if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta)\.[0-9]+$ ]]; then
+    echo "Error: workflow_dispatch version must have a v prefix and alpha or beta pre-release suffix, e.g. v0.26.1-alpha.0" >&2
+    exit 1
+  fi
+  if ! version_gt "$NUMERIC_VERSION" "$PKG_VERSION"; then
+    echo "Error: pre-release version $NUMERIC_VERSION must be greater than package.json version $PKG_VERSION" >&2
+    exit 1
+  fi
+else
+  if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: release version must have a v prefix and no pre-release suffix, e.g. v0.26.1" >&2
+    exit 1
+  fi
+  if [ "$NUMERIC_VERSION" != "$PKG_VERSION" ]; then
+    echo "Error: release version $NUMERIC_VERSION must match package.json version $PKG_VERSION" >&2
+    exit 1
+  fi
 fi
 
-case "$EVENT_NAME" in
-  release)
-    if [ "$VERSION" != "v$PKG_VERSION" ]; then
-      echo "::error::Release tag $VERSION does not match package version v$PKG_VERSION." >&2
-      exit 1
-    fi
-    echo "$PKG_VERSION"
-    ;;
-  workflow_dispatch)
-    if ! [[ "$VERSION" =~ $PRERELEASE_TAG_RE ]]; then
-      echo "::error::Version $VERSION is not a valid pre-release version, e.g. v0.26.1-alpha.0." >&2
-      exit 1
-    fi
-    echo "${VERSION#v}"
-    ;;
-  *)
-    echo "::error::Unsupported event $EVENT_NAME." >&2
-    exit 1
-    ;;
-esac
+echo "$VERSION"
