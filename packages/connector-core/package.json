@@ -1,6 +1,6 @@
 {
   "name": "@p0security/connector-core",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "P0's connector core library",
   "author": "P0 Security",
   "license": "LGPL-3.0-or-later",
@@ -25,7 +25,6 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    "@p0security/development": "./src/index.ts",
     "default": "./dist/index.js"
   },
   "engines": {
