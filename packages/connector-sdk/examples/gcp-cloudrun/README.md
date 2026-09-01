@@ -51,8 +51,8 @@ connector that never revokes access.
 ## Build and run
 
 ```sh
-npm install
-npm run build
+yarn install
+yarn run build
 docker build --platform linux/amd64 -t p0-custom-app-connector .
 ```
 

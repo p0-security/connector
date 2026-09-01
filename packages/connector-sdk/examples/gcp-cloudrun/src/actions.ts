@@ -124,7 +124,7 @@ export const newActions = (
      * Note the shape of the argument: `list` receives a query rather than a
      * request context, because it runs while someone is browsing for access,
      * not while a grant is being provisioned.
-     * 
+     *
      * Currently, `query.type` can take on one value, which is `policy`
      */
     list: async (query) => {
