@@ -21,7 +21,7 @@ Custom resource connectors should only depend directly on `@p0security/connector
 Publishing the release triggers [`.github/workflows/publish.yaml`](.github/workflows/publish.yaml),
 which runs the full lint and test suites, verifies the versions, and publishes both packages.
 
-**Requires the `NPM_TOKEN` repository secret** — an npm automation token with publish rights to the
+**Requires the `NPM_AUTH_TOKEN` repository secret** — an npm automation token with publish rights to the
 `@p0security` scope.
 
 ## License
