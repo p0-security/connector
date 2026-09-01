@@ -4,5 +4,7 @@
     "outDir": "dist",
     "rootDir": "src"
   },
-  "exclude": ["dist"]
+  // Each example under `examples/` is a standalone consumer with its own
+  // tsconfig, not part of this package's build.
+  "exclude": ["dist", "examples"]
 }
