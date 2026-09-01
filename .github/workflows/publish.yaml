@@ -16,11 +16,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # lint and test check out the tag rather than the caller's ref, so a manual
+  # dispatch gates the publish on the code being published, not on the ref the
+  # workflow was dispatched from.
   lint:
     uses: ./.github/workflows/lint.yaml
+    with:
+      ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
 
   test:
     uses: ./.github/workflows/test.yaml
+    with:
+      ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
 
   publish:
     name: Publish to npm

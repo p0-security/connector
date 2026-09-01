@@ -1,6 +1,11 @@
 on:
   pull_request:
   workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out. Defaults to the caller's ref when empty.
+        required: false
+        type: string
 
 name: Lint
 
@@ -12,6 +17,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - name: Setup yarn
         uses: ./.github/actions/yarn-setup
       - name: Verify formatting
@@ -24,6 +31,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - name: Setup yarn
         uses: ./.github/actions/yarn-setup
       - name: Verify eslint
@@ -36,6 +45,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - name: Setup yarn
         uses: ./.github/actions/yarn-setup
       # `customConditions` in tsconfig.base.json resolves workspace deps to
