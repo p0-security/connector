@@ -1,6 +1,11 @@
 on:
   pull_request:
   workflow_call:
+    inputs:
+      ref:
+        description: Git ref to check out. Defaults to the caller's ref when empty.
+        required: false
+        type: string
 
 name: Test
 
@@ -12,6 +17,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
       - name: Setup yarn
         uses: ./.github/actions/yarn-setup
       # Vitest resolves `@p0security/connector-core` through the package's

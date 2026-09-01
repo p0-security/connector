@@ -2,6 +2,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to re-publish, e.g. v0.1.0
+        required: true
+        type: string
 
 name: Publish
 
@@ -11,11 +16,18 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # lint and test check out the tag rather than the caller's ref, so a manual
+  # dispatch gates the publish on the code being published, not on the ref the
+  # workflow was dispatched from.
   lint:
     uses: ./.github/workflows/lint.yaml
+    with:
+      ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
 
   test:
     uses: ./.github/workflows/test.yaml
+    with:
+      ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
 
   publish:
     name: Publish to npm
@@ -25,20 +37,27 @@ jobs:
     permissions:
       contents: read
     steps:
+      # Checking out the tag ref makes "the built commit is the tag's commit"
+      # true by construction for both triggers, so the verify step below only
+      # has to compare names. The `refs/tags/` prefix also stops a dispatch
+      # from naming a branch.
       - name: Checkout repo
         uses: actions/checkout@v5
         with:
-          fetch-tags: true
+          ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
       - name: Setup yarn
         uses: ./.github/actions/yarn-setup
 
       # Verifies that the core, sdk, and release versions all match.
       - name: Verify package versions
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
         run: |
           CORE=$(jq -r .version packages/connector-core/package.json)
           SDK=$(jq -r .version packages/connector-sdk/package.json)
           echo "connector-core: $CORE"
           echo "connector-sdk:  $SDK"
+          echo "release tag:    $TAG"
           if [ "$CORE" != "$SDK" ]; then
             echo "::error::Version mismatch: connector-core is $CORE but connector-sdk is $SDK. Both packages must be bumped together."
             exit 1
@@ -49,10 +68,8 @@ jobs:
             echo "::error::Version $CORE is not in major.minor.patch format. Releases must be plain semver, e.g. 1.2.3."
             exit 1
           fi
-          TAGS=$(git tag --points-at HEAD | tr '\n' ' ')
-          echo "tags on HEAD:   ${TAGS:-none}"
-          if ! echo "$TAGS" | tr ' ' '\n' | grep -Fqx "v$CORE"; then
-            echo "::error::HEAD is not tagged v$CORE. Publishing is only allowed from a commit tagged v<major>.<minor>.<patch>. Tags on this commit: ${TAGS:-none}"
+          if [ "$TAG" != "v$CORE" ]; then
+            echo "::error::Release tag $TAG does not match package version $CORE. Publishing is only allowed from a tag named v<major>.<minor>.<patch> matching both package.json files, i.e. v$CORE."
             exit 1
           fi
 
