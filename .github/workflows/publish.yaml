@@ -2,6 +2,11 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      version:
+        description: Pre-release version to publish, e.g. v0.26.1-alpha.0
+        required: true
+        type: string
 
 name: Publish
 
@@ -11,15 +16,40 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  validate:
+    name: Validate inputs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.set-version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Validate version format and set output
+        id: set-version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          VERSION: ${{ inputs.version || github.event.release.tag_name }}
+        run: |
+          CORE=$(jq -r '.version' packages/connector-core/package.json)
+          SDK=$(jq -r '.version' packages/connector-sdk/package.json)
+          echo "connector-core: $CORE"
+          echo "connector-sdk:  $SDK"
+          if [ "$CORE" != "$SDK" ]; then
+            echo "::error::Version mismatch: connector-core is $CORE but connector-sdk is $SDK. Both packages must be bumped together."
+            exit 1
+          fi
+          VALIDATED_VERSION=$(PKG_VERSION="$CORE" bash scripts/validate-version.sh)
+          echo "version=$VALIDATED_VERSION" >> "$GITHUB_OUTPUT"
+
   lint:
     uses: ./.github/workflows/lint.yaml
-
   test:
     uses: ./.github/workflows/test.yaml
 
   publish:
     name: Publish to npm
-    needs: [lint, test]
+    needs: [validate, lint, test]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -27,34 +57,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v5
-        with:
-          fetch-tags: true
       - name: Setup yarn
         uses: ./.github/actions/yarn-setup
-
-      # Verifies that the core, sdk, and release versions all match.
-      - name: Verify package versions
-        run: |
-          CORE=$(jq -r .version packages/connector-core/package.json)
-          SDK=$(jq -r .version packages/connector-sdk/package.json)
-          echo "connector-core: $CORE"
-          echo "connector-sdk:  $SDK"
-          if [ "$CORE" != "$SDK" ]; then
-            echo "::error::Version mismatch: connector-core is $CORE but connector-sdk is $SDK. Both packages must be bumped together."
-            exit 1
-          fi
-          # Releases are plain major.minor.patch; pre-release and build
-          # metadata suffixes are not supported by this pipeline.
-          if ! echo "$CORE" | grep -Eqx '[0-9]+\.[0-9]+\.[0-9]+'; then
-            echo "::error::Version $CORE is not in major.minor.patch format. Releases must be plain semver, e.g. 1.2.3."
-            exit 1
-          fi
-          TAGS=$(git tag --points-at HEAD | tr '\n' ' ')
-          echo "tags on HEAD:   ${TAGS:-none}"
-          if ! echo "$TAGS" | tr ' ' '\n' | grep -Fqx "v$CORE"; then
-            echo "::error::HEAD is not tagged v$CORE. Publishing is only allowed from a commit tagged v<major>.<minor>.<patch>. Tags on this commit: ${TAGS:-none}"
-            exit 1
-          fi
 
       # Builds every workspace, then publishes in topological order so
       # connector-core reaches the registry before the SDK that depends on it.
@@ -63,4 +67,5 @@ jobs:
       - name: Publish
         run: yarn :publish
         env:
+          VERSION: ${{ needs.validate.outputs.version }}
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
