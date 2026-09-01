@@ -5,6 +5,7 @@
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "verbatimModuleSyntax": true,
-    "rewriteRelativeImportExtensions": true
+    "rewriteRelativeImportExtensions": true,
+    "customConditions": ["@p0security/connector-development"]
   }
 }
