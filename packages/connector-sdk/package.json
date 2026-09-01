@@ -31,8 +31,14 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
-    "@p0security/development": "./src/index.ts",
-    "default": "./dist/index.js"
+    ".": {
+      "@p0security/development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./control-plane": {
+      "@p0security/development": "./src/control-plane.ts",
+      "default": "./dist/control-plane.js"
+    }
   },
   "engines": {
     "node": ">=24"
@@ -45,6 +51,7 @@
   },
   "dependencies": {
     "@p0security/connector-core": "workspace:^",
+    "@trpc/server": "^11.10.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

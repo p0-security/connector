@@ -28,8 +28,8 @@ const verifyToken = () => {
 };
 
 /**
- * Creates a Cloud Run service that exposes a tRPC router over Express at `/trpc`,
- * gated by bearer-token auth and with a `/health` endpoint.
+ * Creates a Cloud Run service that exposes a tRPC router over Express at
+ * `/trpc`, gated by bearer-token auth.
  * @summary Creates a Cloud Run service that exposes a tRPC router over Express.
  * @category Cloud Functions
  *

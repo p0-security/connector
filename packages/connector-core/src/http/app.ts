@@ -1,7 +1,10 @@
 import type { Router } from "express";
 import express from "express";
 
+import { createLogger } from "../logger.ts";
 import { errorHandler } from "./error-handler.ts";
+
+const logger = createLogger();
 
 export const runExpressApp = (
   moduleName: string,
@@ -10,10 +13,6 @@ export const runExpressApp = (
 ) => {
   const app = express();
   app.use(express.json());
-
-  app.get("/health", (_req, res) =>
-    res.json({ status: "UP", module: moduleName })
-  );
 
   for (const middleware of middlewares) {
     app.use(middleware);
@@ -27,7 +26,6 @@ export const runExpressApp = (
 
   const PORT = process.env.PORT || 8080;
   app.listen(PORT, () => {
-    // eslint-disable-next-line no-console -- startup log for server boot
-    console.log(`Server is running on port ${PORT}`);
+    logger.info({ port: PORT, module: moduleName }, "Server is running");
   });
 };
