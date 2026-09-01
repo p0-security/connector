@@ -1,6 +1,6 @@
 {
   "name": "@p0security/connector-sdk",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "P0's published SDK for building a Custom Application connector.",
   "author": "P0 Security",
   "license": "LGPL-3.0-or-later",
@@ -32,11 +32,11 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "@p0security/development": "./src/index.ts",
+      "@p0security/connector-development": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./control-plane": {
-      "@p0security/development": "./src/control-plane.ts",
+      "@p0security/connector-development": "./src/control-plane.ts",
       "default": "./dist/control-plane.js"
     }
   },
