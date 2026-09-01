@@ -21,8 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    outputs:
-      version: ${{ steps.set-version.outputs.version }}
     steps:
       - uses: actions/checkout@v5
       - name: Validate version format and set output
@@ -67,5 +65,4 @@ jobs:
       - name: Publish
         run: yarn :publish
         env:
-          VERSION: ${{ needs.validate.outputs.version }}
           YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
