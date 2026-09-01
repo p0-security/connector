@@ -1,6 +1,6 @@
 {
   "name": "@p0security/connector-sdk",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "P0's published SDK for building a Custom Application connector.",
   "author": "P0 Security",
   "license": "LGPL-3.0-or-later",
