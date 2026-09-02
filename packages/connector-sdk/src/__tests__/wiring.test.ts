@@ -25,8 +25,8 @@ const NAMESPACE_PREFIX = "p0_";
 /** The requesters this application knows, whatever their access. */
 const KNOWN_PRINCIPALS = new Set(["person@example.com"]);
 
-/** A connector's two validators */
-const namespaceValidators: Pick<
+/** A connector's two user validators. */
+const userValidators: Pick<
   CustomAppConnectorActions,
   "validatePrincipal" | "validateUserId"
 > = {
@@ -107,11 +107,11 @@ describe("the router's mount keys", () => {
   });
 });
 
-describe("the namespace validators", () => {
+describe("the user validators", () => {
   const newGuardedCaller = () =>
     newCaller(
       newCustomAppConnectorRouter({
-        actions: newActionsWith(namespaceValidators),
+        actions: newActionsWith(userValidators),
         connectorVersion: "1.2.3",
       })
     );

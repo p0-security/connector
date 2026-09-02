@@ -133,9 +133,9 @@ describe("newCustomAppCloudRunServer", () => {
 });
 
 /**
- * The two `validate*` actions are the namespacing hooks the framework calls on
- * the connector's behalf, before each action that touches a user. They return
- * a verdict rather than throwing, and a `false` aborts the request before the
+ * The two `validate*` actions are the guards the framework calls on the
+ * connector's behalf, before each action that touches a user. They return a
+ * verdict rather than throwing, and a `false` aborts the request before the
  * action it guards runs.
  */
 describe("a connector that namespaces its users", () => {
@@ -283,7 +283,7 @@ describe("a ConnectorError thrown by an action", () => {
 });
 
 describe("the CustomAppConnectorActions type", () => {
-  it("requires both namespace validators", () => {
+  it("requires both user validators", () => {
     // @ts-expect-error -- the validators are part of the surface a connector implements.
     const withoutPredicates: CustomAppConnectorActions = {
       getUser: async () => null,

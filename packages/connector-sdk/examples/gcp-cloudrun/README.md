@@ -44,7 +44,7 @@ access; the rest run as a grant is provisioned and expired.
 | `app.accesses.access.setPoliciesForUser` | `POST`      | `validateUserId`, then `setPoliciesForUser`                                  |
 | `app.accesses.access.deleteUser`         | `POST`      | `validateUserId`, then `deleteUser`                                          |
 
-Every route that touches a user runs the matching namespace validator first, and the request fails
+Every route that touches a user runs the matching validator first, and the request fails
 without reaching the action if the validator rejects the user — which is why `deleteUser` and
 `setPoliciesForUser` in `src/actions.ts` carry no prefix check of their own. `list` is exempt: it
 reads the catalogue and touches no user.
