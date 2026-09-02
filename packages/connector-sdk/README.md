@@ -1,11 +1,11 @@
 # @p0security/connector-sdk
 
-Build a **Custom Application connector**: a small service you write and deploy into your own AWS
+Build a **custom application connector**: a small service you write and deploy into your own AWS
 or GCP account, that lets P0 grant and revoke access to a custom application.
 
 ## Implementing Actions
 
-The core of the connector is an implementation for five actions that you provide. These actions
+The core of the connector is an implementation for seven actions that you provide. These actions
 are invoked by P0 to manage access grants in your application.
 
 ```ts
@@ -15,10 +15,16 @@ import type {
 } from "@p0security/connector-sdk";
 
 const newActions = (ctx: ConnectorContext): CustomAppConnectorActions => ({
-  getUser: async (context, userBody) => {
+  validatePrincipal: async (context, principal) => {
+    /* whether P0 may act on this principal */
+  },
+  validateUserId: async (context, userId) => {
+    /* whether P0 may act on this user id */
+  },
+  getUser: async (context, { principal }) => {
     /* return an existing P0-managed user's id */
   },
-  createUser: async (context, userBody) => {
+  createUser: async (context, { principal }) => {
     /* provision a P0-managed user in the custom application, return its id */
   },
   deleteUser: async (context, userId) => {
@@ -33,24 +39,41 @@ const newActions = (ctx: ConnectorContext): CustomAppConnectorActions => ({
 });
 ```
 
-As a best practice, P0 recommends namespacing users in your application where possible so
-that it is clear which users managed by P0 and which are not. One potential way to do this
-is implementing the `createUser` action to prefix users with `p0_` and then only deleting
-users in the `deleteUser` function if that same prefix is present.
+## Validating users
+
+Two validation functions are required: `validatePrincipal` and `validateUserId`. The
+**principal** is the identity of the requestor in P0. The **user ID** is the identifier
+of a user in the application itself. In many cases, the principal can simply be
+reused as the user ID in the application.
+
+Some potential implementations, depending on your requirements, include:
+
+- Namespacing P0-managed users. For example, if `john.doe@acme.com` is the principal,
+  then creating a user `p0_john_doe` and checking that the user ID is prefixed with `p0_`.
+- Domain verification on email addresses. For example, verifying that `john.doe@acme.com`
+  has `@acme.com` as a suffix.
+- Checking for a tag, group membership, or an organizational unit that a user lives in
+  the application.
+
+When implemented, these validation functions can be used to ensure that:
+
+- Users cannot be created in the application that don't follow specific rules or
+  conventions
+- P0-managed users are easily distinguishable from other users in the application
+- Permissions are only modified on P0-managed users in the application
+- Only P0-managed users are deleted in the application
+
+While both of these validations are required, you can opt out of user validation by
+simply returning `true`:
 
 ```ts
 const newActions = (ctx: ConnectorContext): CustomAppConnectorActions => ({
+  // This application's users are bare email addresses, with nowhere to put a
+  // marker distinguishing the ones P0 created.
+  validatePrincipal: async () => true,
+  validateUserId: async () => true,
+
   // ...
-  deleteUser: async (context, userId) => {
-    if (!userId.startsWith("p0_")) {
-      throw new ConnectorError({
-        type: "validation_error",
-        message: `${userId} was not provisioned by P0`,
-        payload: { userId },
-      });
-    }
-    await target.deleteUser(userId);
-  },
 });
 ```
 

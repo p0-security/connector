@@ -1,6 +1,6 @@
 # `gcp-cloudrun` — a Custom Application connector on Cloud Run
 
-A complete, deployable [`@p0security/connector-sdk`](../../) connector: all five actions, wired
+A complete, deployable [`@p0security/connector-sdk`](../../) connector: all seven actions, wired
 into a Cloud Run service and packaged as a container image.
 
 ## Layout
@@ -8,7 +8,7 @@ into a Cloud Run service and packaged as a container image.
 | File               | What's in it                                                       |
 | ------------------ | ------------------------------------------------------------------ |
 | `src/index.ts`     | Entry point: environment guard, then `newCustomAppCloudRunServer`. |
-| `src/actions.ts`   | The five actions, plus the namespacing checks that guard writes.   |
+| `src/actions.ts`   | The seven actions, including the two validators that guard writes. |
 | `src/catalogue.ts` | The entitlements `list` returns to P0's request-access picker.     |
 | `Dockerfile`       | Two-stage build producing the Cloud Run image.                     |
 
@@ -35,14 +35,19 @@ the connector will act on.
 P0 drives a grant through the tRPC routes below. `list` runs while a requester browses for
 access; the rest run as a grant is provisioned and expired.
 
-| Route                                    | HTTP        | Calls into                                         |
-| ---------------------------------------- | ----------- | -------------------------------------------------- |
-| `app.metadata.get`                       | `GET` query | — (version probe)                                  |
-| `app.accesses.access.list`               | `GET` query | `list`                                             |
-| `app.accesses.access.identifyUser`       | `POST`      | `getUser`                                          |
-| `app.accesses.access.provisionUser`      | `POST`      | `getUser`, then `createUser` if it returned `null` |
-| `app.accesses.access.setPoliciesForUser` | `POST`      | `setPoliciesForUser`                               |
-| `app.accesses.access.deleteUser`         | `POST`      | `deleteUser`                                       |
+| Route                                    | HTTP        | Calls into                                                                   |
+| ---------------------------------------- | ----------- | ---------------------------------------------------------------------------- |
+| `app.metadata.get`                       | `GET` query | — (version probe)                                                            |
+| `app.accesses.access.list`               | `GET` query | `list`                                                                       |
+| `app.accesses.access.identifyUser`       | `POST`      | `validatePrincipal`, then `getUser`                                          |
+| `app.accesses.access.provisionUser`      | `POST`      | `validatePrincipal`, then `getUser`, then `createUser` if it returned `null` |
+| `app.accesses.access.setPoliciesForUser` | `POST`      | `validateUserId`, then `setPoliciesForUser`                                  |
+| `app.accesses.access.deleteUser`         | `POST`      | `validateUserId`, then `deleteUser`                                          |
+
+Every route that touches a user runs the matching namespace validator first, and the request fails
+without reaching the action if the validator rejects the user — which is why `deleteUser` and
+`setPoliciesForUser` in `src/actions.ts` carry no prefix check of their own. `list` is exempt: it
+reads the catalogue and touches no user.
 
 `setPoliciesForUser` receives the full set the user should hold afterwards, not a delta — an empty
 array revokes everything. Adding to what was already there is the most common way to write a
