@@ -8,6 +8,8 @@ import {
 } from "../index.ts";
 
 const newActions = (): CustomAppConnectorActions => ({
+  validatePrincipal: async () => true,
+  validateUserId: async () => true,
   getUser: async () => null,
   createUser: async (_context, userBody) => `user:${userBody.principal}`,
   deleteUser: async () => {},
@@ -131,33 +133,21 @@ describe("newCustomAppCloudRunServer", () => {
 });
 
 /**
- * Namespacing is no longer a `validation` hook the framework calls on a
- * connector's behalf; a connector that needs it enforces it inside the
- * action that receives the value, which lets it reject with a classified
- * error rather than the bare `Error` the old hook threw.
+ * The two `validate*` actions are the guards the framework calls on the
+ * connector's behalf, before each action that touches a user. They return a
+ * verdict rather than throwing, and a `false` aborts the request before the
+ * action it guards runs.
  */
-describe("a connector that enforces namespacing inside its own actions", () => {
+describe("a connector that namespaces its users", () => {
+  const KNOWN_PRINCIPALS = new Set(["alice@example.com"]);
+
   const newNamespacedActions = (): CustomAppConnectorActions => ({
+    validatePrincipal: async (_context, principal) =>
+      KNOWN_PRINCIPALS.has(principal),
+    validateUserId: async (_context, userId) => userId.startsWith("p0_"),
     getUser: async () => null,
-    createUser: async (_context, userBody) => {
-      if (!userBody.principal.startsWith("p0_")) {
-        throw new ConnectorError({
-          type: "validation_error",
-          message: `${userBody.principal} is not namespaced`,
-          payload: { principal: userBody.principal },
-        });
-      }
-      return `user:${userBody.principal}`;
-    },
-    deleteUser: async (_context, userId) => {
-      if (!userId.startsWith("user:p0_")) {
-        throw new ConnectorError({
-          type: "validation_error",
-          message: `${userId} is not namespaced`,
-          payload: { userId },
-        });
-      }
-    },
+    createUser: async (_context, userBody) => `p0_${userBody.principal}`,
+    deleteUser: async () => {},
     setPoliciesForUser: async () => {},
     list: async () => [],
   });
@@ -175,45 +165,140 @@ describe("a connector that enforces namespacing inside its own actions", () => {
       "mutation"
     );
 
-  it("admits a namespaced principal", async () => {
-    expect(await provision("p0_alice")).toMatchObject({
+  it("admits a principal it recognizes", async () => {
+    expect(await provision("alice@example.com")).toMatchObject({
       status: 200,
-      body: { result: { data: "user:p0_alice" } },
+      body: { result: { data: "p0_alice@example.com" } },
     });
   });
 
-  it("rejects an unnamespaced principal as a classified 412, not a 500", async () => {
-    expect(await provision("alice")).toMatchObject({
+  it("refuses an unknown principal without provisioning it", async () => {
+    const created: string[] = [];
+    const guardedHandler = newCustomAppLambdaHandler({
+      actions: () => ({
+        ...newNamespacedActions(),
+        createUser: async (_context, userBody) => {
+          created.push(userBody.principal);
+          return `user:${userBody.principal}`;
+        },
+      }),
+      connectorVersion: "1.2.3",
+    });
+
+    const res = await invoke(
+      guardedHandler,
+      "app.accesses.access.provisionUser",
+      {
+        userBody: { principal: "stranger@example.com" },
+        context: { requestId: "r", appId: "a" },
+      },
+      "mutation"
+    );
+
+    // A `false` verdict aborts with the framework's own error, which tRPC
+    // reports as a 500. A connector wanting a status an operator can act on
+    // throws ConnectorError from the action itself; see below.
+    expect(res).toMatchObject({ status: 500 });
+    expect(created).toEqual([]);
+  });
+
+  it("aborts a delete against an id the validator rejects, without calling deleteUser", async () => {
+    const deleted: string[] = [];
+    const guardedHandler = newCustomAppLambdaHandler({
+      actions: () => ({
+        ...newNamespacedActions(),
+        deleteUser: async (_context, userId) => {
+          deleted.push(userId);
+        },
+      }),
+      connectorVersion: "1.2.3",
+    });
+
+    const res = await invoke(
+      guardedHandler,
+      "app.accesses.access.deleteUser",
+      { userId: "someone-elses-user", context: { requestId: "r", appId: "a" } },
+      "mutation"
+    );
+
+    expect(res).toMatchObject({ status: 500 });
+    expect(deleted).toEqual([]);
+  });
+
+  it("admits a delete against an id the validator accepts", async () => {
+    expect(
+      await invoke(
+        handler,
+        "app.accesses.access.deleteUser",
+        {
+          userId: "p0_alice@example.com",
+          context: { requestId: "r", appId: "a" },
+        },
+        "mutation"
+      )
+    ).toMatchObject({ status: 200 });
+  });
+});
+
+describe("a ConnectorError thrown by an action", () => {
+  it("reaches P0 as a classified status carrying its message and payload", async () => {
+    const handler = newCustomAppLambdaHandler({
+      actions: () => ({
+        ...newActions(),
+        setPoliciesForUser: async (_context, userId, policies) => {
+          throw new ConnectorError({
+            type: "validation_error",
+            message: `${policies[0]} is not a well-formed policy`,
+            payload: { userId },
+          });
+        },
+      }),
+      connectorVersion: "1.2.3",
+    });
+
+    const res = await invoke(
+      handler,
+      "app.accesses.access.setPoliciesForUser",
+      {
+        userId: "p0_alice@example.com",
+        policies: ["not a policy"],
+        context: { requestId: "r", appId: "a" },
+      },
+      "mutation"
+    );
+
+    expect(res).toMatchObject({
       status: 412,
       body: {
         error: {
-          message: "alice is not namespaced",
-          data: { type: "validation_error", payload: { principal: "alice" } },
+          message: "not a policy is not a well-formed policy",
+          data: {
+            type: "validation_error",
+            payload: { userId: "p0_alice@example.com" },
+          },
         },
       },
     });
   });
-
-  it("rejects an unnamespaced id on delete", async () => {
-    const res = await invoke(
-      handler,
-      "app.accesses.access.deleteUser",
-      { userId: "user:someone-else", context: { requestId: "r", appId: "a" } },
-      "mutation"
-    );
-    expect(res).toMatchObject({ status: 412 });
-  });
 });
 
 describe("the CustomAppConnectorActions type", () => {
-  it("does not accept a `validation` action", () => {
-    const withValidation: CustomAppConnectorActions = {
+  it("requires both user validators", () => {
+    // @ts-expect-error -- the validators are part of the surface a connector implements.
+    const withoutPredicates: CustomAppConnectorActions = {
       getUser: async () => null,
       createUser: async () => "u",
       deleteUser: async () => {},
       setPoliciesForUser: async () => {},
       list: async () => [],
-      // @ts-expect-error -- `validation` is not part of the customer surface.
+    };
+    expect(withoutPredicates).toBeDefined();
+  });
+
+  it("does not expose the framework's own `validation` hook", () => {
+    const withValidation: CustomAppConnectorActions = {
+      ...newActions(),
+      // @ts-expect-error -- the SDK builds `validation` from the two validators.
       validation: () => ({ user: null }),
     };
     expect(withValidation).toBeDefined();

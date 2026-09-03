@@ -38,20 +38,18 @@ export type CustomAppConnectorSchema = {
 };
 
 /**
- * The actions a Custom Application connector implements.
- */
-export type CustomAppConnectorActions = Omit<
-  ResourceRootConnectorPrimitives<CustomAppAccessSchema>,
-  "validation"
->;
-
-/**
  * The request body identifying the target user, as `getUser` and `createUser`
- * receive it.
+ * receive it. Its `principal` is the identity P0 knows the requester by -
+ * typically any email address for a human requestor.
  */
 export type UserBody = z.infer<typeof UserBodySchema>;
 
-/** The application's own identifier for a user — whatever `getUser`/`createUser` returned. */
+/**
+ * This application's own identifier for a user: the exact string a previous
+ * `getUser` or `createUser` returned. A database role name, a numeric id, a
+ * directory DN, or the principal itself, if that is how the application
+ * names its accounts.
+ */
 export type UserId = z.infer<typeof UserIdSchema>;
 
 /**
@@ -68,6 +66,48 @@ export type ListerQuery = z.infer<typeof ListerQuerySchema>;
 
 /** The catalogue returned by `list`, shown in the request-access picker. */
 export type ListerResponse = z.infer<typeof ListerResponseSchema>;
+
+/**
+ * The actions a Custom Application connector implements.
+ */
+export type CustomAppConnectorActions = Omit<
+  ResourceRootConnectorPrimitives<CustomAppAccessSchema>,
+  "validation"
+> & {
+  /**
+   * Whether P0 may act on `principal` — the identity P0 knows the requester
+   * by (typically their email address). Called by the SDK internally before
+   * invoking the `getUser` and `createUser` actions.
+   *
+   * `true` allows the action, `false` refuses it. Validation can be opted-out
+   * of by simply returning `true`.
+   *
+   * This action must not assume that the user for this principal already
+   * exists in the application.
+   *
+   * @group User
+   */
+  validatePrincipal: (
+    context: RequestContext,
+    principal: UserBody["principal"]
+  ) => Promise<boolean>;
+
+  /**
+   * Whether P0 may act on `userId` — this application's own identifier for the
+   * user, as `getUser` or `createUser` returned it. Called by the SDK internally
+   * before invoking the `deleteUser` and `setPoliciesForUser` actions.
+   *
+   * `true` allows the action, `false` refuses it. Validation can be opted-out
+   * of by simply returning `true`.
+   *
+   * This action should not throw an error if the user doesn't exist in the application,
+   * as that will break idempotency guarantees when P0 retries invoking the connector.
+   * Instead, this should only validate the shape of the user ID.
+   *
+   * @group User
+   */
+  validateUserId: (context: RequestContext, userId: UserId) => Promise<boolean>;
+};
 
 export const connectorParsers = newZodResourceRootParsers({
   userBody: UserBodySchema,
