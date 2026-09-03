@@ -64,7 +64,7 @@ export type ResourceHierarchyConnectorPrimitives<
    */
   getUser: (
     context: Schema["RequestContext"],
-    username: Schema["UserBody"]
+    user: Schema["UserBody"]
   ) => Promise<Schema["UserId"] | null>;
 
   /**
@@ -74,11 +74,11 @@ export type ResourceHierarchyConnectorPrimitives<
    */
   createUser: (
     context: Schema["RequestContext"],
-    username: Schema["UserBody"]
+    user: Schema["UserBody"]
   ) => Promise<Schema["UserId"]>;
 
   /**
-   * Deletes a user with the given ID.
+   * Deletes a user.
    *
    * If users cannot or should not be deleted, this can be a no-op.
    *
@@ -86,7 +86,8 @@ export type ResourceHierarchyConnectorPrimitives<
    */
   deleteUser: (
     context: Schema["RequestContext"],
-    username: Schema["UserId"]
+    userId: Schema["UserId"],
+    user: Schema["UserBody"]
   ) => Promise<void>;
 
   /**
@@ -131,25 +132,27 @@ export type ResourceHierarchyConnectorPrimitives<
   ) => Promise<void>;
 
   /**
-   * Binds an access resource to a user, returning a binding ID.
+   * Binds an access resource to a user.
    *
    * @group Bindings
    */
   bindResourceToUser: (
     context: Schema["RequestContext"],
     resource: Schema["ResourceId"],
-    user: Schema["UserId"]
+    userId: Schema["UserId"],
+    user: Schema["UserBody"]
   ) => Promise<void>;
 
   /**
-   * Unbinds an access resource from a user using the given binding ID.
+   * Unbinds an access resource from a user.
    *
    * @group Bindings
    */
   unbindResourceFromUser: (
     context: Schema["RequestContext"],
     resource: Schema["ResourceId"],
-    user: Schema["UserId"]
+    userId: Schema["UserId"],
+    user: Schema["UserBody"]
   ) => Promise<void>;
 
   list: (query: Schema["ListerQuery"]) => Promise<Schema["ListerResponse"]>;
@@ -244,13 +247,17 @@ export const buildResourceHierarchySecurityPerimeter = <
     return null;
   },
 
-  bindAccessResource: async ({ userId, resourceId, context }) => {
+  bindAccessResource: async ({ userId, userBody, resourceId, context }) => {
     const validation = methods.validation(context);
-    const { userIsNamespacedById } = validation.user ?? {};
+    const { userIsNamespacedById, userIsNamespacedByBody } =
+      validation.user ?? {};
     const { resourceIsNamespacedById } = validation.resource ?? {};
 
     if (userIsNamespacedById && !(await userIsNamespacedById(userId))) {
       throw new Error(`Username ${userId} is not namespaced`);
+    }
+    if (userIsNamespacedByBody && !(await userIsNamespacedByBody(userBody))) {
+      throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
     }
     if (
       resourceIsNamespacedById &&
@@ -258,26 +265,29 @@ export const buildResourceHierarchySecurityPerimeter = <
     ) {
       throw new Error(`Resource ${resourceId} is not namespaced`);
     }
-    await methods.bindResourceToUser(context, resourceId, userId);
+    await methods.bindResourceToUser(context, resourceId, userId, userBody);
     return null;
   },
 
-  unbindAccessResource: async ({ userId, resourceId, context }) => {
+  unbindAccessResource: async ({ userId, userBody, resourceId, context }) => {
     const validation = methods.validation(context);
-    const { userIsNamespacedById } = validation.user ?? {};
+    const { userIsNamespacedById, userIsNamespacedByBody } =
+      validation.user ?? {};
     const { resourceIsNamespacedById } = validation.resource ?? {};
 
     if (userIsNamespacedById && !(await userIsNamespacedById(userId))) {
       throw new Error(`Username ${userId} is not namespaced`);
     }
-
+    if (userIsNamespacedByBody && !(await userIsNamespacedByBody(userBody))) {
+      throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
+    }
     if (
       resourceIsNamespacedById &&
       !(await resourceIsNamespacedById(resourceId))
     ) {
       throw new Error(`Resource ${resourceId} is not namespaced`);
     }
-    await methods.unbindResourceFromUser(context, resourceId, userId);
+    await methods.unbindResourceFromUser(context, resourceId, userId, userBody);
     return null;
   },
 

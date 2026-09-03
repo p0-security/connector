@@ -45,7 +45,7 @@ export type ResourceRootConnectorPrimitives<Schema extends ResourceRootSchema> =
      */
     getUser: (
       context: Schema["RequestContext"],
-      username: Schema["UserBody"]
+      user: Schema["UserBody"]
     ) => Promise<Schema["UserId"] | null>;
 
     /**
@@ -55,7 +55,7 @@ export type ResourceRootConnectorPrimitives<Schema extends ResourceRootSchema> =
      */
     createUser: (
       context: Schema["RequestContext"],
-      username: Schema["UserBody"]
+      user: Schema["UserBody"]
     ) => Promise<Schema["UserId"]>;
 
     /**
@@ -67,7 +67,8 @@ export type ResourceRootConnectorPrimitives<Schema extends ResourceRootSchema> =
      */
     deleteUser: (
       context: Schema["RequestContext"],
-      username: Schema["UserId"]
+      userId: Schema["UserId"],
+      user: Schema["UserBody"]
     ) => Promise<void>;
 
     /**
@@ -78,6 +79,7 @@ export type ResourceRootConnectorPrimitives<Schema extends ResourceRootSchema> =
     setPoliciesForUser: (
       context: Schema["RequestContext"],
       userId: Schema["UserId"],
+      user: Schema["UserBody"],
       policies: Schema["Policy"][]
     ) => Promise<void>;
 
@@ -123,25 +125,33 @@ export const buildResourceRootSecurityPerimeter = <
     return await methods.getUser(context, userBody);
   },
 
-  deleteUser: async ({ userId, context }) => {
-    const { userIsNamespacedById } = methods.validation(context).user ?? {};
+  deleteUser: async ({ userId, userBody, context }) => {
+    const { userIsNamespacedById, userIsNamespacedByBody } =
+      methods.validation(context).user ?? {};
 
     if (userIsNamespacedById && !(await userIsNamespacedById(userId))) {
       throw new Error(`Resource ${userId} is not namespaced`);
     }
-    await methods.deleteUser(context, userId);
+    if (userIsNamespacedByBody && !(await userIsNamespacedByBody(userBody))) {
+      throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
+    }
 
+    await methods.deleteUser(context, userId, userBody);
     return null;
   },
 
-  setPoliciesForUser: async ({ userId, policies, context }) => {
-    const { userIsNamespacedById } = methods.validation(context).user ?? {};
+  setPoliciesForUser: async ({ userId, userBody, policies, context }) => {
+    const { userIsNamespacedById, userIsNamespacedByBody } =
+      methods.validation(context).user ?? {};
 
     if (userIsNamespacedById && !(await userIsNamespacedById(userId))) {
       throw new Error(`Resource ${userId} is not namespaced`);
     }
-    await methods.setPoliciesForUser(context, userId, policies);
+    if (userIsNamespacedByBody && !(await userIsNamespacedByBody(userBody))) {
+      throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
+    }
 
+    await methods.setPoliciesForUser(context, userId, userBody, policies);
     return null;
   },
 

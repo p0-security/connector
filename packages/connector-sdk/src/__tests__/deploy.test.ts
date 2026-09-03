@@ -8,10 +8,9 @@ import {
 } from "../index.ts";
 
 const newActions = (): CustomAppConnectorActions => ({
-  validatePrincipal: async () => true,
-  validateUserId: async () => true,
-  getUser: async () => null,
-  createUser: async (_context, userBody) => `user:${userBody.principal}`,
+  validateUser: async () => true,
+  userExists: async () => false,
+  createUser: async () => {},
   deleteUser: async () => {},
   setPoliciesForUser: async () => {},
   list: async () => [{ key: "policy-1", value: "Policy 1" }],
@@ -63,7 +62,7 @@ describe("newCustomAppLambdaHandler", () => {
 
     expect(res).toMatchObject({
       status: 200,
-      body: { result: { data: "user:person@example.com" } },
+      body: { result: { data: "person@example.com" } },
     });
   });
 
@@ -133,20 +132,18 @@ describe("newCustomAppCloudRunServer", () => {
 });
 
 /**
- * The two `validate*` actions are the guards the framework calls on the
- * connector's behalf, before each action that touches a user. They return a
- * verdict rather than throwing, and a `false` aborts the request before the
- * action it guards runs.
+ * `validateUser` is the guard the framework calls on the connector's behalf,
+ * before each action that touches a user. It returns a verdict rather than
+ * throwing, and a `false` aborts the request before the action it guards runs.
  */
 describe("a connector that namespaces its users", () => {
   const KNOWN_PRINCIPALS = new Set(["alice@example.com"]);
 
   const newNamespacedActions = (): CustomAppConnectorActions => ({
-    validatePrincipal: async (_context, principal) =>
-      KNOWN_PRINCIPALS.has(principal),
-    validateUserId: async (_context, userId) => userId.startsWith("p0_"),
-    getUser: async () => null,
-    createUser: async (_context, userBody) => `p0_${userBody.principal}`,
+    validateUser: async (_context, user) =>
+      KNOWN_PRINCIPALS.has(user.principal),
+    userExists: async () => false,
+    createUser: async () => {},
     deleteUser: async () => {},
     setPoliciesForUser: async () => {},
     list: async () => [],
@@ -168,7 +165,7 @@ describe("a connector that namespaces its users", () => {
   it("admits a principal it recognizes", async () => {
     expect(await provision("alice@example.com")).toMatchObject({
       status: 200,
-      body: { result: { data: "p0_alice@example.com" } },
+      body: { result: { data: "alice@example.com" } },
     });
   });
 
@@ -177,9 +174,8 @@ describe("a connector that namespaces its users", () => {
     const guardedHandler = newCustomAppLambdaHandler({
       actions: () => ({
         ...newNamespacedActions(),
-        createUser: async (_context, userBody) => {
-          created.push(userBody.principal);
-          return `user:${userBody.principal}`;
+        createUser: async (_context, user) => {
+          created.push(user.principal);
         },
       }),
       connectorVersion: "1.2.3",
@@ -202,13 +198,13 @@ describe("a connector that namespaces its users", () => {
     expect(created).toEqual([]);
   });
 
-  it("aborts a delete against an id the validator rejects, without calling deleteUser", async () => {
+  it("aborts a delete against a user the validator rejects, without calling deleteUser", async () => {
     const deleted: string[] = [];
     const guardedHandler = newCustomAppLambdaHandler({
       actions: () => ({
         ...newNamespacedActions(),
-        deleteUser: async (_context, userId) => {
-          deleted.push(userId);
+        deleteUser: async (_context, user) => {
+          deleted.push(user.principal);
         },
       }),
       connectorVersion: "1.2.3",
@@ -217,7 +213,11 @@ describe("a connector that namespaces its users", () => {
     const res = await invoke(
       guardedHandler,
       "app.accesses.access.deleteUser",
-      { userId: "someone-elses-user", context: { requestId: "r", appId: "a" } },
+      {
+        userId: "stranger@example.com",
+        userBody: { principal: "stranger@example.com" },
+        context: { requestId: "r", appId: "a" },
+      },
       "mutation"
     );
 
@@ -225,13 +225,14 @@ describe("a connector that namespaces its users", () => {
     expect(deleted).toEqual([]);
   });
 
-  it("admits a delete against an id the validator accepts", async () => {
+  it("admits a delete against a user the validator accepts", async () => {
     expect(
       await invoke(
         handler,
         "app.accesses.access.deleteUser",
         {
-          userId: "p0_alice@example.com",
+          userId: "alice@example.com",
+          userBody: { principal: "alice@example.com" },
           context: { requestId: "r", appId: "a" },
         },
         "mutation"
@@ -245,11 +246,11 @@ describe("a ConnectorError thrown by an action", () => {
     const handler = newCustomAppLambdaHandler({
       actions: () => ({
         ...newActions(),
-        setPoliciesForUser: async (_context, userId, policies) => {
+        setPoliciesForUser: async (_context, user, policies) => {
           throw new ConnectorError({
             type: "validation_error",
             message: `${policies[0]} is not a well-formed policy`,
-            payload: { userId },
+            payload: { principal: user.principal },
           });
         },
       }),
@@ -260,7 +261,8 @@ describe("a ConnectorError thrown by an action", () => {
       handler,
       "app.accesses.access.setPoliciesForUser",
       {
-        userId: "p0_alice@example.com",
+        userId: "alice@example.com",
+        userBody: { principal: "alice@example.com" },
         policies: ["not a policy"],
         context: { requestId: "r", appId: "a" },
       },
@@ -274,7 +276,7 @@ describe("a ConnectorError thrown by an action", () => {
           message: "not a policy is not a well-formed policy",
           data: {
             type: "validation_error",
-            payload: { userId: "p0_alice@example.com" },
+            payload: { principal: "alice@example.com" },
           },
         },
       },
@@ -283,11 +285,11 @@ describe("a ConnectorError thrown by an action", () => {
 });
 
 describe("the CustomAppConnectorActions type", () => {
-  it("requires both user validators", () => {
-    // @ts-expect-error -- the validators are part of the surface a connector implements.
+  it("requires the user validator", () => {
+    // @ts-expect-error -- the validator is part of the surface a connector implements.
     const withoutPredicates: CustomAppConnectorActions = {
-      getUser: async () => null,
-      createUser: async () => "u",
+      userExists: async () => false,
+      createUser: async () => {},
       deleteUser: async () => {},
       setPoliciesForUser: async () => {},
       list: async () => [],
@@ -298,7 +300,7 @@ describe("the CustomAppConnectorActions type", () => {
   it("does not expose the framework's own `validation` hook", () => {
     const withValidation: CustomAppConnectorActions = {
       ...newActions(),
-      // @ts-expect-error -- the SDK builds `validation` from the two validators.
+      // @ts-expect-error -- the SDK builds `validation` from `validateUser`.
       validation: () => ({ user: null }),
     };
     expect(withValidation).toBeDefined();
