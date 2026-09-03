@@ -78,10 +78,6 @@ export const newActions = (
      * the check that keeps a revocation away from an account P0 never created,
      * which is why this example refuses rather than returning `async () =>
      * true` as an application with nowhere to put a marker would have to.
-     *
-     * Both validators are `async`: a real connector is free to ask the target
-     * system — for a tag, a group membership, the OU a user lives in — instead
-     * of only inspecting the string.
      */
     validateUserId: async (context, userId) => {
       const log = forRequest(context);

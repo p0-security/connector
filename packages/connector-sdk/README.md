@@ -49,11 +49,13 @@ reused as the user ID in the application.
 Some potential implementations, depending on your requirements, include:
 
 - Namespacing P0-managed users. For example, if `john.doe@acme.com` is the principal,
-  then creating a user `p0_john_doe` and checking that the user ID is prefixed with `p0_`.
-- Domain verification on email addresses. For example, verifying that `john.doe@acme.com`
+  then creating a user `p0_john_doe` and checking that the user ID is prefixed with `p0_`
+  in `validateUserId`.
+- Domain verification on email addresses, in either `validatePrincipal` or
+  `validateUserId` (if applicable). For example, verifying that `john.doe@acme.com`
   has `@acme.com` as a suffix.
-- Checking for a tag, group membership, or an organizational unit that a user lives in
-  the application.
+- Using `validatePrincipal` to check for a tag, group membership, or an organizational
+  unit that a principal lives in.
 
 When implemented, these validation functions can be used to ensure that:
 

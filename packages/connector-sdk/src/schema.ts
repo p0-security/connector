@@ -100,9 +100,9 @@ export type CustomAppConnectorActions = Omit<
    * `true` allows the action, `false` refuses it. Validation can be opted-out
    * of by simply returning `true`.
    *
-   * P0 will invoke this validator at a point where the user is already expected to
-   * exist in the application. If this validator queries the application as part of
-   * its implementation but the user cannot be found, throw a `ConnectorError`.
+   * This action should not throw an error if the user doesn't exist in the application,
+   * as that will break idempotency guarantees when P0 retries invoking the connector.
+   * Instead, this should only validate the shape of the user ID.
    *
    * @group User
    */
