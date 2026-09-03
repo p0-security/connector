@@ -5,10 +5,9 @@ import { newCustomAppConnectorRouter } from "../router.ts";
 import type { CustomAppConnectorActions, RequestContext } from "../schema.ts";
 
 const newActions = (): CustomAppConnectorActions => ({
-  validatePrincipal: async () => true,
-  validateUserId: async () => true,
-  getUser: async () => null,
-  createUser: async (_context, userBody) => `user:${userBody.principal}`,
+  validateUser: async () => true,
+  userExists: async () => false,
+  createUser: async () => {},
   deleteUser: async () => {},
   setPoliciesForUser: async () => {},
   list: async () => [{ key: "policy-1", value: "Policy 1" }],
@@ -19,21 +18,12 @@ const newActionsWith =
   (overrides: Partial<CustomAppConnectorActions>) =>
   (): CustomAppConnectorActions => ({ ...newActions(), ...overrides });
 
-/** The marker this application stamps onto the user ids it mints. */
-const NAMESPACE_PREFIX = "p0_";
-
 /** The requesters this application knows, whatever their access. */
 const KNOWN_PRINCIPALS = new Set(["person@example.com"]);
 
-/** A connector's two user validators. */
-const userValidators: Pick<
-  CustomAppConnectorActions,
-  "validatePrincipal" | "validateUserId"
-> = {
-  validatePrincipal: async (_context, principal) =>
-    KNOWN_PRINCIPALS.has(principal),
-  validateUserId: async (_context, userId) =>
-    userId.startsWith(NAMESPACE_PREFIX),
+/** A connector's one user validator. */
+const userValidator: Pick<CustomAppConnectorActions, "validateUser"> = {
+  validateUser: async (_context, user) => KNOWN_PRINCIPALS.has(user.principal),
 };
 
 const newCaller = (router: ReturnType<typeof newCustomAppConnectorRouter>) =>
@@ -68,7 +58,7 @@ describe("newCustomAppConnectorRouter", () => {
       userBody: { principal: "person@example.com" },
       context: { requestId: "req-1", appId: "app-1" },
     });
-    expect(userId).toBe("user:person@example.com");
+    expect(userId).toBe("person@example.com");
 
     const metadata = await caller.app.metadata.get();
     expect(metadata.connectorVersion).toBe("1.2.3");
@@ -107,11 +97,11 @@ describe("the router's mount keys", () => {
   });
 });
 
-describe("the user validators", () => {
+describe("the user validator", () => {
   const newGuardedCaller = () =>
     newCaller(
       newCustomAppConnectorRouter({
-        actions: newActionsWith(userValidators),
+        actions: newActionsWith(userValidator),
         connectorVersion: "1.2.3",
       })
     );
@@ -123,10 +113,10 @@ describe("the user validators", () => {
       userBody: { principal: "person@example.com" },
       context: { requestId: "req-1", appId: "app-1" },
     });
-    expect(userId).toBe("user:person@example.com");
+    expect(userId).toBe("person@example.com");
   });
 
-  it("guard the principal-keyed actions with validatePrincipal", async () => {
+  it("guards the actions that take only a user body", async () => {
     const caller = newGuardedCaller();
 
     await expect(
@@ -144,32 +134,34 @@ describe("the user validators", () => {
     ).rejects.toThrow(/not namespaced/);
   });
 
-  it("guard the id-keyed actions with validateUserId", async () => {
+  it("guards the actions that also carry a user id", async () => {
     const caller = newGuardedCaller();
 
     await expect(
       caller.app.accesses.access.deleteUser({
-        userId: "someone-elses-user",
+        userId: "stranger@example.com",
+        userBody: { principal: "stranger@example.com" },
         context: { requestId: "req-1", appId: "app-1" },
       })
     ).rejects.toThrow(/not namespaced/);
 
     await expect(
       caller.app.accesses.access.setPoliciesForUser({
-        userId: "someone-elses-user",
+        userId: "stranger@example.com",
+        userBody: { principal: "stranger@example.com" },
         policies: ["policy-1"],
         context: { requestId: "req-1", appId: "app-1" },
       })
     ).rejects.toThrow(/not namespaced/);
   });
 
-  it("receive the principal, not the whole user body", async () => {
+  it("receives the whole user body, not just the principal", async () => {
     const seen: unknown[] = [];
     const caller = newCaller(
       newCustomAppConnectorRouter({
         actions: newActionsWith({
-          validatePrincipal: async (_context, principal) => {
-            seen.push(principal);
+          validateUser: async (_context, user) => {
+            seen.push(user);
             return true;
           },
         }),
@@ -181,27 +173,25 @@ describe("the user validators", () => {
       userBody: { principal: "person@example.com" },
       context: { requestId: "req-1", appId: "app-1" },
     });
-    expect(seen).toEqual(["person@example.com"]);
+    expect(seen).toEqual([{ principal: "person@example.com" }]);
   });
 
-  it("receive the request context, so checks can vary per request", async () => {
+  it("receives the request context, so checks can vary per request", async () => {
     const seen: string[] = [];
-    const record = async (context: { appId: string }) => {
+    const record = async (context: RequestContext) => {
       seen.push(context.appId);
       return true;
     };
     const caller = newCaller(
       newCustomAppConnectorRouter({
-        actions: newActionsWith({
-          validatePrincipal: record,
-          validateUserId: record,
-        }),
+        actions: newActionsWith({ validateUser: record }),
         connectorVersion: "1.2.3",
       })
     );
 
     await caller.app.accesses.access.deleteUser({
-      userId: "any-user",
+      userId: "person@example.com",
+      userBody: { principal: "person@example.com" },
       context: { requestId: "req-1", appId: "app-42" },
     });
     await caller.app.accesses.access.identifyUser({
@@ -211,22 +201,15 @@ describe("the user validators", () => {
     expect(seen).toEqual(["app-42", "app-43"]);
   });
 
-  it("accept one shared implementation where a principal and a user id are the same thing", async () => {
+  it("runs on the body of every user-keyed action, id-carrying ones included", async () => {
     const seen: string[] = [];
-    // Identical signatures — `(context, string) => Promise<boolean>` — so an
-    // application that names accounts by the principal it receives has just
-    // one thing to validate, and one function to do it with.
-    const isKnownUser = async (_context: RequestContext, user: string) => {
-      seen.push(user);
-      return KNOWN_PRINCIPALS.has(user);
-    };
-
     const caller = newCaller(
       newCustomAppConnectorRouter({
         actions: newActionsWith({
-          validatePrincipal: isKnownUser,
-          validateUserId: isKnownUser,
-          createUser: async (_context, userBody) => userBody.principal,
+          validateUser: async (_context, user) => {
+            seen.push(user.principal);
+            return KNOWN_PRINCIPALS.has(user.principal);
+          },
         }),
         connectorVersion: "1.2.3",
       })
@@ -240,15 +223,16 @@ describe("the user validators", () => {
 
     await expect(
       caller.app.accesses.access.deleteUser({
-        userId: "someone-elses-user",
+        userId: "stranger@example.com",
+        userBody: { principal: "stranger@example.com" },
         context: { requestId: "req-2", appId: "app-1" },
       })
     ).rejects.toThrow(/not namespaced/);
 
-    expect(seen).toEqual(["person@example.com", "someone-elses-user"]);
+    expect(seen).toEqual(["person@example.com", "stranger@example.com"]);
   });
 
-  it("let a connector opt out by returning true unconditionally", async () => {
+  it("lets a connector opt out by returning true unconditionally", async () => {
     const caller = newCaller(
       newCustomAppConnectorRouter({
         actions: newActions,
@@ -259,6 +243,7 @@ describe("the user validators", () => {
     await expect(
       caller.app.accesses.access.deleteUser({
         userId: "not-namespaced-at-all",
+        userBody: { principal: "not-namespaced-at-all" },
         context: { requestId: "req-1", appId: "app-1" },
       })
     ).resolves.toBeNull();
