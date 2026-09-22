@@ -1,6 +1,6 @@
 # `aws-lambda` — a Custom Application connector on AWS Lambda
 
-A complete, deployable [`@p0security/connector-sdk`](../../) connector: all seven actions, wired
+A complete, deployable [`@p0security/connector-sdk`](../../) connector: all six actions, wired
 into an AWS Lambda function via `newCustomAppLambdaHandler`.
 
 ## Layout
@@ -8,7 +8,7 @@ into an AWS Lambda function via `newCustomAppLambdaHandler`.
 | File               | What's in it                                                          |
 | ------------------ | --------------------------------------------------------------------- |
 | `src/index.ts`     | Entry point: `export const handler = newCustomAppLambdaHandler(...)`. |
-| `src/actions.ts`   | The seven actions, including the two validators that guard writes.    |
+| `src/actions.ts`   | The six actions, including the validator that guards every write.     |
 | `src/catalogue.ts` | The entitlements `list` returns to P0's request-access picker.        |
 | `package.sh`       | Builds and zips the function into `connector-lambda.zip`.             |
 
@@ -29,19 +29,19 @@ P0 drives a grant through the tRPC routes below, all served through the single L
 variant serves over HTTP, but AWS invokes it directly with a synchronous `Invoke` call). `list`
 runs while a requester browses for access; the rest run as a grant is provisioned and expired.
 
-| Route                                    | Calls into                                                                   |
-| ---------------------------------------- | ---------------------------------------------------------------------------- |
-| `app.metadata.get`                       | — (version probe)                                                            |
-| `app.accesses.access.list`               | `list`                                                                       |
-| `app.accesses.access.identifyUser`       | `validatePrincipal`, then `getUser`                                          |
-| `app.accesses.access.provisionUser`      | `validatePrincipal`, then `getUser`, then `createUser` if it returned `null` |
-| `app.accesses.access.setPoliciesForUser` | `validateUserId`, then `setPoliciesForUser`                                  |
-| `app.accesses.access.deleteUser`         | `validateUserId`, then `deleteUser`                                          |
+| Route                                    | Calls into                                                                  |
+| ---------------------------------------- | --------------------------------------------------------------------------- |
+| `app.metadata.get`                       | — (version probe)                                                           |
+| `app.accesses.access.list`               | `list`                                                                      |
+| `app.accesses.access.identifyUser`       | `validateUser`, then `userExists`                                           |
+| `app.accesses.access.provisionUser`      | `validateUser`, then `userExists`, then `createUser` if it returned `false` |
+| `app.accesses.access.setPoliciesForUser` | `validateUser`, then `setPoliciesForUser`                                   |
+| `app.accesses.access.deleteUser`         | `validateUser`, then `deleteUser`                                           |
 
-Every route that touches a user runs the matching validator first, and the request fails without
-reaching the action if the validator rejects the user — which is why `deleteUser` and
-`setPoliciesForUser` in `src/actions.ts` carry no prefix check of their own. `list` is exempt: it
-reads the catalogue and touches no user.
+Every route that touches a user runs `validateUser` first, and the request fails without reaching
+the action if the validator rejects the principal. This example admits every principal, so it runs
+out of the box; `src/actions.ts` says where a real check — an email domain, a directory lookup, a
+group membership test — belongs. `list` is exempt: it reads the catalogue and touches no user.
 
 `setPoliciesForUser` receives the full set the user should hold afterwards, not a delta — an empty
 array revokes everything. Adding to what was already there is the most common way to write a
