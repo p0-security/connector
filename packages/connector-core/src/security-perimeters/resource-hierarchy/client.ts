@@ -47,31 +47,55 @@ export type ResourceHierarchySecurityPerimeter<
     context: Schema["RequestContext"];
   }) => Promise<Schema["ResourceId"]>;
 
+  /**
+   * Deletes an access resource in the security perimeter.
+   * @param params The parameters for deleting the access resource.
+   */
   deleteAccessResource: (params: {
     resourceId: Schema["ResourceId"];
     context: Schema["RequestContext"];
   }) => Promise<null>;
 
+  /**
+   * Adds policies to an access resource in the security perimeter.
+   * @param params The parameters for adding the policies.
+   */
   addPoliciesToResource: (params: {
     resourceId: Schema["ResourceId"];
     policies: Schema["Policy"][];
     context: Schema["RequestContext"];
   }) => Promise<null>;
 
+  /**
+   * Removes policies from an access resource in the security perimeter.
+   * @param params The parameters for removing the policies.
+   */
   removePoliciesFromResource: (params: {
     resourceId: Schema["ResourceId"];
     policies: Schema["Policy"][];
     context: Schema["RequestContext"];
   }) => Promise<null>;
 
+  /**
+   * Binds an access resource to a user in the security perimeter.
+   *
+   * @param params The parameters for binding the access resource.
+   */
   bindAccessResource: (params: {
     userId: Schema["UserId"];
+    userBody: Schema["UserBody"];
     resourceId: Schema["ResourceId"];
     context: Schema["RequestContext"];
   }) => Promise<null>;
 
+  /**
+   * Unbinds an access resource from a user in the security perimeter.
+   *
+   * @param params The parameters for unbinding the access resource.
+   */
   unbindAccessResource: (params: {
     userId: Schema["UserId"];
+    userBody: Schema["UserBody"];
     resourceId: Schema["ResourceId"];
     context: Schema["RequestContext"];
   }) => Promise<null>;

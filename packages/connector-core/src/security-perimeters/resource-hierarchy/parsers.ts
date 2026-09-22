@@ -124,8 +124,8 @@ export const newZodResourceHierarchyParsers = <
     removePoliciesFromResource: zodParser({ resourceId, policies: z.array(policy), context: requestContext }),
     createAccessResource: zodParser({ resourceBody, context: requestContext }),
     deleteAccessResource: zodParser({ resourceId, context: requestContext }),
-    bindAccessResource: zodParser({ userId, resourceId, context: requestContext }),
-    unbindAccessResource: zodParser({ userId, resourceId, context: requestContext }),
+    bindAccessResource: zodParser({ userId, userBody, resourceId, context: requestContext }),
+    unbindAccessResource: zodParser({ userId, userBody, resourceId, context: requestContext }),
     list: zodParser({ query: listerQuery }),
   };
 };

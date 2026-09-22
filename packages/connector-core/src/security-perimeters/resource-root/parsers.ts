@@ -85,8 +85,8 @@ export const newZodResourceRootParsers = <
     requestContext: requestContext.parse,
     identifyUser: zodParser({ userBody, context: requestContext }),
     provisionUser: zodParser({ userBody, context: requestContext }),
-    deleteUser: zodParser({ userId, context: requestContext }),
-    setPoliciesForUser: zodParser({ userId, policies: z.array(policy), context: requestContext }),
+    deleteUser: zodParser({ userId, userBody, context: requestContext }),
+    setPoliciesForUser: zodParser({ userId, userBody, policies: z.array(policy), context: requestContext }),
     list: zodParser({ query: listerQuery }),
   };
 };

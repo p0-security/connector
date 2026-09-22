@@ -27,22 +27,36 @@ export type CustomAppConnectorParams = {
 };
 
 /**
- * Adapts the connector's actions to the framework contract.
+ * Adapts the connector SDK's actions to the framework contract.
  */
 const toResourceRootPrimitives = (
   actions: CustomAppConnectorActions
 ): ResourceRootConnectorPrimitives<CustomAppAccessSchema> => {
-  const { validatePrincipal, validateUserId, ...rest } = actions;
   return {
-    ...rest,
+    getUser: async (context, user) => {
+      if (await actions.userExists(context, user)) return user.principal;
+      return null;
+    },
+    createUser: async (context, user) => {
+      await actions.createUser(context, user);
+      return user.principal;
+    },
+    setPoliciesForUser: async (context, _, user, policies) => {
+      return await actions.setPoliciesForUser(context, user, policies);
+    },
+    deleteUser: async (context, _, user) => {
+      return await actions.deleteUser(context, user);
+    },
     validation: (context) => ({
       user: {
         userIsNamespacedByBody: async (userBody) =>
-          await validatePrincipal(context, userBody.principal),
-        userIsNamespacedById: async (userId) =>
-          await validateUserId(context, userId),
+          await actions.validateUser(context, userBody),
+        userIsNamespacedById: async () => true,
       },
     }),
+    list: async (query) => {
+      return await actions.list(query);
+    },
   };
 };
 

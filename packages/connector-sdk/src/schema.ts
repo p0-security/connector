@@ -1,5 +1,4 @@
 import {
-  type ResourceRootConnectorPrimitives,
   type ResourceRootSchema,
   newZodResourceRootParsers,
 } from "@p0security/connector-core";
@@ -38,17 +37,15 @@ export type CustomAppConnectorSchema = {
 };
 
 /**
- * The request body identifying the target user, as `getUser` and `createUser`
- * receive it. Its `principal` is the identity P0 knows the requester by -
- * typically any email address for a human requestor.
+ * The request body identifying the target user. Its `principal` is
+ * the identity P0 knows the requester by - typically any email address
+ * for a human requestor.
  */
 export type UserBody = z.infer<typeof UserBodySchema>;
 
 /**
- * This application's own identifier for a user: the exact string a previous
- * `getUser` or `createUser` returned. A database role name, a numeric id, a
- * directory DN, or the principal itself, if that is how the application
- * names its accounts.
+ * The identifier the connector reports to P0 for a provisioned user. This
+ * SDK always uses the principal itself.
  */
 export type UserId = z.infer<typeof UserIdSchema>;
 
@@ -58,10 +55,13 @@ export type UserId = z.infer<typeof UserIdSchema>;
  */
 export type Policy = z.infer<typeof PolicySchema>;
 
-/** The per-request context every action receives. */
+/**
+ * The per-request context every action receives. Includes the request
+ * ID in P0 and the app ID.
+ */
 export type RequestContext = z.infer<typeof RequestContextSchema>;
 
-/** The query `list` receives. */
+/** The query `list` receives, in place of a {@link RequestContext}. */
 export type ListerQuery = z.infer<typeof ListerQuerySchema>;
 
 /** The catalogue returned by `list`, shown in the request-access picker. */
@@ -70,43 +70,80 @@ export type ListerResponse = z.infer<typeof ListerResponseSchema>;
 /**
  * The actions a Custom Application connector implements.
  */
-export type CustomAppConnectorActions = Omit<
-  ResourceRootConnectorPrimitives<CustomAppAccessSchema>,
-  "validation"
-> & {
+export type CustomAppConnectorActions = {
   /**
-   * Whether P0 may act on `principal` — the identity P0 knows the requester
-   * by (typically their email address). Called by the SDK internally before
-   * invoking the `getUser` and `createUser` actions.
+   * Checks if a user exists in the application. P0 calls this on every grant,
+   * so it must be safe to call repeatedly and must not have side effects.
    *
-   * `true` allows the action, `false` refuses it. Validation can be opted-out
-   * of by simply returning `true`.
-   *
-   * This action must not assume that the user for this principal already
-   * exists in the application.
-   *
-   * @group User
+   * @param context the request ID and application ID
+   * @param user the user parameters, including the principal
+   * @returns `true` if the user exists, `false` otherwise
    */
-  validatePrincipal: (
-    context: RequestContext,
-    principal: UserBody["principal"]
-  ) => Promise<boolean>;
+  userExists: (context: RequestContext, user: UserBody) => Promise<boolean>;
 
   /**
-   * Whether P0 may act on `userId` — this application's own identifier for the
-   * user, as `getUser` or `createUser` returned it. Called by the SDK internally
-   * before invoking the `deleteUser` and `setPoliciesForUser` actions.
+   * Creates a user in the application. The framework checks if the user exists
+   * first using the `userExists` action before calling this function.
    *
-   * `true` allows the action, `false` refuses it. Validation can be opted-out
-   * of by simply returning `true`.
-   *
-   * This action should not throw an error if the user doesn't exist in the application,
-   * as that will break idempotency guarantees when P0 retries invoking the connector.
-   * Instead, this should only validate the shape of the user ID.
-   *
-   * @group User
+   * @param context the request ID and application ID
+   * @param user the user parameters, including the principal
    */
-  validateUserId: (context: RequestContext, userId: UserId) => Promise<boolean>;
+  createUser: (context: RequestContext, user: UserBody) => Promise<void>;
+
+  /**
+   * Deletes a specified user from the target system. If users cannot or should not
+   * be deleted, this can be a no-op.
+   *
+   * @param context the request ID and application ID
+   * @param user the user parameters, including the principal
+   */
+  deleteUser: (context: RequestContext, user: UserBody) => Promise<void>;
+
+  /**
+   * Applies the full set of policies on the user.
+   *
+   * This is a set, not a delta: `policies` is the complete list the user
+   * should hold after the call, and an empty array revokes everything.
+   *
+   * @param context the request ID and application ID
+   * @param user the user parameters, including the principal
+   * @param policies all of the policies across all existing P0 grants for
+   * this principal in this application
+   */
+  setPoliciesForUser: (
+    context: RequestContext,
+    user: UserBody,
+    policies: Policy[]
+  ) => Promise<void>;
+
+  /**
+   * Whether P0 may act on `user` — whose `principal` is the identity P0 knows
+   * the requester by, typically their email address. Called by the SDK
+   * internally before every other user-keyed action, which is why none of
+   * those actions needs a check of its own. This action must not assume that
+   * the user for this principal already exists in the application.
+   *
+   * @param context the request ID and application ID
+   * @param user the user parameters, including the principal
+   * @returns `true` allows the action, `false` refuses it. Validation can be opted-out
+   * of by simply returning `true`.
+   */
+  validateUser: (context: RequestContext, user: UserBody) => Promise<boolean>;
+
+  /**
+   * Lists items in the application. Currently only supports one `type` ("policy").
+   * The items returned may be a static catalog hard-coded into the action or they
+   * may be based on dynamically fetched data in the application itself.
+   *
+   * Note the shape of the argument: `list` runs while someone is browsing for
+   * access, not while a grant is being provisioned, so it receives a query
+   * rather than a request context.
+   *
+   * @param query the type of query and the application ID
+   * @returns a list of items (key, value, and optional grouping) to display
+   * in a request modal dropdown
+   */
+  list: (query: ListerQuery) => Promise<ListerResponse>;
 };
 
 export const connectorParsers = newZodResourceRootParsers({

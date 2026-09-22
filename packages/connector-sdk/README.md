@@ -5,7 +5,7 @@ or GCP account, that lets P0 grant and revoke access to a custom application.
 
 ## Implementing Actions
 
-The core of the connector is an implementation for seven actions that you provide. These actions
+The core of the connector is an implementation for six actions that you provide. These actions
 are invoked by P0 to manage access grants in your application.
 
 ```ts
@@ -15,22 +15,19 @@ import type {
 } from "@p0security/connector-sdk";
 
 const newActions = (ctx: ConnectorContext): CustomAppConnectorActions => ({
-  validatePrincipal: async (context, principal) => {
-    /* whether P0 may act on this principal */
+  validateUser: async (context, user) => {
+    /* whether P0 may act on this user */
   },
-  validateUserId: async (context, userId) => {
-    /* whether P0 may act on this user id */
+  userExists: async (context, user) => {
+    /* whether this user already exists in the custom application */
   },
-  getUser: async (context, { principal }) => {
-    /* return an existing P0-managed user's id */
+  createUser: async (context, user) => {
+    /* provision a P0-managed user in the custom application */
   },
-  createUser: async (context, { principal }) => {
-    /* provision a P0-managed user in the custom application, return its id */
-  },
-  deleteUser: async (context, userId) => {
+  deleteUser: async (context, user) => {
     /* delete a P0-managed user in the custom application */
   },
-  setPoliciesForUser: async (context, userId, policies) => {
+  setPoliciesForUser: async (context, user, policies) => {
     /* replace the policies attached to a P0-managed user in the custom application */
   },
   list: async (query) => {
@@ -41,39 +38,24 @@ const newActions = (ctx: ConnectorContext): CustomAppConnectorActions => ({
 
 ## Validating users
 
-Two validation functions are required: `validatePrincipal` and `validateUserId`. The
-**principal** is the identity of the requestor in P0. The **user ID** is the identifier
-of a user in the application itself. In many cases, the principal can simply be
-reused as the user ID in the application.
+One validation function is required: `validateUser`. The SDK calls it before every other action
+that touches a user — `userExists`, `createUser`, `deleteUser`, and `setPoliciesForUser` — and
+abandons the request if it returns `false`.
 
 Some potential implementations, depending on your requirements, include:
 
-- Namespacing P0-managed users. For example, if `john.doe@acme.com` is the principal,
-  then creating a user `p0_john_doe` and checking that the user ID is prefixed with `p0_`
-  in `validateUserId`.
-- Domain verification on email addresses, in either `validatePrincipal` or
-  `validateUserId` (if applicable). For example, verifying that `john.doe@acme.com`
-  has `@acme.com` as a suffix.
-- Using `validatePrincipal` to check for a tag, group membership, or an organizational
-  unit that a principal lives in.
+- Domain verification on the principal. For example, verifying that `john.doe@acme.com` has
+  `@acme.com` as a suffix.
+- Checking for a tag, group membership, or an organizational unit that a principal lives in.
+- A directory lookup, to confirm the principal is someone your organization still employs.
 
-When implemented, these validation functions can be used to ensure that:
-
-- Users cannot be created in the application that don't follow specific rules or
-  conventions
-- P0-managed users are easily distinguishable from other users in the application
-- Permissions are only modified on P0-managed users in the application
-- Only P0-managed users are deleted in the application
-
-While both of these validations are required, you can opt out of user validation by
-simply returning `true`:
+While this validation is required, you can opt out of user validation by simply returning `true`:
 
 ```ts
 const newActions = (ctx: ConnectorContext): CustomAppConnectorActions => ({
   // This application's users are bare email addresses, with nowhere to put a
   // marker distinguishing the ones P0 created.
-  validatePrincipal: async () => true,
-  validateUserId: async () => true,
+  validateUser: async () => true,
 
   // ...
 });

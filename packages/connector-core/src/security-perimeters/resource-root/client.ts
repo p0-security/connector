@@ -42,6 +42,7 @@ export type ResourceRootSecurityPerimeter<
    */
   deleteUser: (params: {
     userId: Schema["UserId"];
+    userBody: Schema["UserBody"];
     context: Schema["RequestContext"];
   }) => Promise<null>;
 
@@ -51,6 +52,7 @@ export type ResourceRootSecurityPerimeter<
    */
   setPoliciesForUser: (params: {
     userId: Schema["UserId"];
+    userBody: Schema["UserBody"];
     policies: Schema["Policy"][];
     context: Schema["RequestContext"];
   }) => Promise<null>;
