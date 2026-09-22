@@ -1,0 +1,6 @@
+dist/
+build/
+node_modules/
+connector-lambda.zip
+/.yarn
+npm-debug.log*

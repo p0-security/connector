@@ -1,0 +1,24 @@
+{
+  "name": "p0-connector-example-aws-lambda",
+  "version": "0.1.0",
+  "description": "Example P0 Custom Application connector, deployed to AWS Lambda.",
+  "private": true,
+  "license": "LGPL-3.0-or-later",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist connector-lambda.zip",
+    "package": "./package.sh",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@p0security/connector-sdk": "^0.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  }
+}
