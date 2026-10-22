@@ -14,15 +14,16 @@ into a Cloud Run service and packaged as a container image.
 
 ## Environment
 
-| Variable                             | Required | Purpose                                                                                                                        |
-| ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `INVOKER_SA_EMAIL`                   | **yes**  | Service account P0 impersonates to call you. Every request must carry a Google-signed ID token whose `email` claim matches it. |
-| `CONNECTOR_AUDIENCE`                 | **yes**  | The audience P0 mints that token for: this service's `run.app` URL. The token's `aud` claim must equal it exactly.             |
-| `PORT`                               | no       | Listen port. Cloud Run injects this; the SDK defaults to `8080`.                                                               |
-| `LOG_LEVEL`                          | no       | pino level for the bundled logger. Defaults to `info`.                                                                         |
-| `GIT_REF`, `BUILD_DATE`, `WORKSPACE` | no       | Echoed back by `app.metadata.get`. Set them at deploy time so you can tell which build is live.                                |
+| Variable                             | Required | Purpose                                                                                                                                                                                                                                             |
+| ------------------------------------ | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INVOKER_SA_EMAIL`                   | **yes**  | Service account P0 impersonates to call you. Every request must carry a Google-signed ID token whose `email` claim matches it.                                                                                                                      |
+| `CONNECTOR_AUDIENCE`                 | **yes**  | The audience P0 mints that token for: the service URL the Cloud Run API reports as `uri`. The token's `aud` claim must equal it character for character, so another `run.app` URL for the same service, or a trailing slash, rejects every request. |
+| `PORT`                               | no       | Listen port. Cloud Run injects this; the SDK defaults to `8080`.                                                                                                                                                                                    |
+| `LOG_LEVEL`                          | no       | pino level for the bundled logger. Defaults to `info`.                                                                                                                                                                                              |
+| `GIT_REF`, `BUILD_DATE`, `WORKSPACE` | no       | Echoed back by `app.metadata.get`. Set them at deploy time so you can tell which build is live.                                                                                                                                                     |
 
-The SDK refuses to start when either required variable is unset or empty, rather than starting
+The SDK refuses to start when either required variable is unset or empty, or when
+`CONNECTOR_AUDIENCE` has leading or trailing whitespace, rather than starting
 and answering every request — including P0's install-time reachability check — with a `403` that
 looks like a genuine auth failure from the outside.
 
