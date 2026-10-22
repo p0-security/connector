@@ -33,6 +33,10 @@ reaches the container, and the SDK checks its `email` and `aud` again. If you ho
 somewhere other than Cloud Run, the SDK's check is the only gate, which is why `CONNECTOR_AUDIENCE`
 is required.
 
+`GET /health` is the one path that skips the token check. It answers `200` with
+`{"module":"<module name>"}` and reaches none of your actions, so point a load balancer's HTTP health check
+at it.
+
 ## What the actions do
 
 P0 drives a grant through the tRPC routes below. `list` runs while a requester browses for

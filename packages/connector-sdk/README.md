@@ -118,7 +118,9 @@ run();
   supports hosting outside Cloud Run. `run()` throws before binding a port if either variable is unset or empty, or
   if `CONNECTOR_AUDIENCE` has leading or trailing whitespace. On Cloud Run, also grant
   `INVOKER_SA_EMAIL` `roles/run.invoker` on the service. Hosted anywhere else, the bearer check is
-  the only gate in front of the connector.
+  the only gate in front of the connector. The one exception is `GET /health`, which answers `200`
+  without a token so a load balancer can health-check the container. It returns only the module
+  name and reaches none of your actions.
 - **AWS (Lambda)**: `newCustomAppLambdaHandler` returns your handler directly. There is no
   bearer-token check here — a Lambda invoke payload carries no caller identity to check, so the
   boundary is purely `lambda:InvokeFunction` IAM on the role P0 assumes to call you. Grant that role

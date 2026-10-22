@@ -46,6 +46,9 @@ const verifyToken = () => {
  * Requests must carry a Google-signed ID token whose `email` claim is
  * `$INVOKER_SA_EMAIL` and whose `aud` claim is exactly `$CONNECTOR_AUDIENCE`.
  * Throws before binding a port if either variable is unset or empty.
+ *
+ * `GET /health` is the one route served without a token, for load balancer
+ * health checks. It returns `{ module: moduleName }`.
  * @summary Creates a Cloud Run service that exposes a tRPC router over Express.
  * @category Cloud Functions
  *
