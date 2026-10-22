@@ -15,10 +15,15 @@ const verifyToken = () => {
     throw new Error("Invoker service account email is not set or present");
   }
   // google-auth-library compares the audience whenever one is passed, so an
-  // empty string would reject every token; treat it as unset.
+  // empty string would reject every token; treat it as unset. Surrounding
+  // whitespace (say, a trailing newline from a secret) would do the same.
+  // Refuse it rather than trim it, since the value must match what P0 mints.
   const audience = process.env.CONNECTOR_AUDIENCE ?? "";
   if (!audience) {
     throw new Error("Connector audience is not set or present");
+  }
+  if (audience !== audience.trim()) {
+    throw new Error("Connector audience has leading or trailing whitespace");
   }
   return async (token: string) => {
     const ticket = await client.verifyIdToken({

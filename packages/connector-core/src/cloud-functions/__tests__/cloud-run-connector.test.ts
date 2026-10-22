@@ -94,6 +94,18 @@ describe("runCloudRunConnector at startup", () => {
     );
     expect(runExpressApp).not.toHaveBeenCalled();
   });
+
+  it.each(["   ", ` ${AUDIENCE}`, `${AUDIENCE}\n`])(
+    "throws without serving when CONNECTOR_AUDIENCE is %j",
+    (value) => {
+      vi.stubEnv("CONNECTOR_AUDIENCE", value);
+
+      expect(() => runCloudRunConnector("test", emptyRouter)).toThrow(
+        /leading or trailing whitespace/
+      );
+      expect(runExpressApp).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe("the bearer check runCloudRunConnector serves", () => {
