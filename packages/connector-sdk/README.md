@@ -110,10 +110,15 @@ run();
 ## Deploying
 
 - **GCP (Cloud Run)**: calling the `run()` that `newCustomAppCloudRunServer` returns starts an
-  Express server on `$PORT` (default `8080`), gated by a bearer-token check against the identity P0 invokes
-  as. Set `INVOKER_SA_EMAIL` to the service account P0 impersonates to call your connector — every
-  incoming request fails closed (including P0's own install-time reachability check) if it's unset.
-  Grant that identity `roles/run.invoker` on the service.
+  Express server on `$PORT` (default `8080`), gated by a bearer-token check on the Google ID token P0
+  sends. Two variables are required. `INVOKER_SA_EMAIL` is the service account P0 impersonates to
+  call your connector, and the token's `email` claim must match it. `CONNECTOR_AUDIENCE` is the
+  audience P0 mints the token for, and the token's `aud` claim must equal it exactly. On Cloud Run it
+  is the service URL the Cloud Run API reports as `uri`. P0 will show the exact string when it
+  supports hosting outside Cloud Run. `run()` throws before binding a port if either variable is unset or empty, or
+  if `CONNECTOR_AUDIENCE` has leading or trailing whitespace. On Cloud Run, also grant
+  `INVOKER_SA_EMAIL` `roles/run.invoker` on the service. Hosted anywhere else, the bearer check is
+  the only gate in front of the connector.
 - **AWS (Lambda)**: `newCustomAppLambdaHandler` returns your handler directly. There is no
   bearer-token check here — a Lambda invoke payload carries no caller identity to check, so the
   boundary is purely `lambda:InvokeFunction` IAM on the role P0 assumes to call you. Grant that role

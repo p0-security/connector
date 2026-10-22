@@ -15,12 +15,12 @@ into an AWS Lambda function via `newCustomAppLambdaHandler`.
 ## Authorization
 
 Unlike the Cloud Run variant, there is no application-level bearer check here (no
-`INVOKER_SA_EMAIL` equivalent): AWS IAM is the only gate. P0 calls this function by assuming a
-role in your account (set up via the `p0_aws_iam_write` Terraform resource, or the equivalent
-console install flow) and invoking it with `lambda:InvokeFunction`. Whoever holds that permission
-on this function's ARN can call it — there's no second, in-connector identity check to configure,
-because Lambda has no public ingress for someone to reach the function without that IAM grant in
-the first place.
+`INVOKER_SA_EMAIL` or `CONNECTOR_AUDIENCE` equivalent): AWS IAM is the only gate. P0 calls this
+function by assuming a role in your account (set up via the `p0_aws_iam_write` Terraform resource,
+or the equivalent console install flow) and invoking it with `lambda:InvokeFunction`. Whoever
+holds that permission on this function's ARN can call it — there's no second, in-connector identity
+check to configure, because Lambda has no public ingress for someone to reach the function without
+that IAM grant in the first place.
 
 ## What the actions do
 

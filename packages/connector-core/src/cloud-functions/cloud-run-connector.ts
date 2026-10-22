@@ -14,9 +14,21 @@ const verifyToken = () => {
   if (!invokerSAEmail) {
     throw new Error("Invoker service account email is not set or present");
   }
+  // google-auth-library compares the audience whenever one is passed, so an
+  // empty string would reject every token; treat it as unset. Surrounding
+  // whitespace (say, a trailing newline from a secret) would do the same.
+  // Refuse it rather than trim it, since the value must match what P0 mints.
+  const audience = process.env.CONNECTOR_AUDIENCE ?? "";
+  if (!audience) {
+    throw new Error("Connector audience is not set or present");
+  }
+  if (audience !== audience.trim()) {
+    throw new Error("Connector audience has leading or trailing whitespace");
+  }
   return async (token: string) => {
     const ticket = await client.verifyIdToken({
       idToken: token,
+      audience,
     });
     const payload = ticket.getPayload();
     if (!payload || !payload.email) {
@@ -30,6 +42,10 @@ const verifyToken = () => {
 /**
  * Creates a Cloud Run service that exposes a tRPC router over Express at
  * `/trpc`, gated by bearer-token auth.
+ *
+ * Requests must carry a Google-signed ID token whose `email` claim is
+ * `$INVOKER_SA_EMAIL` and whose `aud` claim is exactly `$CONNECTOR_AUDIENCE`.
+ * Throws before binding a port if either variable is unset or empty.
  * @summary Creates a Cloud Run service that exposes a tRPC router over Express.
  * @category Cloud Functions
  *
@@ -42,6 +58,10 @@ export const runCloudRunConnector = <T>(
   router: AnyRouter,
   createContext?: (opts: CreateExpressContextOptions) => Promise<T>
 ) => {
+  // Read the environment before serving, so a misconfigured connector fails to
+  // start rather than answering every request with a 403.
+  const verify = verifyToken();
+
   const trpcRouter = Router();
   trpcRouter.use(
     createExpressMiddleware({
@@ -50,11 +70,7 @@ export const runCloudRunConnector = <T>(
     })
   );
 
-  const middlewares: RequestHandler[] = [
-    bearerAuthzMiddleware(async (token: string) => {
-      return verifyToken()(token);
-    }),
-  ];
+  const middlewares: RequestHandler[] = [bearerAuthzMiddleware(verify)];
 
   return runExpressApp(moduleName, { "/trpc": trpcRouter }, middlewares);
 };
