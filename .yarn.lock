@@ -1663,6 +1663,22 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@p0security/p0-connector-databricks-ai@workspace:services/p0-connector-databricks-ai":
+  version: 0.0.0-use.local
+  resolution: "@p0security/p0-connector-databricks-ai@workspace:services/p0-connector-databricks-ai"
+  dependencies:
+    "@aws-sdk/client-sts": "npm:^3.981.0"
+    "@p0security/connector-core": "workspace:^"
+    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
+    "@trpc/server": "npm:^11.10.0"
+    esbuild: "npm:^0.27.2"
+    prettier: "npm:^3.6.2"
+    typescript: "npm:^5.9.2"
+    vitest: "npm:^4.0.18"
+    zod: "npm:^4.3.6"
+  languageName: unknown
+  linkType: soft
+
 "@p0security/p0-connector-databricks@workspace:services/p0-connector-databricks":
   version: 0.0.0-use.local
   resolution: "@p0security/p0-connector-databricks@workspace:services/p0-connector-databricks"

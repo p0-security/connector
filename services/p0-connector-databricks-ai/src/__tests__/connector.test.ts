@@ -1,5 +1,5 @@
 import type * as Sts from "@aws-sdk/client-sts";
-import type * as Connector from "@p0security/connector";
+import type * as Connector from "@p0security/connector-core";
 import { expect, it, vi } from "vitest";
 
 /** What importing an entry point loaded. */
@@ -10,7 +10,7 @@ vi.mock("@aws-sdk/client-sts", async (importOriginal) => {
   return await importOriginal<typeof Sts>();
 });
 
-vi.mock("@p0security/connector", async (importOriginal) => {
+vi.mock("@p0security/connector-core", async (importOriginal) => {
   const actual = await importOriginal<typeof Connector>();
   return {
     ...actual,

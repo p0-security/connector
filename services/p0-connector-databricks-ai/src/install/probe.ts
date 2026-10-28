@@ -1,7 +1,7 @@
 import {
   ConnectorError,
   connectorErrorTypeForHttpStatus,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { CONNECTOR_VERSION } from "../databricks/api.ts";
 import type { DatabricksWorkspaceClient } from "../databricks/client.ts";

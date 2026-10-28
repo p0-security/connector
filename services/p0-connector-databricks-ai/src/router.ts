@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { router as dataRouter } from "./accesses/data/handler.ts";
 import { CONNECTOR_VERSION } from "./databricks/api.ts";

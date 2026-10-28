@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { type Server, createServer } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

@@ -1,4 +1,4 @@
-import type * as Connector from "@p0security/connector";
+import type * as Connector from "@p0security/connector-core";
 import { inspect } from "node:util";
 
 /**
@@ -8,7 +8,7 @@ import { inspect } from "node:util";
  * {@link recordingLoggerModule}:
  *
  * ```ts
- * vi.mock("@p0security/connector", async (importOriginal) =>
+ * vi.mock("@p0security/connector-core", async (importOriginal) =>
  *   (await import("./logs.ts")).recordingLoggerModule(importOriginal)
  * );
  * ```

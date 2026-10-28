@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-sts": "^3.981.0",
-    "@p0security/connector": "workspace:^",
+    "@p0security/connector-core": "workspace:^",
     "@trpc/server": "^11.10.0",
     "zod": "^4.3.6"
   },

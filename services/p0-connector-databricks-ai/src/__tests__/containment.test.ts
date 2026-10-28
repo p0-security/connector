@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import { inspect } from "node:util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -19,7 +19,7 @@ vi.mock("@aws-sdk/client-sts", async (importOriginal) =>
   (await import("./sts.ts")).fakeStsModule(importOriginal)
 );
 
-vi.mock("@p0security/connector", async (importOriginal) =>
+vi.mock("@p0security/connector-core", async (importOriginal) =>
   (await import("./logs.ts")).recordingLoggerModule(importOriginal)
 );
 

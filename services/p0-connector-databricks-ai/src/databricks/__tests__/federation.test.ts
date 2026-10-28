@@ -1,5 +1,5 @@
 import type * as Sts from "@aws-sdk/client-sts";
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { describe, expect, it, vi } from "vitest";
 
 import {

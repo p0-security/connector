@@ -1,7 +1,7 @@
 import {
   type AnyConnectorTRPCInstance,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { createPrincipal, principalByName } from "../agent/agent.ts";
 import { parse } from "../databricks/api.ts";
