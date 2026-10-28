@@ -294,15 +294,14 @@ accessor role doesn't have.
 | Variable                       | What it is                                                                                                                                                                             | Required       |
 | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
 | `ALLOWED_EMAIL_DOMAIN_PATTERN` | A regular expression for the email domains that may receive access, matched against the whole domain, ignoring case. Unset, blank or not a regular expression, every grant is refused. | Yes            |
-| `INVOKER_SA_EMAIL`             | The service account allowed to call the connector, which is P0's. Without it the Cloud Run service answers every call but `/health` with a 403.                                        | Cloud Run only |
+| `CONNECTOR_AUDIENCE`           | The audience P0 mints the ID token for: the service URL the Cloud Run API reports as `uri`. Without it the Cloud Run service refuses to start.                                         | Cloud Run only |
+| `INVOKER_SA_EMAIL`             | The service account allowed to call the connector, which is P0's. Without it the Cloud Run service refuses to start.                                                                   | Cloud Run only |
 | `LOG_LEVEL`                    | The pino log level. Defaults to `info`.                                                                                                                                                | No             |
 
 On Cloud Run the caller sends a Google ID token as a bearer token, and the
-connector accepts it only when its `email` claim is `INVOKER_SA_EMAIL`. It
-doesn't look at the token's audience, so keep the service private: Cloud
-Run's own check on who may invoke it is what turns away a token made for
-another service. `/health` answers without a token. A Lambda has no such
-check of its own: IAM decides who may invoke the function.
+connector accepts it only when its `email` claim is `INVOKER_SA_EMAIL` and
+its `aud` claim is exactly `CONNECTOR_AUDIENCE`. `/health` answers without a
+token. A Lambda checks no token: IAM decides who may invoke the function.
 
 The Cloud Run service listens on `PORT`, 8080 when unset.
 
@@ -332,12 +331,14 @@ certificate.
 
 ### GCP Cloud Run
 
-This is the command the Cloud Run image runs. `SKIP_VERIFY_TOKEN` turns the ID
-token check off for any value but an empty one, `0` and `false` included, so
-never set it on a deployment.
+This is the command the Cloud Run image runs. Cloud Run mode always verifies a
+Google-signed ID token, so set `INVOKER_SA_EMAIL` and `CONNECTOR_AUDIENCE`,
+and send an ID token for that service account with that audience. Any service
+account you hold `roles/iam.serviceAccountTokenCreator` on will do. The
+[AWS Lambda](#aws-lambda) entry point below takes no token.
 
 ```bash
-env PORT=18080 SKIP_VERIFY_TOKEN=1 \
+env PORT=18080 INVOKER_SA_EMAIL=<invoker-sa-email> CONNECTOR_AUDIENCE=http://127.0.0.1:18080 \
   yarn workspace @p0security/p0-connector-argocd run p0-connector-argocd
 ```
 
@@ -345,7 +346,11 @@ Then, from another shell:
 
 ```bash
 curl -s http://127.0.0.1:18080/health
-curl -s http://127.0.0.1:18080/trpc/argocd.metadata.get
+ID_TOKEN=$(gcloud auth print-identity-token --include-email \
+  --impersonate-service-account=<invoker-sa-email> \
+  --audiences=http://127.0.0.1:18080)
+curl -s -H "Authorization: Bearer $ID_TOKEN" \
+  http://127.0.0.1:18080/trpc/argocd.metadata.get
 ```
 
 ### AWS Lambda

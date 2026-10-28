@@ -188,8 +188,10 @@ docker build \
   -t p0-connector-jira-ai-gcloud:dev .
 ```
 
-The service needs `INVOKER_SA_EMAIL`, P0's service account: it accepts a
-call only with an ID token for that account.
+The service needs `INVOKER_SA_EMAIL`, P0's service account, and
+`CONNECTOR_AUDIENCE`, the service URL the Cloud Run API reports as `uri`. It
+accepts a call only with an ID token for that account and audience, and won't
+start without both.
 
 ## Publishing local builds
 
