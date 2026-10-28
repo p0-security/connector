@@ -176,11 +176,12 @@ call can widen it.
 
 ## Configuration
 
-| Variable               | What it is                                                                                                                                      | Required       |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `DOMAIN_ALLOW_PATTERN` | A regular expression for the email domains that may receive access. See [the domain allowlist](#the-domain-allowlist).                          | Yes            |
-| `INVOKER_SA_EMAIL`     | The service account allowed to call the connector, which is P0's. Without it the Cloud Run service answers every call but `/health` with a 403. | Cloud Run only |
-| `LOG_LEVEL`            | The pino log level. Defaults to `info`.                                                                                                         | No             |
+| Variable               | What it is                                                                                                                                     | Required       |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `CONNECTOR_AUDIENCE`   | The audience P0 mints the ID token for: the service URL the Cloud Run API reports as `uri`. Without it the Cloud Run service refuses to start. | Cloud Run only |
+| `DOMAIN_ALLOW_PATTERN` | A regular expression for the email domains that may receive access. See [the domain allowlist](#the-domain-allowlist).                         | Yes            |
+| `INVOKER_SA_EMAIL`     | The service account allowed to call the connector, which is P0's. Without it the Cloud Run service refuses to start.                           | Cloud Run only |
+| `LOG_LEVEL`            | The pino log level. Defaults to `info`.                                                                                                        | No             |
 
 The Cloud Run service listens on `PORT`, 8080 when unset. The image build
 sets `GIT_REF`, `BUILD_DATE` and `WORKSPACE`, which the connector reports as

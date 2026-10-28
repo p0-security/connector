@@ -374,6 +374,7 @@ customer's Terraform sets on the deployment.
 
 | Variable               | What it is                                                                                                                                     | Required       |
 | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `CONNECTOR_AUDIENCE`   | The audience P0 mints the ID token for: the service URL the Cloud Run API reports as `uri`.                                                    | Cloud Run only |
 | `DOMAIN_ALLOW_PATTERN` | A regular expression for the email domains the connector acts for. The connector refuses to start when it's missing, blank or doesn't compile. | Yes            |
 | `INVOKER_SA_EMAIL`     | The service account allowed to call the connector.                                                                                             | Cloud Run only |
 | `LOG_LEVEL`            | The pino log level. Defaults to `info`.                                                                                                        | No             |
