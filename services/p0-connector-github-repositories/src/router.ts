@@ -1,0 +1,26 @@
+import {
+  newConnectorRouter,
+  newConnectorTRPC,
+  newMetadataRouter,
+} from "@p0security/connector";
+
+import githubRepositoriesConnectorPackageJson from "../package.json" with { type: "json" };
+import { router as roleRouter } from "./accesses/role/handler.ts";
+import { router as validationRouter } from "./install/handler.ts";
+
+export const t = newConnectorTRPC();
+export const router = t.router;
+export const baseProcedure = t.procedure;
+
+const installRouter = router({ validation: validationRouter(t) });
+
+export const connectorRouter = newConnectorRouter(
+  "github-repositories" as const,
+  t,
+  { role: roleRouter(t) },
+  installRouter,
+  newMetadataRouter(
+    t,
+    githubRepositoriesConnectorPackageJson.version ?? "unknown"
+  )
+);
