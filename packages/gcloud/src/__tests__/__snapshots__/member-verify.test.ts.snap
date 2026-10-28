@@ -1,0 +1,5 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`member-verify > should verify allowed domain for user 1`] = `[ValidationError: Domain verification failed for member user:test@example1.com.]`;
+
+exports[`member-verify > should verify allowed domain for user 2`] = `[ValidationError: Member 'serviceAccount:test@test-project.serviceaccount.com' cannot be escalated through security perimeter.]`;

@@ -1,0 +1,38 @@
+{
+  "name": "@p0security/connector-cli",
+  "version": "1.0.1",
+  "private": true,
+  "description": "shared connector management CLI",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@p0security/development": "./src/index.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "format": "prettier --write '**/*.{html,js,ts,json,less,md}'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@aws-sdk/client-lambda": "^3.975.0",
+    "@p0security/connector-core": "workspace:^",
+    "@trpc/client": "^11.10.0",
+    "@trpc/server": "^11.10.0",
+    "google-auth-library": "^10.5.0",
+    "yargs": "^18.0.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/yargs": "^17.0.35",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "lint-staged": {
+    "*.(md|yaml|yml|json|js|ts|jsx|tsx)": "prettier --check"
+  }
+}

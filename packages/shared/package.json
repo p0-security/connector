@@ -1,0 +1,33 @@
+{
+  "name": "@p0security/sp-shared",
+  "license": "SEE LICENSE IN LICENSE",
+  "version": "1.0.0",
+  "private": true,
+  "description": "shared p0 helpers",
+  "type": "module",
+  "exports": {
+    "@p0security/development": "./src/index.ts",
+    "default": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "format": "prettier --write '**/*.{html,js,ts,json,less,md}'"
+  },
+  "dependencies": {
+    "axios": "^1.17.0",
+    "express": "^4.22.1",
+    "pino": "^9.14.0",
+    "recheck": "^4.5.0"
+  },
+  "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/express": "^4.17.25",
+    "prettier": "^3.8.1",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "lint-staged": {
+    "*.(md|yaml|yml|json|js|ts|jsx|tsx)": "prettier --check"
+  }
+}
