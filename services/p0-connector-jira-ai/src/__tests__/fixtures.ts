@@ -1,4 +1,4 @@
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { vi } from "vitest";
 
 import { TOKEN_URL } from "../jira/auth.ts";

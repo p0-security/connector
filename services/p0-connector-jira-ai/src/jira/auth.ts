@@ -3,7 +3,7 @@ import {
   type ConnectorErrorType,
   type Logger,
   connectorErrorTypeForHttpStatus,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { z } from "zod";
 
 import type { Site } from "../install/definition.ts";

@@ -4,7 +4,7 @@ import {
   ConnectorError,
   type ResourceRootSchemaOf,
   newResourceRootRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { requestDeadline } from "../../jira/atlassian-call.ts";
 import {

@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 
 /** How many times a call is sent, at most. */
 export const MAX_ATTEMPTS = 4;

@@ -2,7 +2,7 @@ import {
   type AnyConnectorTRPCInstance,
   type Logger,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { claimSite } from "../accesses/role/p0-roles.ts";
 import {

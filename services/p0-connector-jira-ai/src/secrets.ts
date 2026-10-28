@@ -2,7 +2,7 @@ import {
   ConnectorError,
   type ConnectorErrorType,
   type Logger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import {
   SecretAlreadyExistsError,
   type SecretManagerClient,
