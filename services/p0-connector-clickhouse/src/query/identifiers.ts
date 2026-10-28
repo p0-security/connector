@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 // ClickHouse's own limit on a name is the file system's, 255 bytes.
 const MAX_IDENTIFIER_BYTES = 255;

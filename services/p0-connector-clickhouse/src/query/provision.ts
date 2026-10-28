@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 
 import type { CloudClient, Endpoint, ListedEndpoint } from "../cloud/client.ts";
 import { isForbidden, isNotFound } from "../cloud/errors.ts";

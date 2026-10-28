@@ -176,10 +176,7 @@ type Policy =
     };
 
 type RefusalReason =
-  | "ambiguous_member"
-  | "domain_not_allowed"
-  | "not_member"
-  | "not_p0_role";
+  "ambiguous_member" | "domain_not_allowed" | "not_member" | "not_p0_role";
 
 it("./connector serves the contract's types", () => {
   expectTypeOf<OrganizationCredentials>().toEqualTypeOf<Credentials>();

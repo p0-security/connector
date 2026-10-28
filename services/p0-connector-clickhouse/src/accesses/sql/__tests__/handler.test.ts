@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import { cloneDeep } from "lodash-es";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 

@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 
 import type { CloudClient } from "../cloud/client.ts";
 import { isNotFound } from "../cloud/errors.ts";

@@ -3,7 +3,7 @@ import {
   type ConnectorErrorType,
   connectorErrorTypeForHttpStatus,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { QUERY_HOST, QUERY_TIMEOUT } from "../query/client.ts";
 import { type Api, CLOUD_HOST, CLOUD_TIMEOUT, ClickHouseError } from "./api.ts";

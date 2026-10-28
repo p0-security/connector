@@ -1,4 +1,4 @@
-import { newZodResourceHierarchyParsers } from "@p0security/connector";
+import { newZodResourceHierarchyParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 import { accessSchemas } from "../common/definition.ts";

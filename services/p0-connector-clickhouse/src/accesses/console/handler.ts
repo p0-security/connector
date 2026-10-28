@@ -4,7 +4,7 @@ import {
   ConnectorError,
   newResourceHierarchyRouter,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import type { PolicyRequest, Role } from "../../cloud/client.ts";
 import { serviceResource, sqlConsolePolicy } from "../../cloud/roles.ts";

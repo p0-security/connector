@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 
 import { requireAllowedDomains } from "../../allowed-domains.ts";
 import type { CloudClient, Member } from "../../cloud/client.ts";

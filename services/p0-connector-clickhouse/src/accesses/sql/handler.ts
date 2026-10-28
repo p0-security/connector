@@ -2,7 +2,7 @@ import {
   type AnyConnectorTRPCInstance,
   type ConnectorContext,
   newResourceHierarchyRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { sqlConsolePolicy } from "../../cloud/roles.ts";
 import { levelGrants } from "../../levels.ts";

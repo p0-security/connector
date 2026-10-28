@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { isEqual } from "lodash-es";
 
 import type { Policy, PolicyRequest, Role } from "./client.ts";

@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 
 import type { RequestContext } from "../accesses/common/definition.ts";
 import { router as consoleRouter } from "../accesses/console/handler.ts";

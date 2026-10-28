@@ -2,7 +2,7 @@ import {
   ConnectorError,
   type Logger,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { z } from "zod";
 
 import { type CloudClient, newCloudClient } from "../../cloud/client.ts";
