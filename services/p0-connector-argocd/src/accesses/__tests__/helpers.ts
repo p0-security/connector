@@ -1,5 +1,5 @@
 /** What the accesses' tests share. */
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 import { expect, vi } from "vitest";
 
 import { INSTANCE, TOKEN } from "../../__tests__/fixtures.ts";

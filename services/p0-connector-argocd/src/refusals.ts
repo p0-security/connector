@@ -1,6 +1,9 @@
 // copy of services/p0-connector-harbor/src/refusals.ts, with Argo CD's
 // reasons
-import { ConnectorError, type ConnectorErrorData } from "@p0security/connector";
+import {
+  ConnectorError,
+  type ConnectorErrorData,
+} from "@p0security/connector-core";
 import { z } from "zod";
 
 /**

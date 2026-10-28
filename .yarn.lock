@@ -1542,6 +1542,24 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@p0security/p0-connector-argocd@workspace:services/p0-connector-argocd":
+  version: 0.0.0-use.local
+  resolution: "@p0security/p0-connector-argocd@workspace:services/p0-connector-argocd"
+  dependencies:
+    "@p0security/connector-core": "workspace:^"
+    "@p0security/secret-manager-client": "workspace:^"
+    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
+    "@trpc/server": "npm:^11.10.0"
+    esbuild: "npm:^0.27.2"
+    prettier: "npm:^3.8.1"
+    typescript: "npm:^5.9.2"
+    vitest: "npm:^4.0.18"
+    zod: "npm:^4.3.6"
+  bin:
+    p0-connector-argocd: ./dist/run.js
+  languageName: unknown
+  linkType: soft
+
 "@p0security/p0-connector-cloudsql@workspace:services/p0-connector-cloudsql":
   version: 0.0.0-use.local
   resolution: "@p0security/p0-connector-cloudsql@workspace:services/p0-connector-cloudsql"

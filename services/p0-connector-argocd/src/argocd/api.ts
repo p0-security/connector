@@ -1,6 +1,6 @@
 // copy of services/p0-connector-harbor/src/harbor/api.ts, with Argo CD's
 // bearer token, its two route prefixes and its `**` path parts
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 import type { z } from "zod";
 
 import { describeFailure, failureFacts } from "../failure.ts";

@@ -1,7 +1,7 @@
 // Adapted from services/p0-connector-harbor/src/__tests__/secrets.test.ts: the
 // failure cases are a copy, and the value is Argo CD's `{"token": ...}`
 // instead of Harbor's robot file.
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import {
   SecretNotFoundError,
   type SecretRef,

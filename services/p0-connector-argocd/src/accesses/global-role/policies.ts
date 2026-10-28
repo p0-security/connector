@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 
 import type { ConnectArgoCd } from "../../argocd/client.ts";
 import type { Grant } from "../../argocd/policy.ts";

@@ -1,4 +1,4 @@
-import type { ResourceRootSchemaOf } from "@p0security/connector";
+import type { ResourceRootSchemaOf } from "@p0security/connector-core";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { expect, expectTypeOf, it, vi } from "vitest";
 

@@ -1,5 +1,5 @@
 // copy of services/p0-connector-harbor/src/allowlist.ts, for Argo CD
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 
 import { refusal } from "./refusals.ts";
 
@@ -17,8 +17,7 @@ export const ALLOWED_EMAIL_DOMAIN_PATTERN_ENV = "ALLOWED_EMAIL_DOMAIN_PATTERN";
 
 /** Why there is no allowlist. `detail` is the regex engine's own message. */
 type AllowlistProblem =
-  | { reason: "invalid_regex"; detail: string }
-  | { reason: "unset" };
+  { reason: "invalid_regex"; detail: string } | { reason: "unset" };
 
 type Allowlist =
   | { ok: false; problem: AllowlistProblem }

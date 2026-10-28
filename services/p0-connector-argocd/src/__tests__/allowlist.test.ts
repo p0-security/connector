@@ -1,5 +1,5 @@
 // copy of services/p0-connector-harbor/src/__tests__/allowlist.test.ts, for Argo CD
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {

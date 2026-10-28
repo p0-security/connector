@@ -7,7 +7,7 @@ import {
   type ConnectorErrorOptions,
   type Logger,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { hostOf } from "../accesses/common.ts";
 import { policyNotLoaded } from "../accesses/lines.ts";

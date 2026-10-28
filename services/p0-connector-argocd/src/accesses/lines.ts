@@ -12,7 +12,7 @@ import {
   ConnectorError,
   type Logger,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { assertAllowedEmail } from "../allowlist.ts";
 import {

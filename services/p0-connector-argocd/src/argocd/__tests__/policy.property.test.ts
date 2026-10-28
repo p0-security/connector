@@ -448,7 +448,7 @@ describe(`the policy model, over random input (PROPERTY_SEED=${seed})`, () => {
         // The oracle: a fixpoint over the counted edges.
         const reach = (from: string) => {
           const seen = new Set([from]);
-          for (let grew = true; grew; ) {
+          for (let grew = true; grew;) {
             grew = false;
             for (const [subject, role] of counted) {
               if (seen.has(subject) && !seen.has(role)) {

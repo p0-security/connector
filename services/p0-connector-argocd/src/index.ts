@@ -1,5 +1,5 @@
 // copy of services/p0-connector-harbor/src/index.ts
-import { createLogger, newCloudFunction } from "@p0security/connector";
+import { createLogger, newCloudFunction } from "@p0security/connector-core";
 
 import { connectorRouter } from "./router.ts";
 

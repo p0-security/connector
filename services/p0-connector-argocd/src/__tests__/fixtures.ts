@@ -1,7 +1,7 @@
 // copy of services/p0-connector-harbor/src/__tests__/fixtures.ts, with Argo CD's
 // API token in place of Harbor's robot account
 /** The values and helpers the connector's tests share. */
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { inspect } from "node:util";
 import { vi } from "vitest";
 

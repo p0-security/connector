@@ -1,6 +1,6 @@
 // copy of services/p0-connector-harbor/src/harbor/__tests__/api.test.ts, for
 // Argo CD's bearer token, its route prefixes and its `**` path parts
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";

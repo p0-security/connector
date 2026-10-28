@@ -1,6 +1,6 @@
 // copy of services/p0-connector-harbor/src/__tests__/refusals.test.ts, with
 // Argo CD's reasons
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { describe, expect, it } from "vitest";
 
 import { ARGOCD_REFUSAL_REASONS, refusal } from "../refusals.ts";

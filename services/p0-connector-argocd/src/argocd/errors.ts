@@ -1,6 +1,6 @@
 // copy of services/p0-connector-harbor/src/harbor/errors.ts, for Argo CD's
 // statuses and failures, without Harbor's refusals
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 import { describeFailure } from "../failure.ts";
 import { ARGOCD_TIMEOUT_MS, ArgoCdError } from "./api.ts";

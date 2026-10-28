@@ -1,6 +1,6 @@
 // copy of services/p0-connector-harbor/src/harbor/__tests__/errors.test.ts,
 // for Argo CD's statuses and failures
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { describe, expect, it } from "vitest";
 
 import {

@@ -1,7 +1,7 @@
 // copy of services/p0-connector-harbor/src/harbor/client.ts's shape: the
 // calls as a table, a client over the API, and a connect that reads the
 // token on every call
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 import { z } from "zod";
 
 import type { Instance } from "../instance.ts";

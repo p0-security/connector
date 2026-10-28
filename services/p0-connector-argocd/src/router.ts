@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import argocdConnectorPackageJson from "../package.json" with { type: "json" };
 import { router as globalRoleRouter } from "./accesses/global-role/handler.ts";
