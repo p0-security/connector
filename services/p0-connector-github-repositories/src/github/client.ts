@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 import type { AppCredentials } from "../accesses/role/definition.ts";
 import { getGithubPrivateKey } from "../secrets.ts";

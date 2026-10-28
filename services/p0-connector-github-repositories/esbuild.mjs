@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-
 import esbuild from "esbuild";
 
 esbuild

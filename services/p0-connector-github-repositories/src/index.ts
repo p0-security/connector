@@ -1,4 +1,4 @@
-import { createLogger, newCloudFunction } from "@p0security/connector";
+import { createLogger, newCloudFunction } from "@p0security/connector-core";
 
 import { connectorRouter } from "./router.ts";
 import { connectorSpec } from "./spec.ts";

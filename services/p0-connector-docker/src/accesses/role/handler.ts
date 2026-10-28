@@ -7,7 +7,7 @@ import {
   type ResourceRootSchemaOf,
   newResourceRootRouter,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { requireAllowedDomains } from "../../allowed-domains.ts";
 import type { DockerHubError, OrgMember } from "../../dockerhub/api.ts";

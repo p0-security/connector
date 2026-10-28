@@ -7,7 +7,7 @@ import {
   type ResourceRootSchemaOf,
   newResourceRootRouter,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { GitHubError } from "../../github/api.ts";
 import {

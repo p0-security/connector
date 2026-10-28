@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { inspect } from "node:util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
