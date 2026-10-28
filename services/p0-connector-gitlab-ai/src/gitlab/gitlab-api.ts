@@ -2,7 +2,7 @@ import {
   ConnectorError,
   connectorErrorTypeForHttpStatus,
   createLogger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 const logger = createLogger();
 
@@ -113,7 +113,7 @@ const gitlabRequest = async <T>(
 
 /** Reads every page of a list endpoint. */
 const listAll = async <T>(
-  request: Omit<GitlabRequest, "method" | "body">
+  request: Omit<GitlabRequest, "body" | "method">
 ): Promise<T[]> => {
   const items: T[] = [];
   let page: string | undefined = "1";

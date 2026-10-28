@@ -2,7 +2,7 @@ import {
   ConnectorError,
   connectorErrorTypeForHttpStatus,
   createLogger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import type { AtlasProjectRole } from "./roles.ts";
 

@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { generateKeyPairSync, verify } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -141,6 +141,7 @@ describe("newProvisionerClient", () => {
     expect(url).toContain(
       "https://acme.service-now.com/api/now/table/sys_user?"
     );
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- copied from perim as-is; preserve its stringification
     expect(decodeURIComponent(String(url))).toContain(
       "sysparm_query=user_name=p0-agent-abc"
     );
@@ -159,6 +160,7 @@ describe("newProvisionerClient", () => {
     await expect(client.createUser("p0-agent-abc")).resolves.toBe(
       "b".repeat(32)
     );
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- copied from perim as-is; preserve its stringification
     expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({
       user_name: "p0-agent-abc",
       identity_type: "machine",

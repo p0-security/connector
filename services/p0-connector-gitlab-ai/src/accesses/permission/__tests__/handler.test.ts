@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
 import type {
   SecretRef,
@@ -76,7 +76,7 @@ const SA_ID = 9;
 const caller = () => router(t).createCaller({ logger: createLogger() });
 
 const setPolicies = (
-  memberships: { project: string; role: "reporter" | "developer" }[]
+  memberships: { project: string; role: "developer" | "reporter" }[]
 ) =>
   caller().setPoliciesForUser({
     userId: GRANT_REF,

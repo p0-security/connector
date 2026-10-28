@@ -6,7 +6,7 @@ import {
   type ResourceRootSchemaOf,
   newResourceRootRouter,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import {
   type SecretManagerProviderConfig,
   SecretNotFoundError,

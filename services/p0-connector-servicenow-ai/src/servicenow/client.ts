@@ -2,7 +2,7 @@ import {
   ConnectorError,
   connectorErrorTypeForHttpStatus,
   createLogger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { createPrivateKey, randomUUID, sign } from "node:crypto";
 
 const logger = createLogger();
@@ -282,6 +282,7 @@ export const newProvisionerClient = async (
         )
       ).map((row) => ({
         rowId: String(row.sys_id),
+        // eslint-disable-next-line @typescript-eslint/no-base-to-string -- copied from perim as-is; preserve its stringification
         roleName: String(row["role.name"] ?? ""),
       })),
 
