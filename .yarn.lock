@@ -1567,6 +1567,27 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@p0security/p0-connector-docker@workspace:services/p0-connector-docker":
+  version: 0.0.0-use.local
+  resolution: "@p0security/p0-connector-docker@workspace:services/p0-connector-docker"
+  dependencies:
+    "@p0security/connector-core": "workspace:^"
+    "@p0security/secret-manager-client": "workspace:^"
+    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
+    "@trpc/server": "npm:^11.10.0"
+    "@types/lodash-es": "npm:^4.17.12"
+    esbuild: "npm:^0.27.2"
+    lodash-es: "npm:^4.17.23"
+    pino: "npm:^9.14.0"
+    prettier: "npm:^3.6.2"
+    typescript: "npm:^5.9.2"
+    vitest: "npm:^3.2.4"
+    zod: "npm:^4.3.6"
+  bin:
+    p0-connector-docker: ./dist/run.js
+  languageName: unknown
+  linkType: soft
+
 "@p0security/p0-connector-gcp-service-account@workspace:services/p0-connector-gcp-service-account":
   version: 0.0.0-use.local
   resolution: "@p0security/p0-connector-gcp-service-account@workspace:services/p0-connector-gcp-service-account"
@@ -1602,6 +1623,25 @@ __metadata:
     zod: "npm:^4.3.6"
   bin:
     p0-connector-github-ai: ./dist/run.js
+  languageName: unknown
+  linkType: soft
+
+"@p0security/p0-connector-github-repositories@workspace:services/p0-connector-github-repositories":
+  version: 0.0.0-use.local
+  resolution: "@p0security/p0-connector-github-repositories@workspace:services/p0-connector-github-repositories"
+  dependencies:
+    "@p0security/connector-core": "workspace:^"
+    "@p0security/secret-manager-client": "workspace:^"
+    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
+    "@trpc/server": "npm:^11.10.0"
+    "@types/jsonwebtoken": "npm:^9"
+    esbuild: "npm:^0.27.2"
+    jsonwebtoken: "npm:^9"
+    pino: "npm:^9.14.0"
+    prettier: "npm:^3.6.2"
+    typescript: "npm:^5.9.2"
+    vitest: "npm:^4.0.18"
+    zod: "npm:^4.3.6"
   languageName: unknown
   linkType: soft
 
