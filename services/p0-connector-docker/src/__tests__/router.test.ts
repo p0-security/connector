@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import packageJson from "../../package.json" with { type: "json" };

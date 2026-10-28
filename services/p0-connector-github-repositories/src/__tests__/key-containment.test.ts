@@ -2,7 +2,7 @@ import {
   createLogger,
   newCloudFunctionLink,
   newTRPCConnectorClient,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import {
   SecretNotFoundError,
   type SecretRef,
@@ -434,9 +434,8 @@ const bearers = (requests: Sent[]) =>
 
 const credentialsUsed = (requests: Sent[]): Credential[] => [
   ...new Set(
-    bearers(requests).map(
-      (bearer): Credential =>
-        bearer === TOKEN ? "installation token" : "App JWT"
+    bearers(requests).map((bearer): Credential =>
+      bearer === TOKEN ? "installation token" : "App JWT"
     )
   ),
 ];

@@ -2,7 +2,7 @@ import {
   ConnectorError,
   type ConnectorErrorType,
   connectorErrorTypeForHttpStatus,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { DockerHubError } from "./api.ts";
 

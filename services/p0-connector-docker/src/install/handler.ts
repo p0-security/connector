@@ -1,4 +1,4 @@
-import type { AnyConnectorTRPCInstance } from "@p0security/connector";
+import type { AnyConnectorTRPCInstance } from "@p0security/connector-core";
 
 import { orgCredentials } from "../accesses/role/definition.ts";
 import { requireAllowedDomains } from "../allowed-domains.ts";

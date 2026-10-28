@@ -1,4 +1,4 @@
-import { newZodResourceRootParsers } from "@p0security/connector";
+import { newZodResourceRootParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 // A pointer to the customer app's private key in the customer's own AWS

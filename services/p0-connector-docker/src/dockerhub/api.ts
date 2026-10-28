@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 import { compact } from "lodash-es";
 import { z } from "zod";
 
@@ -290,18 +290,16 @@ const member = z
       .object({ name: z.string().min(1), is_system: z.boolean().nullish() })
       .nullish(),
   })
-  .transform(
-    ({ username, uuid, email, role, assigned_role }): OrgMember => ({
-      username,
-      uuid,
-      email: email ?? undefined,
-      // `role` only ever names a core role, so a custom one comes from here.
-      role:
-        assigned_role?.is_system === false
-          ? assigned_role.name
-          : role.toLowerCase(),
-    })
-  );
+  .transform(({ username, uuid, email, role, assigned_role }): OrgMember => ({
+    username,
+    uuid,
+    email: email ?? undefined,
+    // `role` only ever names a core role, so a custom one comes from here.
+    role:
+      assigned_role?.is_system === false
+        ? assigned_role.name
+        : role.toLowerCase(),
+  }));
 
 const memberPage = z.object({
   next: z.string().nullish(),
@@ -393,13 +391,11 @@ const invite = z
     invitee: z.string(),
     role: z.string().min(1),
   })
-  .transform(
-    ({ id, invitee, role }): OrgInvite => ({
-      id,
-      invitee,
-      role: role.toLowerCase(),
-    })
-  );
+  .transform(({ id, invitee, role }): OrgInvite => ({
+    id,
+    invitee,
+    role: role.toLowerCase(),
+  }));
 
 const inviteList = z.object({ data: z.array(invite) });
 

@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 import { z } from "zod";
 
 import type {
