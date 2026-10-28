@@ -1,0 +1,26 @@
+.git/
+.github/
+gha-creds-*.json
+.husky/
+.vscode/
+.gitmodules
+.semgrepignore
+**/.dockerignore
+**/.gcloudignore
+**/.gitignore
+**/.hadolint.yaml
+**/Dockerfile
+**/prettierignore
+**/vitest.config.ts
+**/prettier.config.js
+**/README.md
+**/Taskfile.yml
+**/node_modules/
+**/__tests__/
+**/dist/
+**/*.tsbuildinfo
+
+# Local stand-ins for the Harbor connector. Not part of any image.
+services/p0-connector-harbor/dev/
+# Local stand-ins for the Argo CD connector. Not part of any image.
+services/p0-connector-argocd/dev/
