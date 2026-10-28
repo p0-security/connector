@@ -1,4 +1,4 @@
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { z } from "zod";
 
 const logger = createLogger();
@@ -33,8 +33,7 @@ const domainPattern = z
   });
 
 type DomainPattern =
-  | { ok: false; problem: string }
-  | { ok: true; regex: RegExp };
+  { ok: false; problem: string } | { ok: true; regex: RegExp };
 
 const readDomainPattern = (): DomainPattern => {
   const parsed = domainPattern.safeParse(process.env[DOMAIN_PATTERN_ENV]);

@@ -2,7 +2,7 @@ import {
   type AnyConnectorTRPCInstance,
   ConnectorError,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { failedRequest, parse } from "../databricks/api.ts";
 import {

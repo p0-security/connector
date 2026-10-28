@@ -26,7 +26,7 @@ import {
 vi.mock("@aws-sdk/client-sts", async (importOriginal) =>
   (await import("../../__tests__/sts.ts")).fakeStsModule(importOriginal)
 );
-vi.mock("@p0security/connector", async (importOriginal) =>
+vi.mock("@p0security/connector-core", async (importOriginal) =>
   (await import("../../__tests__/logs.ts")).recordingLoggerModule(
     importOriginal
   )
