@@ -4,8 +4,11 @@ import type {
   Logger,
   ResourceRootConnectorPrimitives,
   ResourceRootSchemaOf,
-} from "@p0security/connector";
-import { ConnectorError, newResourceRootRouter } from "@p0security/connector";
+} from "@p0security/connector-core";
+import {
+  ConnectorError,
+  newResourceRootRouter,
+} from "@p0security/connector-core";
 import { isAgenticIdentityEmail } from "@p0security/gcloud-common";
 
 import type { DriveApi, DrivePermission } from "../../drive/api.ts";

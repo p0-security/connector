@@ -1,4 +1,4 @@
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { DriveApi, DriveFile } from "../../../drive/api.ts";
