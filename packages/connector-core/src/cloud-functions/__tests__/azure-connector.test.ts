@@ -1,21 +1,19 @@
-import type * as sharedModule from "@p0security/sp-shared";
 import { initTRPC } from "@trpc/server";
 import type { Request, RequestHandler, Response } from "express";
 import jwt from "jsonwebtoken";
 import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { runAzureConnector } from "../azureConnector.ts";
-import { entraIssuer } from "../entraToken.ts";
+import type * as http from "../../http/index.ts";
+import { runAzureConnector } from "../azure-connector.ts";
+import { entraIssuer } from "../entra-token.ts";
 
 // `vi.hoisted` guarantees this exists before the (hoisted) `vi.mock` factory runs.
-const runExpressApp = vi.hoisted(() =>
-  vi.fn<typeof sharedModule.runExpressApp>()
-);
+const runExpressApp = vi.hoisted(() => vi.fn<typeof http.runExpressApp>());
 
 // Stops the server from listening; the tests call its middleware directly.
-vi.mock("@p0security/sp-shared", async (importOriginal) => ({
-  ...(await importOriginal<typeof sharedModule>()),
+vi.mock("../../http/index.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof http>()),
   runExpressApp,
 }));
 
@@ -47,7 +45,6 @@ const callMiddleware = (
 
 describe("runAzureConnector", () => {
   beforeEach(() => {
-    vi.stubEnv("SKIP_VERIFY_TOKEN", "");
     vi.stubEnv("P0_INVOKER_TENANT_ID", TENANT_ID);
     vi.stubEnv("P0_INVOKER_CLIENT_ID", CLIENT_ID);
     vi.stubGlobal("fetch", async () =>
@@ -87,11 +84,12 @@ describe("runAzureConnector", () => {
     }
   );
 
-  it("starts without the env vars or a token check when SKIP_VERIFY_TOKEN is set", () => {
+  it("ignores SKIP_VERIFY_TOKEN", () => {
     vi.stubEnv("SKIP_VERIFY_TOKEN", "true");
     vi.stubEnv("P0_INVOKER_TENANT_ID", "");
-    vi.stubEnv("P0_INVOKER_CLIENT_ID", "");
-    expect(runAndGetMiddlewares()).toEqual([]);
+    expect(() => runAzureConnector("test connector", router)).toThrow(
+      "P0_INVOKER_TENANT_ID"
+    );
   });
 
   it("passes a request with a valid token", async () => {
