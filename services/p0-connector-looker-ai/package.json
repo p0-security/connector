@@ -1,0 +1,39 @@
+{
+  "name": "@p0security/p0-connector-looker-ai",
+  "version": "1.0.0",
+  "description": "P0 Looker (Agentic) connector (GCP Cloud Run)",
+  "type": "module",
+  "exports": {
+    ".": {
+      "@p0security/development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./connector": {
+      "@p0security/development": "./src/connector.ts",
+      "default": "./dist/connector.js"
+    }
+  },
+  "bin": "./dist/run.js",
+  "scripts": {
+    "format": "prettier --write '**/*.{html,js,ts,json,less,md}'",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@p0security/connector-core": "workspace:^",
+    "@p0security/secret-manager-client": "workspace:^",
+    "@trpc/server": "^11.10.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "pino": "^9.14.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.18"
+  },
+  "lint-staged": {
+    "*.(md|yaml|yml|json|js|ts|jsx|tsx)": "prettier --check"
+  }
+}
