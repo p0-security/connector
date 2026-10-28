@@ -1,4 +1,4 @@
-import type * as connectorModule from "@p0security/connector";
+import type * as connectorModule from "@p0security/connector-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ALLOWED_PATTERN, LOAD_TIMEOUT_MS } from "./fixtures.ts";
@@ -7,7 +7,7 @@ import { ALLOWED_PATTERN, LOAD_TIMEOUT_MS } from "./fixtures.ts";
 const runCloudRunConnector = vi.hoisted(() => vi.fn());
 
 // The Cloud Run entry point starts a server as it loads.
-vi.mock("@p0security/connector", async (importOriginal) => ({
+vi.mock("@p0security/connector-core", async (importOriginal) => ({
   ...(await importOriginal<typeof connectorModule>()),
   runCloudRunConnector,
 }));

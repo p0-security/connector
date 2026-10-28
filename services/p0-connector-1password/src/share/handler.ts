@@ -4,7 +4,7 @@ import {
   ConnectorError,
   type Logger,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import type { TokenSecret } from "../accesses/share/definition.ts";
 import { requireAllowedDomains } from "../allowed-domains.ts";

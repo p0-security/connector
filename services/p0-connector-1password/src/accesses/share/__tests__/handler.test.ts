@@ -1,5 +1,5 @@
 import type { ItemOverview } from "@1password/sdk";
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {

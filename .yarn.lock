@@ -5,6 +5,22 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
+"@1password/sdk-core@npm:0.5.0":
+  version: 0.5.0
+  resolution: "@1password/sdk-core@npm:0.5.0"
+  checksum: 10c0/ed1bb8f913ca93a4e7b2f13f87a8a8d8458e249151db277e91cc14ae2ec51c01181b323d3c5e874bf7f02ef7a3a23f963b8665f8ed3130f8727aeda46e2585f1
+  languageName: node
+  linkType: hard
+
+"@1password/sdk@npm:0.5.0":
+  version: 0.5.0
+  resolution: "@1password/sdk@npm:0.5.0"
+  dependencies:
+    "@1password/sdk-core": "npm:0.5.0"
+  checksum: 10c0/53e141c48b37352ffb674f4ac7fa2515259f127d48214c29aa0c6e86849d383f40610ceb17a61cef862e435db99536c83d09c21564e408b84eb5558d563f3d82
+  languageName: node
+  linkType: hard
+
 "@aws-sdk/client-lambda@npm:^3.975.0":
   version: 3.1119.0
   resolution: "@aws-sdk/client-lambda@npm:3.1119.0"
@@ -1539,6 +1555,28 @@ __metadata:
     recheck: "npm:^4.5.0"
     typescript: "npm:^5.9.2"
     vitest: "npm:^3.2.4"
+  languageName: unknown
+  linkType: soft
+
+"@p0security/p0-connector-1password@workspace:services/p0-connector-1password":
+  version: 0.0.0-use.local
+  resolution: "@p0security/p0-connector-1password@workspace:services/p0-connector-1password"
+  dependencies:
+    "@1password/sdk": "npm:0.5.0"
+    "@p0security/connector-core": "workspace:^"
+    "@p0security/secret-manager-client": "workspace:^"
+    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
+    "@trpc/server": "npm:^11.10.0"
+    "@types/lodash-es": "npm:^4.17.12"
+    esbuild: "npm:^0.27.2"
+    lodash-es: "npm:^4.17.23"
+    pino: "npm:^9.14.0"
+    prettier: "npm:^3.6.2"
+    typescript: "npm:^5.9.2"
+    vitest: "npm:^3.2.4"
+    zod: "npm:^4.3.6"
+  bin:
+    p0-connector-1password: ./dist/run.js
   languageName: unknown
   linkType: soft
 

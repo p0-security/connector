@@ -5,7 +5,7 @@ import { requireAllowedDomains } from "./allowed-domains.ts";
 requireAllowedDomains();
 
 const { createLogger, runCloudRunConnector } =
-  await import("@p0security/connector");
+  await import("@p0security/connector-core");
 const { connectorRouter } = await import("./router.ts");
 
 const logger = createLogger();

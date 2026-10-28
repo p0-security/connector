@@ -1,4 +1,4 @@
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { vi } from "vitest";
 
 /** What `run` threw, for a test that looks at more than its message. */

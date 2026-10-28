@@ -2,7 +2,7 @@ import {
   createLogger,
   newCloudFunctionLink,
   newTRPCConnectorClient,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { format, inspect } from "node:util";
 import type * as pinoModule from "pino";
 import { beforeEach, describe, expect, it, vi } from "vitest";
