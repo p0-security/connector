@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 /**
  * The one policy P0 sends. Any other count is `unknown`: P0 always sends

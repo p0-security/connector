@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CLIENT_ID, CLIENT_SECRET, TENANT } from "../../__tests__/fixtures.ts";

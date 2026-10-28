@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import auth0ConnectorPackageJson from "../package.json" with { type: "json" };
 import { router as organizationRouter } from "./accesses/organization/handler.ts";

@@ -4,7 +4,7 @@ import {
   type ConnectorErrorOptions,
   type Logger,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { requireAllowedDomains } from "../allowed-domains.ts";
 import { type Auth0Client, newAuth0Client } from "../auth0/client.ts";

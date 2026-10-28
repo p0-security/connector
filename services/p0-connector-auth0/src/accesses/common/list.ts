@@ -1,4 +1,4 @@
-import { type Logger, throwAssertNever } from "@p0security/connector";
+import { type Logger, throwAssertNever } from "@p0security/connector-core";
 
 import { newAuth0Client } from "../../auth0/client.ts";
 import { callAuth0 } from "../../auth0/errors.ts";

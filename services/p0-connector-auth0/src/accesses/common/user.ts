@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 
 import { requireAllowedDomains } from "../../allowed-domains.ts";
 import type { Auth0Client } from "../../auth0/client.ts";

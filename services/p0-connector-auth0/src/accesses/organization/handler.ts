@@ -6,7 +6,7 @@ import {
   type ResourceRootConnectorPrimitives,
   type ResourceRootSchemaOf,
   newResourceRootRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { Auth0Error } from "../../auth0/api.ts";
 import { type Auth0Client, newAuth0Client } from "../../auth0/client.ts";

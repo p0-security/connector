@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 import { uniq, uniqBy } from "lodash-es";
 import { z } from "zod";
 

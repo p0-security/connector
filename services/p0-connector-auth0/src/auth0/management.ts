@@ -78,13 +78,11 @@ const user = z
       .array(z.object({ connection: z.string().nullish() }))
       .nullish(),
   })
-  .transform(
-    ({ user_id, email, identities }): Auth0User => ({
-      userId: user_id,
-      email: email ?? undefined,
-      connection: identities?.[0]?.connection ?? undefined,
-    })
-  );
+  .transform(({ user_id, email, identities }): Auth0User => ({
+    userId: user_id,
+    email: email ?? undefined,
+    connection: identities?.[0]?.connection ?? undefined,
+  }));
 
 /**
  * `GET /users-by-email`: every user with exactly this email, one per unlinked
