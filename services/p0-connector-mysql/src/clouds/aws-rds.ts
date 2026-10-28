@@ -1,5 +1,5 @@
 import { Signer } from "@aws-sdk/rds-signer";
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import awsCaBundle from "aws-ssl-profiles";
 import z from "zod";
 

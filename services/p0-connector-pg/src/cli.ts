@@ -3,9 +3,10 @@ import { runConnectorCli } from "@p0security/connector-cli";
 import type { TRPCClient } from "@trpc/client";
 import { z } from "zod";
 
-import { PostgresConnectorRouter, PostgresConnectorSpec } from "./index.js";
+import type { PostgresConnectorRouter } from "./index.js";
+import { PostgresConnectorSpec } from "./index.js";
 
-runConnectorCli({
+void runConnectorCli({
   parsers: PostgresConnectorSpec.role,
   optionsSchema: z.object({
     dbHost: z.string().describe("The database host"),

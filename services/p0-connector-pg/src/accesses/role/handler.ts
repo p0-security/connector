@@ -3,7 +3,7 @@ import {
   type ConnectorContext,
   newResourceHierarchyRouter,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { ident } from "../../sql/identifier.ts";
 import {

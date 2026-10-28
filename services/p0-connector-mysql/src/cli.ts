@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { type MySqlConnectorRouter, MySqlConnectorSpec } from "./index.js";
 
-runConnectorCli({
+void runConnectorCli({
   parsers: MySqlConnectorSpec.role,
   optionsSchema: z.object({
     dbHost: z.string().describe("The database host"),

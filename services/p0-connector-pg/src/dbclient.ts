@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import { getServiceAccountEmail } from "@p0security/gcloud-common";
 import knex, { type Knex } from "knex";
 

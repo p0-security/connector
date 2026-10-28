@@ -1,7 +1,7 @@
 import {
   type ResourceHierarchySchemaOf,
   createLogger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import knex from "knex";
 import { escapeLiteral } from "pg";
 

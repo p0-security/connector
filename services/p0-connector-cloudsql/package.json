@@ -15,7 +15,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@p0security/connector": "workspace:^",
+    "@p0security/connector-core": "workspace:^",
     "@p0security/gcloud-common": "workspace:*",
     "@p0security/p0-connector-mysql": "workspace:^",
     "@p0security/p0-connector-pg": "workspace:^",

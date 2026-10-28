@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 // Postgres silently truncates longer identifiers, which could
 // collapse two distinct principals onto the same role.

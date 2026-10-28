@@ -4,7 +4,7 @@ import {
   type Logger,
   newResourceHierarchyRouter,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import type { Knex } from "knex";
 import type { z } from "zod";
 

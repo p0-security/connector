@@ -1,4 +1,4 @@
-import { throwAssertNever } from "@p0security/connector";
+import { throwAssertNever } from "@p0security/connector-core";
 
 import type { PoolConfig, SslConfig } from "../dbclient.ts";
 import { awsRdsConfig } from "./aws-rds.ts";

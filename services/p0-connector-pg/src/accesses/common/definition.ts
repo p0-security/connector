@@ -1,4 +1,4 @@
-import { newZodResourceHierarchyParsers } from "@p0security/connector";
+import { newZodResourceHierarchyParsers } from "@p0security/connector-core";
 import type { JsonValue } from "type-fest";
 import { z } from "zod";
 

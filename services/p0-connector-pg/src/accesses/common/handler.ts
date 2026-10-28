@@ -2,7 +2,7 @@ import {
   type ConnectorContext,
   ConnectorError,
   type Logger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { newClient } from "../../dbclient.ts";
 import { ident } from "../../sql/identifier.ts";

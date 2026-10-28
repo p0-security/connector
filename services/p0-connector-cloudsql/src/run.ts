@@ -1,4 +1,4 @@
-import { createLogger, runCloudRunConnector } from "@p0security/connector";
+import { createLogger, runCloudRunConnector } from "@p0security/connector-core";
 import { MySqlConnectorRouter } from "@p0security/p0-connector-mysql";
 import { PostgresConnectorRouter } from "@p0security/p0-connector-pg";
 

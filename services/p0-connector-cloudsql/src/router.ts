@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import cloudsqlConnectorPackageJson from "../package.json" with { type: "json" };
 import { router as userRouter } from "./accesses/user/handler.ts";
