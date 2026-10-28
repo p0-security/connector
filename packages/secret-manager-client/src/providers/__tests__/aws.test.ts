@@ -8,6 +8,7 @@ import {
   PutSecretValueCommand,
   UpdateSecretVersionStageCommand,
 } from "@aws-sdk/client-secrets-manager";
+import type * as SecretsManager from "@aws-sdk/client-secrets-manager";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -22,8 +23,7 @@ import { createAwsSecretManagerClient } from "../aws.ts";
 const send = vi.fn();
 
 vi.mock("@aws-sdk/client-secrets-manager", async (importOriginal) => {
-  const actual =
-    await importOriginal<typeof import("@aws-sdk/client-secrets-manager")>();
+  const actual = await importOriginal<typeof SecretsManager>();
   return {
     ...actual,
     SecretsManagerClient: vi.fn().mockImplementation(() => ({ send })),

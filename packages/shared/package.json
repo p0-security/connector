@@ -2,6 +2,7 @@
   "name": "@p0security/sp-shared",
   "license": "SEE LICENSE IN LICENSE",
   "version": "1.0.0",
+  "private": true,
   "description": "shared p0 helpers",
   "type": "module",
   "exports": {

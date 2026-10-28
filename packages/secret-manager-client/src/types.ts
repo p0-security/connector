@@ -51,7 +51,7 @@ export type GetSecretVersionsParams = {
  * The decoded payload of a secret version: a `string` for text secrets, or a
  * `Buffer` for binary ones (e.g. versions created by `createSecretVersion`).
  */
-export type SecretPayload = string | Buffer;
+export type SecretPayload = Buffer | string;
 
 /** A secret version's decoded payload together with the version it was read from. */
 export type SecretValue = {

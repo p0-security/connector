@@ -1,6 +1,7 @@
 {
   "name": "@p0security/gcloud-common",
   "version": "1.0.0",
+  "private": true,
   "description": "google cloud common functions",
   "type": "module",
   "exports": {
