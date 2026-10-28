@@ -126,8 +126,7 @@ export const withProvider = <
   T extends {
     fetch: {
       getMockImplementation: () =>
-        | ((url: string, init?: RequestInit) => Promise<Response>)
-        | undefined;
+        ((url: string, init?: RequestInit) => Promise<Response>) | undefined;
       mockImplementation: (
         fn: (url: string, init?: RequestInit) => Promise<Response>
       ) => unknown;

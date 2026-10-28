@@ -2,7 +2,7 @@ import {
   ConnectorError,
   type Logger,
   type ResourceRootSchemaOf,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {

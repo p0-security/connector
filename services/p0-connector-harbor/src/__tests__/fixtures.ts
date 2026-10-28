@@ -1,5 +1,5 @@
 /** The values and helpers the connector's tests share. */
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { inspect } from "node:util";
 import { vi } from "vitest";
 

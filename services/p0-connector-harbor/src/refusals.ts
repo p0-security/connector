@@ -1,4 +1,7 @@
-import { ConnectorError, type ConnectorErrorData } from "@p0security/connector";
+import {
+  ConnectorError,
+  type ConnectorErrorData,
+} from "@p0security/connector-core";
 import { z } from "zod";
 
 /**

@@ -3,7 +3,7 @@ import {
   type ConnectorErrorType,
   type Logger,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import {
   SecretManagerError,
   type SecretManagerProviderConfig,

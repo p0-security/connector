@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 import { z } from "zod";
 
 import { type Instance, hostOf } from "../accesses/project-role/definition.ts";

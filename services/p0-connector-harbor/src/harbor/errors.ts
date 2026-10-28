@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 import { describeFailure } from "../failure.ts";
 import { refusal } from "../refusals.ts";

@@ -1,4 +1,4 @@
-import type { ResourceRootSchemaOf } from "@p0security/connector";
+import type { ResourceRootSchemaOf } from "@p0security/connector-core";
 import type { inferRouterInputs, inferRouterOutputs } from "@trpc/server";
 import { expect, expectTypeOf, it, vi } from "vitest";
 
@@ -42,11 +42,7 @@ it("./connector serves the schemas, and loads no router", () => {
 // one of them fails `typecheck` here until this copy moves with it, which is
 // the moment to remember that the control plane's pin has to move too.
 type Role =
-  | "developer"
-  | "guest"
-  | "limitedGuest"
-  | "maintainer"
-  | "projectAdmin";
+  "developer" | "guest" | "limitedGuest" | "maintainer" | "projectAdmin";
 
 type SecretPointer =
   | { manager: "aws"; region: string; secretId: string }

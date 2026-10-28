@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 
 import { assertAllowedEmail } from "../../allowlist.ts";
 import { isStatus } from "../../harbor/api.ts";

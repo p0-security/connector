@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 import { z } from "zod";
 
 import type { AdminCredential } from "../admin-credential.ts";
@@ -43,9 +43,9 @@ const discoveryDocument = z.object({
 // A token endpoint's answer, either way: a JSON object, whose fields are
 // checked where they are read. `z.object` refuses an array and `null`.
 const tokenBody = z.object({
-  id_token: z.unknown(),
-  refresh_token: z.unknown(),
-  error: z.unknown(),
+  id_token: z.unknown().optional(),
+  refresh_token: z.unknown().optional(),
+  error: z.unknown().optional(),
 });
 
 /** `text` as JSON, or `undefined` when it isn't JSON. */

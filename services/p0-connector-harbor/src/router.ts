@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import harborConnectorPackageJson from "../package.json" with { type: "json" };
 import { router as projectRoleRouter } from "./accesses/project-role/handler.ts";

@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {

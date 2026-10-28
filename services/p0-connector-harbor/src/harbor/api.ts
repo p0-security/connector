@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 import type { z } from "zod";
 
 import { describeFailure, failureFacts } from "../failure.ts";
@@ -32,11 +32,7 @@ export type HarborCall = {
 
 /** Why an answer wasn't one Harbor gives. */
 export type UnexpectedAnswer =
-  | "endless"
-  | "not_json"
-  | "too_large"
-  | "too_many_rows"
-  | "wrong_shape";
+  "endless" | "not_json" | "too_large" | "too_many_rows" | "wrong_shape";
 
 /** How a call failed. */
 export type HarborFailure =
