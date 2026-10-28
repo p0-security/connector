@@ -1,4 +1,4 @@
-import type { ResourceHierarchySchemaOf } from "@p0security/connector";
+import type { ResourceHierarchySchemaOf } from "@p0security/connector-core";
 import knex from "knex";
 
 import type { spec } from "../accesses/role/definition.ts";

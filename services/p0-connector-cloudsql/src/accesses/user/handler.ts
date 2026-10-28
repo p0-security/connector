@@ -2,7 +2,7 @@ import {
   type AnyConnectorTRPCInstance,
   ConnectorError,
   newUserProvisioningRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import {
   createClients,
   gcloudServiceMetadata,

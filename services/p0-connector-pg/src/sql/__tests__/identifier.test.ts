@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import knex from "knex";
 import { describe, expect, it } from "vitest";
 

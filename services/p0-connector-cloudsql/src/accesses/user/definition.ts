@@ -1,4 +1,4 @@
-import { newZodUserProvisioningParsers } from "@p0security/connector";
+import { newZodUserProvisioningParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 export type CloudSqlEngine = "mysql" | "postgres";

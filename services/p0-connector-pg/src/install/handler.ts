@@ -1,7 +1,7 @@
 import {
   type AnyConnectorTRPCInstance,
   ConnectorError,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { pgClientParams } from "../accesses/common/definition.ts";
 import { newClient } from "../dbclient.ts";
