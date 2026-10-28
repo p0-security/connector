@@ -1,0 +1,535 @@
+// Adapted from services/p0-connector-harbor/src/__tests__/secrets.test.ts: the
+// failure cases are a copy, and the value is Argo CD's `{"token": ...}`
+// instead of Harbor's robot file.
+import { ConnectorError } from "@p0security/connector-core";
+import {
+  SecretNotFoundError,
+  type SecretRef,
+  UnauthorizedError,
+} from "@p0security/secret-manager-client";
+import type * as secretManagerClient from "@p0security/secret-manager-client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { SecretPointer } from "../instance.ts";
+import { readApiToken } from "../secrets.ts";
+import {
+  AWS_SECRET,
+  GCP_SECRET,
+  NEVER_SHOWN,
+  TOKEN,
+  connectorError,
+  logger,
+  propertySeed,
+  recordLogger,
+  seededRandom,
+} from "./fixtures.ts";
+
+// `vi.hoisted` guarantees these exist before the (hoisted) `vi.mock` factory runs.
+const vault = vi.hoisted(() => ({
+  createSecretManagerClient:
+    vi.fn<typeof secretManagerClient.createSecretManagerClient>(),
+  getSecretValue:
+    vi.fn<secretManagerClient.SecretManagerClient["getSecretValue"]>(),
+}));
+
+vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
+  ...(await importOriginal<typeof secretManagerClient>()),
+  createSecretManagerClient: vault.createSecretManagerClient,
+}));
+
+// The secret as the customer stores it.
+const STORED = JSON.stringify({ token: TOKEN });
+
+/** What the secret manager answers a read with. Only the value is read. */
+const holding = (value: Buffer | string) =>
+  ({ value }) as secretManagerClient.SecretValue;
+
+const AWS = {
+  pointer: AWS_SECRET,
+  name: "AWS Secrets Manager",
+  place: "region",
+  grant:
+    "secretsmanager:GetSecretValue on that secret, and kms:Decrypt on its KMS key if it uses a customer-managed key",
+};
+const GCP = {
+  pointer: GCP_SECRET,
+  name: "Google Secret Manager",
+  place: "project",
+  grant:
+    "roles/secretmanager.secretAccessor and roles/secretmanager.viewer on that secret",
+};
+
+const MALFORMED = `The secret for the connector's Argo CD API token in AWS Secrets Manager doesn't hold {"token": "<api token>"}. Store the p0-connector account's API token in that form.`;
+
+// The request a vendor's error carries, which names the secret.
+const REQUEST_URL = `https://secretmanager.googleapis.com/v1/projects/${GCP_SECRET.projectId}/secrets/${GCP_SECRET.secretId}/versions/latest:access`;
+
+/** An AWS SDK error: named after the exception, with the request's metadata. */
+const awsError = (name: string, httpStatusCode: number) =>
+  Object.assign(new Error(`${name} for ${AWS_SECRET.secretId}`), {
+    name,
+    $fault: "client",
+    $metadata: { httpStatusCode, requestId: "aws-request-1", attempts: 3 },
+  });
+
+/** An error of Google's client, as gaxios 7 shapes it: a bare `Error` with the status and the request. */
+const googleError = (status: number) =>
+  Object.assign(new Error(`boom at ${REQUEST_URL}`), {
+    config: { url: new URL(REQUEST_URL), headers: {} },
+    response: { status, config: { url: new URL(REQUEST_URL) }, data: {} },
+    code: undefined,
+    status,
+  });
+
+/** A call that never reached the secret manager, as Node reports it. */
+const networkError = (code: string) =>
+  Object.assign(new Error(`${code} ${REQUEST_URL}`), { code });
+
+const read = (pointer: SecretPointer = AWS_SECRET) =>
+  readApiToken(pointer, logger);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vault.createSecretManagerClient.mockResolvedValue({
+    getSecretValue: vault.getSecretValue,
+  } as Partial<secretManagerClient.SecretManagerClient> as secretManagerClient.SecretManagerClient);
+  vault.getSecretValue.mockResolvedValue(holding(STORED));
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
+const PROPERTY_SEED = propertySeed();
+
+describe("readApiToken", () => {
+  it("reads an AWS secret from the region the pointer names", async () => {
+    await read(AWS_SECRET);
+
+    expect(vault.createSecretManagerClient).toHaveBeenCalledWith({
+      provider: "aws",
+      region: AWS_SECRET.region,
+    });
+    expect(vault.getSecretValue).toHaveBeenCalledWith({
+      ref: AWS_SECRET.secretId,
+    });
+  });
+
+  it("reads a GCP secret from the project the pointer names", async () => {
+    await read(GCP_SECRET);
+
+    expect(vault.createSecretManagerClient).toHaveBeenCalledWith({
+      provider: "gcp",
+      projectId: GCP_SECRET.projectId,
+    });
+    expect(vault.getSecretValue).toHaveBeenCalledWith({
+      ref: GCP_SECRET.secretId,
+    });
+  });
+
+  it("answers the token", async () => {
+    await expect(read()).resolves.toBe(TOKEN);
+  });
+
+  // The format is JSON so that fields can be added later.
+  it("ignores fields beside the token", async () => {
+    vault.getSecretValue.mockResolvedValue(
+      holding(JSON.stringify({ token: TOKEN, account: "p0-connector" }))
+    );
+    await expect(read()).resolves.toBe(TOKEN);
+  });
+
+  // Google returns a secret's value as bytes.
+  it("decodes a secret that arrives as bytes", async () => {
+    vault.getSecretValue.mockResolvedValue(
+      holding(Buffer.from(STORED, "utf8"))
+    );
+    await expect(read(GCP_SECRET)).resolves.toBe(TOKEN);
+  });
+
+  it("reads the secret again on every call", async () => {
+    await read();
+    vault.getSecretValue.mockResolvedValue(
+      holding(JSON.stringify({ token: "rotated" }))
+    );
+
+    await expect(read()).resolves.toBe("rotated");
+  });
+
+  it("logs nothing when the read works", async () => {
+    const log = recordLogger();
+    await read();
+    expect(log.lines()).toHaveLength(0);
+  });
+
+  // A secret with no value yet is answered as not found too.
+  it.each([AWS, GCP])(
+    "reports a secret $name doesn't find as object_not_found",
+    async ({ pointer, name, place }) => {
+      vault.getSecretValue.mockRejectedValue(
+        new SecretNotFoundError(pointer.secretId as SecretRef)
+      );
+
+      const { data } = await connectorError(() => read(pointer));
+
+      expect(data.type).toBe("object_not_found");
+      expect(data.payload).toEqual({ manager: pointer.manager });
+      expect(data.message).toBe(
+        `The connector couldn't find its Argo CD API token's secret, or a value in it, in ${name}. Check the secret's name and ${place} on the Argo CD instance in P0, and that the secret exists and holds {"token": "<api token>"}.`
+      );
+    }
+  );
+
+  // With a grant on the one secret, a name that doesn't exist is refused
+  // like one the connector may not read, so the message covers both.
+  it.each([AWS, GCP])(
+    "reports a read $name refuses as insufficient_privileges, naming what to grant",
+    async ({ pointer, name, place, grant }) => {
+      vault.getSecretValue.mockRejectedValue(
+        new UnauthorizedError(pointer.manager)
+      );
+
+      const { data } = await connectorError(() => read(pointer));
+
+      expect(data.type).toBe("insufficient_privileges");
+      expect(data.payload).toEqual({ manager: pointer.manager });
+      expect(data.message).toBe(
+        `The connector isn't allowed to read its Argo CD API token's secret in ${name}. Grant the connector's identity ${grant}. If it has that, check the secret's name and ${place} on the Argo CD instance in P0: a secret that doesn't exist can be refused the same way.`
+      );
+    }
+  );
+
+  describe("any other failure", () => {
+    // [what failed, on which cloud, the failure, its type, how the message describes it, what the log line holds]
+    const FAILURES = [
+      [
+        "AWS throttles the call",
+        AWS,
+        awsError("ThrottlingException", 400),
+        "rate_limited",
+        ": ThrottlingException, HTTP 400",
+        {
+          name: "ThrottlingException",
+          status: 400,
+          requestId: "aws-request-1",
+        },
+      ],
+      [
+        "AWS fails inside",
+        AWS,
+        awsError("InternalServiceError", 500),
+        "upstream_unavailable",
+        ": InternalServiceError, HTTP 500",
+        {
+          name: "InternalServiceError",
+          status: 500,
+          requestId: "aws-request-1",
+        },
+      ],
+      [
+        "AWS refuses the request as invalid",
+        AWS,
+        awsError("InvalidRequestException", 400),
+        "unknown",
+        ": InvalidRequestException, HTTP 400",
+        {
+          name: "InvalidRequestException",
+          status: 400,
+          requestId: "aws-request-1",
+        },
+      ],
+      [
+        "the region doesn't resolve",
+        AWS,
+        networkError("ENOTFOUND"),
+        "upstream_unavailable",
+        ": ENOTFOUND",
+        { code: "ENOTFOUND" },
+      ],
+      [
+        "the connection is reset",
+        AWS,
+        networkError("ECONNRESET"),
+        "upstream_unavailable",
+        ": ECONNRESET",
+        { code: "ECONNRESET" },
+      ],
+      [
+        "the connection is refused",
+        AWS,
+        networkError("ECONNREFUSED"),
+        "upstream_unavailable",
+        ": ECONNREFUSED",
+        { code: "ECONNREFUSED" },
+      ],
+      [
+        "the connection times out",
+        GCP,
+        networkError("ETIMEDOUT"),
+        "upstream_unavailable",
+        ": ETIMEDOUT",
+        { code: "ETIMEDOUT" },
+      ],
+      [
+        "Google limits the call",
+        GCP,
+        googleError(429),
+        "rate_limited",
+        ": HTTP 429",
+        { status: 429 },
+      ],
+      [
+        "Google is unavailable",
+        GCP,
+        googleError(503),
+        "upstream_unavailable",
+        ": HTTP 503",
+        { status: 503 },
+      ],
+      [
+        "Google refuses the request as invalid",
+        GCP,
+        googleError(400),
+        "unknown",
+        ": HTTP 400",
+        { status: 400 },
+      ],
+      [
+        "Google can't be resolved",
+        GCP,
+        networkError("EAI_AGAIN"),
+        "upstream_unavailable",
+        ": EAI_AGAIN",
+        { code: "EAI_AGAIN" },
+      ],
+      [
+        "the failure says nothing about itself",
+        AWS,
+        new Error(`no string or binary value for "${AWS_SECRET.secretId}"`),
+        "unknown",
+        "",
+        {},
+      ],
+      ["what is thrown isn't an error", GCP, REQUEST_URL, "unknown", "", {}],
+    ] as const;
+
+    it.each(FAILURES)(
+      "is typed and described by what it says of itself when %s",
+      async (_case, cloud, failure, type, description) => {
+        vault.getSecretValue.mockRejectedValue(failure);
+
+        const { data } = await connectorError(() => read(cloud.pointer));
+
+        expect(data.type).toBe(type);
+        expect(data.payload).toEqual({ manager: cloud.pointer.manager });
+        expect(data.message).toBe(
+          `The connector couldn't read its Argo CD API token's secret in ${cloud.name}${description}. Check the secret's ${cloud.place} on the Argo CD instance in P0, and try again.`
+        );
+      }
+    );
+
+    // The error P0 gets is a sentence. The log line is what's left for
+    // whoever has to find out why.
+    it.each(FAILURES)(
+      "is logged with what is safe to log when %s",
+      async (_case, cloud, failure, _type, _description, facts) => {
+        const log = recordLogger();
+        vault.getSecretValue.mockRejectedValue(failure);
+
+        await connectorError(() => read(cloud.pointer));
+
+        expect(log.lines()).toEqual([
+          [
+            { manager: cloud.pointer.manager, ...facts },
+            "reading the API token's secret failed",
+          ],
+        ]);
+      }
+    );
+
+    // Google's client is built from the connector's own credentials, which
+    // can be missing.
+    it("covers a secret manager the connector can't connect to", async () => {
+      vault.createSecretManagerClient.mockRejectedValue(
+        new Error("Could not load the default credentials")
+      );
+
+      const { data } = await connectorError(() => read(GCP_SECRET));
+
+      expect(data.type).toBe("unknown");
+      expect(data.message).toBe(
+        "The connector couldn't read its Argo CD API token's secret in Google Secret Manager. Check the secret's project on the Argo CD instance in P0, and try again."
+      );
+    });
+  });
+
+  // The client wraps the vendor's error in the two it maps.
+  it("logs the vendor's request id for a failure the client mapped", async () => {
+    const log = recordLogger();
+    vault.getSecretValue.mockRejectedValue(
+      new UnauthorizedError("aws", {
+        cause: awsError("AccessDeniedException", 400),
+      })
+    );
+
+    await connectorError(() => read());
+
+    expect(log.lines()).toEqual([
+      [
+        {
+          manager: "aws",
+          name: "AccessDeniedException",
+          status: 400,
+          requestId: "aws-request-1",
+        },
+        "reading the API token's secret failed",
+      ],
+    ]);
+  });
+
+  it.each([
+    ["the bare token, not JSON", TOKEN],
+    ["JSON that isn't an object", JSON.stringify(TOKEN)],
+    ["an object with no token", JSON.stringify({ apiKey: TOKEN })],
+    ["an empty token", JSON.stringify({ token: "" })],
+    ["a blank token", JSON.stringify({ token: " \n\t" })],
+    ["a token that isn't a string", JSON.stringify({ token: 42 })],
+    ["a null token", JSON.stringify({ token: null })],
+    ["an empty value", ""],
+  ])("refuses %s, without repeating it", async (_case, value) => {
+    const log = recordLogger();
+    vault.getSecretValue.mockResolvedValue(holding(value));
+
+    const error = await connectorError(() => read());
+
+    expect(error.data.type).toBe("validation_error");
+    expect(error.data.payload).toEqual({ manager: "aws" });
+    expect(error.data.message).toBe(MALFORMED);
+    expect(error.cause).toBeUndefined();
+    const seen = log.seen(error);
+    for (const marker of NEVER_SHOWN) expect(seen).not.toContain(marker);
+  });
+
+  // The whole value, with the token one of the values that matter: a token,
+  // blank, of another type, or missing, beside fields of any kind.
+  it(
+    `answers exactly a filled token string, and refuses the rest with nothing of the secret (PROPERTY_SEED=${PROPERTY_SEED})`,
+    // A thousand cases, which a loaded machine can take seconds over.
+    { timeout: 30_000 },
+    async () => {
+      const log = recordLogger();
+      const random = seededRandom(PROPERTY_SEED);
+      const pick = <T>(items: readonly T[]): T => {
+        const item = items[Math.floor(random() * items.length)];
+        if (item === undefined) throw new Error("picked from no items");
+        return item;
+      };
+      const MISSING = Symbol("missing");
+      const filled = (value: unknown) =>
+        typeof value === "string" && [...value].some((c) => c.trim() !== "");
+
+      for (let i = 0; i < 1000; i++) {
+        const token = pick([
+          TOKEN,
+          TOKEN,
+          ` ${TOKEN}\n`,
+          "",
+          " ",
+          "\t\n",
+          7,
+          null,
+          true,
+          [TOKEN],
+          { token: TOKEN },
+          MISSING,
+        ]);
+        const extra = pick([
+          {},
+          {},
+          { account: "p0-connector" },
+          { name: TOKEN, secret: TOKEN },
+          { token2: "x" },
+        ]);
+        const shape = pick(["object", "object", "object", "array", "bare"]);
+        const fields = {
+          ...extra,
+          ...(token === MISSING ? {} : { token }),
+        };
+        const value =
+          shape === "object"
+            ? JSON.stringify(fields)
+            : shape === "array"
+              ? JSON.stringify([fields])
+              : typeof token === "string"
+                ? token
+                : "";
+        vault.getSecretValue.mockResolvedValue(holding(value));
+        const where = JSON.stringify({ shape, extra, token: typeof token });
+
+        const outcome = await read().catch((error: unknown) => error);
+
+        if (shape === "object" && filled(token)) {
+          if (outcome !== token) {
+            throw new Error(`expected the token back for ${where}`);
+          }
+          continue;
+        }
+        const shown =
+          outcome instanceof ConnectorError ? JSON.stringify(outcome.data) : "";
+        const refused =
+          outcome instanceof ConnectorError &&
+          outcome.data.type === "validation_error" &&
+          JSON.stringify(outcome.data.payload) ===
+            JSON.stringify({ manager: "aws" }) &&
+          outcome.data.message === MALFORMED &&
+          outcome.cause === undefined &&
+          NEVER_SHOWN.every((marker) => !shown.includes(marker));
+        if (!refused) {
+          throw new Error(
+            `expected the malformed-secret refusal, with nothing of the secret, for ${where}`
+          );
+        }
+      }
+      const seen = log.seen();
+      for (const marker of NEVER_SHOWN) expect(seen).not.toContain(marker);
+    }
+  );
+
+  describe("what a failure may not show", () => {
+    // On AWS the id is any string, so a token pasted where the name goes
+    // reaches the connector, and the secret manager's errors repeat what
+    // they were given: in their message, or in the vendor's error they carry
+    // as their cause.
+    const PASTED = { ...AWS_SECRET, secretId: STORED };
+    const quoting = (pointer: SecretPointer) =>
+      Object.assign(new Error(`failed for ${JSON.stringify(pointer)}`), {
+        config: { url: `${REQUEST_URL}?${JSON.stringify(pointer)}` },
+      });
+
+    it.each([
+      ["AWS", AWS_SECRET],
+      ["GCP", GCP_SECRET],
+      ["AWS, with a token pasted as the id,", PASTED],
+    ] as const)(
+      "is the pointer, on %s, however the read fails",
+      async (_case, pointer) => {
+        const log = recordLogger();
+        for (const failure of [
+          new SecretNotFoundError(pointer.secretId as SecretRef),
+          new UnauthorizedError(pointer.manager, { cause: quoting(pointer) }),
+          quoting(pointer),
+        ]) {
+          vault.getSecretValue.mockRejectedValue(failure);
+
+          const error = await connectorError(() => read(pointer));
+
+          expect(error.cause).toBeUndefined();
+          const seen = log.seen(error, JSON.stringify(error.data));
+          for (const marker of NEVER_SHOWN) {
+            expect(seen).not.toContain(marker);
+          }
+        }
+      }
+    );
+  });
+});
