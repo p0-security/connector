@@ -1,0 +1,38 @@
+{
+  "name": "@p0security/p0-connector-tableau-ai",
+  "version": "1.0.0",
+  "description": "P0 Tableau (Agentic) connector (AWS Lambda / GCP Cloud Run)",
+  "type": "module",
+  "exports": {
+    "@p0security/development": "./src/index.ts",
+    "default": "./dist/index.js"
+  },
+  "bin": "./dist/run.js",
+  "scripts": {
+    "format": "prettier --write '**/*.{html,js,ts,json,less,md}'",
+    "typecheck": "tsc --noEmit",
+    "just-bundle": "node ./esbuild.mjs",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "bundle": "yarn clean && yarn typecheck && yarn just-bundle && yarn zip-lambda",
+    "zip-lambda": "cd dist && zip -r index.zip *.mjs* && du -sh index.zip",
+    "build-within-docker": "yarn typecheck && yarn just-bundle",
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@p0security/connector": "workspace:^",
+    "@p0security/secret-manager-client": "workspace:^",
+    "@trpc/server": "^11.10.0",
+    "pino": "^9.14.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "esbuild": "^0.27.2",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vitest": "^4.0.18"
+  },
+  "lint-staged": {
+    "*.(md|yaml|yml|json|js|ts|jsx|tsx)": "prettier --check"
+  }
+}
