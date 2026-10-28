@@ -1,0 +1,43 @@
+{
+  "name": "@p0security/p0-connector-1password",
+  "version": "1.0.0",
+  "description": "P0 1Password connector (AWS Lambda and GCP Cloud Run)",
+  "type": "module",
+  "exports": {
+    "./connector": {
+      "@p0security/development": "./src/connector.ts",
+      "default": "./dist/connector.js"
+    }
+  },
+  "bin": "./dist/run.js",
+  "scripts": {
+    "format": "prettier --write '**/*.{html,js,ts,json,less,md}'",
+    "typecheck": "tsc --noEmit",
+    "just-bundle": "node ./esbuild.mjs",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
+    "bundle": "yarn clean && yarn typecheck && yarn just-bundle && yarn zip-lambda",
+    "zip-lambda": "cd dist && zip -r index.zip *.mjs* && du -sh index.zip",
+    "build-within-docker": "yarn typecheck && yarn just-bundle",
+    "build": "tsc --build"
+  },
+  "dependencies": {
+    "@1password/sdk": "0.5.0",
+    "@p0security/connector-core": "workspace:^",
+    "@p0security/secret-manager-client": "workspace:^",
+    "@trpc/server": "^11.10.0",
+    "lodash-es": "^4.17.23",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/lodash-es": "^4.17.12",
+    "esbuild": "^0.27.2",
+    "pino": "^9.14.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  },
+  "lint-staged": {
+    "*.(md|yaml|yml|json|js|ts|jsx|tsx)": "prettier --check"
+  }
+}
