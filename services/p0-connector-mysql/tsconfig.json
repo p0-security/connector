@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": false,
+    "customConditions": ["@p0security/development"]
+  },
+  "include": ["src"],
+  "exclude": ["dist"]
+}
