@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import tailscaleConnectorPackageJson from "../package.json" with { type: "json" };
 import { router as postureRouter } from "./accesses/posture/handler.ts";

@@ -107,8 +107,7 @@ export const newFakeTailscale = ({
   const issued = new Map<string, IssuedToken>();
   const tokens: string[] = [];
   let interceptor:
-    | ((call: TailscaleCall) => TailscaleReply | undefined)
-    | undefined;
+    ((call: TailscaleCall) => TailscaleReply | undefined) | undefined;
 
   const issue = (clientId: string, scopes: string[]): TailscaleReply => {
     const token = `tskey-api-${tokens.length + 1}SENTINELtok${clientId.length}`;

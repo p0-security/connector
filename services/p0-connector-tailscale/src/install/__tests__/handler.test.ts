@@ -127,7 +127,7 @@ describe("credential", () => {
 
   it("fails when the cloud identity can't be minted", async () => {
     newTestTailnet();
-    const { ConnectorError } = await import("@p0security/connector");
+    const { ConnectorError } = await import("@p0security/connector-core");
 
     await expect(
       connectorError(() =>

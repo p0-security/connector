@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-sts": "^3.981.0",
-    "@p0security/connector": "workspace:^",
+    "@p0security/connector-core": "workspace:^",
     "@p0security/secret-manager-client": "workspace:^",
     "@trpc/server": "^11.10.0",
     "lodash-es": "^4.17.23",

@@ -2,7 +2,7 @@ import {
   ConnectorError,
   type ConnectorErrorType,
   connectorErrorTypeForHttpStatus,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { TailscaleError } from "./api.ts";
 import { covers } from "./scopes.ts";

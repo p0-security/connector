@@ -3,7 +3,7 @@ import {
   createLogger,
   newCloudFunctionLink,
   newTRPCConnectorClient,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import {
   SecretNotFoundError,
   type SecretRef,

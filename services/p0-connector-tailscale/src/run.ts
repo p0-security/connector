@@ -1,4 +1,4 @@
-import { createLogger, runCloudRunConnector } from "@p0security/connector";
+import { createLogger, runCloudRunConnector } from "@p0security/connector-core";
 
 import { newTailscaleRouter } from "./router.ts";
 import { gcpIdentityToken } from "./tailscale/identity/gcp.ts";

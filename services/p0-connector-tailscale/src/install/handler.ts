@@ -4,7 +4,7 @@ import {
   type ConnectorErrorOptions,
   type Logger,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import {
   INSTALL_CHECK_POSTURE,
@@ -407,15 +407,11 @@ const dnsNameOf = (devices: readonly TailscaleDevice[]) =>
 
 /** `discovery`: counts the P0 postures a request can name, from what `scopes` read. */
 const discover = (tailnet: string, read: Read) =>
-  runStep(
-    "discovery",
-    tailnet,
-    async (): Promise<Discovery> => ({
-      p0Postures: posturesOf(read.policy).filter(
-        ({ name }) => postureName.safeParse(name).success
-      ).length,
-    })
-  );
+  runStep("discovery", tailnet, async (): Promise<Discovery> => ({
+    p0Postures: posturesOf(read.policy).filter(
+      ({ name }) => postureName.safeParse(name).success
+    ).length,
+  }));
 
 export const getInstallValidation = async (
   { skipPostureWrite = false, ...credentials }: InstallValidationInput,

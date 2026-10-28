@@ -1,4 +1,4 @@
-import { createLogger, newCloudFunction } from "@p0security/connector";
+import { createLogger, newCloudFunction } from "@p0security/connector-core";
 
 import { newTailscaleRouter } from "./router.ts";
 import { awsIdentityToken } from "./tailscale/identity/aws.ts";

@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 
 import type { Credential, TailnetCredentials } from "../credentials.ts";
 import { type ClientSecretValue, getClientSecret } from "../secrets.ts";

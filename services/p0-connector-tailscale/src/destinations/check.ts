@@ -3,7 +3,7 @@ import {
   ConnectorError,
   type Logger,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { attributeKeyFor } from "../accesses/posture/definition.ts";
 import type { ConnectorDeps } from "../deps.ts";

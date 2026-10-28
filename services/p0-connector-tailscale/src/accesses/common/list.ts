@@ -1,4 +1,4 @@
-import { type Logger, throwAssertNever } from "@p0security/connector";
+import { type Logger, throwAssertNever } from "@p0security/connector-core";
 
 import type { ConnectorDeps } from "../../deps.ts";
 import { newTailscaleClient } from "../../tailscale/client.ts";

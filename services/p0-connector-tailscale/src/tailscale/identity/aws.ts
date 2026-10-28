@@ -3,7 +3,7 @@ import {
   STSClient,
   STSServiceException,
 } from "@aws-sdk/client-sts";
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 import { API_TIMEOUT_MS } from "../api.ts";
 import type { IdentityTokenSource } from "./source.ts";
