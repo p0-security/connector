@@ -3,7 +3,7 @@ import {
   type ConnectorErrorType,
   connectorErrorTypeForHttpStatus,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { GitHubError } from "./api.ts";
 

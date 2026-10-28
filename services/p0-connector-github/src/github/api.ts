@@ -1,4 +1,4 @@
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { z } from "zod";
 
 const logger = createLogger();
@@ -233,7 +233,7 @@ const GRAPHQL_UNTYPED_ERROR_STATUS = 502;
 // The envelope only. `data` is read with the query's own schema once there are
 // no errors, since a failed query's partial data needn't match it.
 const graphqlEnvelope = z.object({
-  data: z.unknown(),
+  data: z.unknown().optional(),
   errors: z
     .array(
       z.object({

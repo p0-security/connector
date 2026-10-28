@@ -25,7 +25,7 @@
     "build": "tsc --build"
   },
   "dependencies": {
-    "@p0security/connector": "workspace:^",
+    "@p0security/connector-core": "workspace:^",
     "@p0security/secret-manager-client": "workspace:^",
     "@trpc/server": "^11.10.0",
     "jsonwebtoken": "^9",

@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -581,6 +581,21 @@ describe("githubGraphql", () => {
       ]);
     }
   );
+
+  // A query that fails before it runs, such as a parse error, has no `data`.
+  it("reports a GraphQL error without data as a bad gateway", async () => {
+    respond(200, { errors: [{ message: 'Parse error on "}" (RCURLY)' }] });
+
+    const error = await githubGraphql(
+      "ghs_token",
+      "query {",
+      {},
+      z.unknown()
+    ).catch((e: unknown) => e);
+
+    expect(error).toBeInstanceOf(GitHubError);
+    expect((error as GitHubError).status).toBe(502);
+  });
 });
 
 describe("fetchBypassAllowances", () => {

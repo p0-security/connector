@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import jwt from "jsonwebtoken";
 
 // Backdate `iat` by this many seconds to tolerate clock drift between us and GitHub.

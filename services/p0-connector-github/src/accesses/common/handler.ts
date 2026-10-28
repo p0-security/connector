@@ -4,7 +4,7 @@ import {
   type ResourceRootConnectorPrimitives,
   type ResourceRootSchema,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import type { ConnectGitHub, GitHubClient } from "../../github/client.ts";
 import { callGitHub } from "../../github/errors.ts";

@@ -1,4 +1,4 @@
-import { newZodResourceRootParsers } from "@p0security/connector";
+import { newZodResourceRootParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 // A Google Secret Manager secret, by its ID or by its resource name,
