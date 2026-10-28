@@ -2,7 +2,7 @@ import {
   type AnyConnectorTRPCInstance,
   ConnectorError,
   type ConnectorErrorOptions,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { type InstallContext, installContext } from "../context.ts";
 import { createSecretManager, signInFor } from "../secrets.ts";

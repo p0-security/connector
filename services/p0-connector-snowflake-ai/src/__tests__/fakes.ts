@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
 import type {
   SecretManagerClient,

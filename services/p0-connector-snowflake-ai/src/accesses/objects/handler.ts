@@ -1,7 +1,7 @@
 import {
   type AnyConnectorTRPCInstance,
   ConnectorError,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import type { SnowflakeSession } from "../../snowflake/client.ts";
 import {

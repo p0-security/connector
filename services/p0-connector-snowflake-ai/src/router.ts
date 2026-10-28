@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import snowflakeAiConnectorPackageJson from "../package.json" with { type: "json" };
 import { router as objectsRouter } from "./accesses/objects/handler.ts";

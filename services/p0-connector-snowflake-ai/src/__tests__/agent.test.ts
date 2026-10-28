@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import * as SecretManagerClientModule from "@p0security/secret-manager-client";
 import { describe, expect, it } from "vitest";
 

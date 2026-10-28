@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 // Snowflake does not take binds in every DDL statement this connector runs
 // (`CREATE USER`, `GRANT … TO ROLE`, `ALTER USER … ADD PROGRAMMATIC ACCESS

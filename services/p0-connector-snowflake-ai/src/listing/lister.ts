@@ -1,4 +1,4 @@
-import { throwAssertNever } from "@p0security/connector";
+import { throwAssertNever } from "@p0security/connector-core";
 
 import type { ListerQuery } from "../context.ts";
 import type { SnowflakeSession } from "../snowflake/client.ts";

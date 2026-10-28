@@ -5,7 +5,7 @@ import {
   ConnectorError,
   type ConnectorErrorOptions,
   type Logger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { createPrivateKey } from "node:crypto";
 import snowflake from "snowflake-sdk";
 

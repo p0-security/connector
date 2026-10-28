@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { generateKeyPairSync } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -15,15 +15,13 @@ type FakeSdk = {
   destroyed: number;
 };
 
-const sdk = vi.hoisted(
-  (): FakeSdk => ({
-    options: [],
-    connectError: undefined,
-    executeError: undefined,
-    rows: [],
-    destroyed: 0,
-  })
-);
+const sdk = vi.hoisted((): FakeSdk => ({
+  options: [],
+  connectError: undefined,
+  executeError: undefined,
+  rows: [],
+  destroyed: 0,
+}));
 
 vi.mock("snowflake-sdk", () => ({
   default: {
