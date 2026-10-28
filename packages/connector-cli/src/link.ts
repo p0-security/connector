@@ -2,7 +2,7 @@ import { LambdaClient } from "@aws-sdk/client-lambda";
 import {
   newAwsLambdaCloudFunctionTestClient,
   newCloudFunctionLink,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { type TRPCLink, httpLink } from "@trpc/client";
 import type { AnyRouter } from "@trpc/server";
 import { GoogleAuth } from "google-auth-library";

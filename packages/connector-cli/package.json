@@ -1,6 +1,7 @@
 {
   "name": "@p0security/connector-cli",
   "version": "1.0.1",
+  "private": true,
   "description": "shared connector management CLI",
   "type": "module",
   "exports": {
@@ -17,7 +18,7 @@
   },
   "dependencies": {
     "@aws-sdk/client-lambda": "^3.975.0",
-    "@p0security/connector": "workspace:^",
+    "@p0security/connector-core": "workspace:^",
     "@trpc/client": "^11.10.0",
     "@trpc/server": "^11.10.0",
     "google-auth-library": "^10.5.0",

@@ -3,11 +3,11 @@ import type {
   ResourceHierarchyParsers,
   ResourceHierarchyRouter,
   ResourceHierarchySchema,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import {
   newResourceHierarchyConnectorMethods,
   newTRPCConnectorClient,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import type { TRPCClient } from "@trpc/client";
 import type { AnyRouter } from "@trpc/server";
 import yargs from "yargs";
