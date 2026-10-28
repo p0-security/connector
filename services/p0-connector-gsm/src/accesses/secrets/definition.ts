@@ -1,4 +1,4 @@
-import { newZodSecretManagementParsers } from "@p0security/connector";
+import { newZodSecretManagementParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 const secretId = z.object({

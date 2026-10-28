@@ -1,11 +1,11 @@
 import {
   ConnectorError,
   newSecretManagementRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import type {
   AnyConnectorTRPCInstance,
   ConnectorErrorType,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { getServiceAccountEmail } from "@p0security/gcloud-common";
 import {
   SecretAlreadyExistsError,

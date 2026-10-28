@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import gsmConnectorPackageJson from "../package.json" with { type: "json" };
 import { router as secretsRouter } from "./accesses/secrets/handler.ts";
