@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 import { z } from "zod";
 
 import type { Account } from "../account.ts";
@@ -292,14 +292,12 @@ export const newLaunchDarklyClient = (
       );
       const matches = rows
         .filter((row) => foldAsciiCase(row.email) === wanted)
-        .map(
-          (row): MemberMatch => ({
-            email: row.email,
-            memberId: row._id,
-            pendingInvite: row._pendingInvite,
-            verified: row._verified,
-          })
-        );
+        .map((row): MemberMatch => ({
+          email: row.email,
+          memberId: row._id,
+          pendingInvite: row._pendingInvite,
+          verified: row._verified,
+        }));
       // Each member once, as the last page that listed them has them.
       return [
         ...new Map(matches.map((match) => [match.memberId, match])).values(),

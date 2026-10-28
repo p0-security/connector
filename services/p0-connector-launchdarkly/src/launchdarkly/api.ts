@@ -2,7 +2,7 @@ import {
   ConnectorError,
   type Logger,
   throwAssertNever,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { z } from "zod";
 
 import { type Instance, LAUNCHDARKLY_HOSTS } from "../account.ts";
@@ -142,11 +142,7 @@ export type BodyOf<Name extends WriteRoute> = z.input<
  * `too_many_rows` are the pager's (`paged` in client.ts).
  */
 export type UnexpectedAnswer =
-  | "endless"
-  | "not_json"
-  | "too_large"
-  | "too_many_rows"
-  | "wrong_shape";
+  "endless" | "not_json" | "too_large" | "too_many_rows" | "wrong_shape";
 
 /** How a call failed. */
 export type LaunchDarklyFailure =

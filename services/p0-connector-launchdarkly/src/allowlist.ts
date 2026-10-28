@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 
 import { refusal } from "./refusals.ts";
 
@@ -16,8 +16,7 @@ export const DOMAIN_ALLOW_PATTERN_ENV = "DOMAIN_ALLOW_PATTERN";
 
 /** Why there is no allowlist. `detail` is the regex engine's own message. */
 type AllowlistProblem =
-  | { reason: "invalid_regex"; detail: string }
-  | { reason: "unset" };
+  { reason: "invalid_regex"; detail: string } | { reason: "unset" };
 
 type Allowlist =
   | { ok: false; problem: AllowlistProblem }

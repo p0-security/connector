@@ -5,7 +5,7 @@ import {
   type ResourceRootConnectorPrimitives,
   type ResourceRootSchemaOf,
   newResourceRootRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { list } from "../common/list.ts";
 import { type Pause, pauseFor, setMemberPolicies } from "../common/policies.ts";

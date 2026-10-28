@@ -1,4 +1,4 @@
-import { ConnectorError, throwAssertNever } from "@p0security/connector";
+import { ConnectorError, throwAssertNever } from "@p0security/connector-core";
 
 import { renderFailure } from "../failure.ts";
 import { LAUNCHDARKLY_TIMEOUT_MS, LaunchDarklyError } from "./api.ts";

@@ -4,7 +4,7 @@ import {
   type ConnectorErrorOptions,
   type Logger,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { type InstallInput, hostOf, installInput } from "../account.ts";
 import { ALLOWLIST_PROBLEMS, compileAllowlist } from "../allowlist.ts";

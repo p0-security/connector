@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 import { range } from "lodash-es";
 import { setTimeout as sleep } from "node:timers/promises";
 
@@ -134,11 +134,7 @@ export const confirmGrant = async (
 
 /** What about the member changed since P0 resolved them. */
 type Changed =
-  | "account"
-  | "deleted"
-  | "email"
-  | "pending_invite"
-  | "unverified";
+  "account" | "deleted" | "email" | "pending_invite" | "unverified";
 
 /** The refusal for a member that isn't the one P0 resolved at request time. */
 const memberChanged = ({ host, memberId, log }: Target, changed: Changed) => {

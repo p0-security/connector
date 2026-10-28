@@ -1,4 +1,4 @@
-import type * as connectorModule from "@p0security/connector";
+import type * as connectorModule from "@p0security/connector-core";
 import { describe, expect, it, vi } from "vitest";
 
 import { connectorRouter } from "../router.ts";
@@ -10,7 +10,7 @@ const runCloudRunConnector = vi.hoisted(() =>
   vi.fn<typeof connectorModule.runCloudRunConnector>()
 );
 
-vi.mock("@p0security/connector", async (importOriginal) => ({
+vi.mock("@p0security/connector-core", async (importOriginal) => ({
   ...(await importOriginal<typeof connectorModule>()),
   runCloudRunConnector,
 }));
