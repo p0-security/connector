@@ -1,4 +1,8 @@
-import { ConnectorError, createLogger, isDefined } from "@p0security/connector";
+import {
+  ConnectorError,
+  createLogger,
+  isDefined,
+} from "@p0security/connector-core";
 
 import {
   type GithubAuth,

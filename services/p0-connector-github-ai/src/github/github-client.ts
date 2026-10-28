@@ -1,4 +1,4 @@
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 
 import type { AccessTokenRequest, GithubClientContext } from "./context.ts";
 import {

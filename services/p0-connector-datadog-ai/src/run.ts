@@ -1,4 +1,4 @@
-import { createLogger, runCloudRunConnector } from "@p0security/connector";
+import { createLogger, runCloudRunConnector } from "@p0security/connector-core";
 
 import { connectorRouter } from "./router.ts";
 
