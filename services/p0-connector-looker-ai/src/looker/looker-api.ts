@@ -3,7 +3,7 @@ import {
   type ConnectorErrorType,
   connectorErrorTypeForHttpStatus,
   createLogger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { z } from "zod";
 
 const logger = createLogger();
@@ -602,13 +602,11 @@ const permissionSet = z
     name: z.string().nullish(),
     permissions: z.array(z.string()).nullish(),
   })
-  .transform(
-    ({ id, name, permissions }): LookerPermissionSet => ({
-      id,
-      name: name ?? "",
-      permissions: permissions ?? [],
-    })
-  );
+  .transform(({ id, name, permissions }): LookerPermissionSet => ({
+    id,
+    name: name ?? "",
+    permissions: permissions ?? [],
+  }));
 
 const modelSet = z
   .object({
@@ -616,13 +614,11 @@ const modelSet = z
     name: z.string().nullish(),
     models: z.array(z.string()).nullish(),
   })
-  .transform(
-    ({ id, name, models }): LookerModelSet => ({
-      id,
-      name: name ?? "",
-      models: models ?? [],
-    })
-  );
+  .transform(({ id, name, models }): LookerModelSet => ({
+    id,
+    name: name ?? "",
+    models: models ?? [],
+  }));
 
 const role = z
   .object({
@@ -631,14 +627,12 @@ const role = z
     permission_set: z.object({ id: lookerId }).nullish(),
     model_set: z.object({ id: lookerId }).nullish(),
   })
-  .transform(
-    ({ id, name, permission_set, model_set }): LookerRole => ({
-      id,
-      name: name ?? "",
-      permissionSetId: permission_set?.id,
-      modelSetId: model_set?.id,
-    })
-  );
+  .transform(({ id, name, permission_set, model_set }): LookerRole => ({
+    id,
+    name: name ?? "",
+    permissionSetId: permission_set?.id,
+    modelSetId: model_set?.id,
+  }));
 
 /**
  * Every permission the instance knows, with the permission it depends on

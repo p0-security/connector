@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import type * as secretManagerClient from "@p0security/secret-manager-client";
 import { format, inspect } from "node:util";
 import type * as pinoModule from "pino";

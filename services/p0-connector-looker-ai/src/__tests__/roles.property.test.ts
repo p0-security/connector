@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { describe, expect, it } from "vitest";
 
 import { closeOverParents, toLevelPermissions } from "../roles.ts";

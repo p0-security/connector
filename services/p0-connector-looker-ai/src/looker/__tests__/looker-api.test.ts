@@ -1,5 +1,5 @@
-import type * as connector from "@p0security/connector";
-import { ConnectorError } from "@p0security/connector";
+import type * as connector from "@p0security/connector-core";
+import { ConnectorError } from "@p0security/connector-core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -34,7 +34,7 @@ const logged = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
 
 // The client's own logger records its warnings and errors, so a test can read
 // the level of each line.
-vi.mock("@p0security/connector", async (importOriginal) => {
+vi.mock("@p0security/connector-core", async (importOriginal) => {
   const actual = await importOriginal<typeof connector>();
   return {
     ...actual,

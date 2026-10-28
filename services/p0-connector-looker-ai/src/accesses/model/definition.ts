@@ -1,4 +1,4 @@
-import { newZodResourceRootParsers } from "@p0security/connector";
+import { newZodResourceRootParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 // The grant's secret name, as both the user body and the user id. The grant's
