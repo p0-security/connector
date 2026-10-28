@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import gcpServiceAccountConnectorPackageJson from "../package.json" with { type: "json" };
 import { router as agenticIdentityRouter } from "./accesses/agentic-identity/handler.ts";

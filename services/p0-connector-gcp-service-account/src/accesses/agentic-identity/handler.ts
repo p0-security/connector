@@ -14,8 +14,8 @@ import type {
   AnyConnectorTRPCInstance,
   ResourceRootConnectorPrimitives,
   ResourceRootSchemaOf,
-} from "@p0security/connector";
-import { newResourceRootRouter } from "@p0security/connector";
+} from "@p0security/connector-core";
+import { newResourceRootRouter } from "@p0security/connector-core";
 import {
   createClients,
   gcloudServiceMetadata,

@@ -1,5 +1,5 @@
-import type { ConnectorErrorType } from "@p0security/connector";
-import { ConnectorError } from "@p0security/connector";
+import type { ConnectorErrorType } from "@p0security/connector-core";
+import { ConnectorError } from "@p0security/connector-core";
 
 /** Contextual fields attached to every {@link ConnectorError} this module raises. */
 type DriveErrorPayload = Record<string, boolean | number | string>;

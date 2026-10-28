@@ -1,4 +1,4 @@
-import { newZodResourceRootParsers } from "@p0security/connector";
+import { newZodResourceRootParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 /** The service account to find or create, and the federated subject it stands

@@ -1,4 +1,4 @@
-import { newZodResourceRootParsers } from "@p0security/connector";
+import { newZodResourceRootParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 // The grantee is the short-lived service account P0 mints for an agentic
