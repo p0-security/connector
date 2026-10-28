@@ -5,7 +5,7 @@ import {
   type Logger,
   type ResourceRootSchemaOf,
   newResourceRootRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { memoizeByKey } from "../../databricks/api.ts";
 import {

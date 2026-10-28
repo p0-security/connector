@@ -3,7 +3,7 @@ import {
   STSClient,
   STSServiceException,
 } from "@aws-sdk/client-sts";
-import { ConnectorError, createLogger } from "@p0security/connector";
+import { ConnectorError, createLogger } from "@p0security/connector-core";
 import { z } from "zod";
 
 import {

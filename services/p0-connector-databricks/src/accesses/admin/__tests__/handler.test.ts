@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 
@@ -29,7 +29,7 @@ import { adminScopeOf } from "../handler.ts";
 vi.mock("@aws-sdk/client-sts", async (importOriginal) =>
   (await import("../../../__tests__/sts.ts")).fakeStsModule(importOriginal)
 );
-vi.mock("@p0security/connector", async (importOriginal) =>
+vi.mock("@p0security/connector-core", async (importOriginal) =>
   (await import("../../../__tests__/logs.ts")).recordingLoggerModule(
     importOriginal
   )
@@ -1281,6 +1281,60 @@ describe("domain verification on revoke", () => {
       expect(writes()).toEqual([]);
     });
   });
+});
+
+// The framework runs `userIsNamespacedByBody` before `setPoliciesForUser` and
+// `deleteUser`. Once a request has staged, P0 sends the requestor's current
+// email with the account SCIM ID it recorded, and the check passes on that,
+// even when the email has since left DOMAIN_PATTERN.
+describe("the framework's body check, on the userBody P0 sends after stage", () => {
+  const sentBody: UserBody = {
+    email: "alice@elsewhere.example",
+    userId: ALICE_ID,
+  };
+
+  it("passes before setPoliciesForUser on a grant", async () => {
+    await expect(
+      admin().setPoliciesForUser({
+        userId: ALICE_ID,
+        userBody: sentBody,
+        policies: ["WORKSPACE_ADMIN"],
+        context: workspaceContext(),
+      })
+    ).resolves.toBeNull();
+    expect(databricks.assignments.get(ALICE_ID)).toEqual(["ADMIN"]);
+    expect(domainWarnings()).toBe(0);
+  });
+
+  it("passes before setPoliciesForUser on a revoke", async () => {
+    databricks.assignments.set(ALICE_ID, ["ADMIN"]);
+
+    await expect(
+      admin().setPoliciesForUser({
+        userId: ALICE_ID,
+        userBody: sentBody,
+        policies: [],
+        context: workspaceContext({ operation: "revoke" }),
+      })
+    ).resolves.toBeNull();
+    expect(databricks.assignments.has(ALICE_ID)).toBe(false);
+    expect(domainWarnings()).toBe(0);
+  });
+
+  it.each(["grant", "revoke"] as const)(
+    "passes before deleteUser when the call says %s",
+    async (operation) => {
+      await expect(
+        admin().deleteUser({
+          userId: ALICE_ID,
+          userBody: sentBody,
+          context: workspaceContext({ operation }),
+        })
+      ).resolves.toBeNull();
+      expect(domainWarnings()).toBe(0);
+      expect(writes()).toEqual([]);
+    }
+  );
 });
 
 describe("users", () => {

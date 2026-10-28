@@ -2,7 +2,7 @@ import {
   ConnectorError,
   connectorErrorTypeForHttpStatus,
   createLogger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 import { z } from "zod";
 
 import databricksConnectorPackageJson from "../../package.json" with { type: "json" };

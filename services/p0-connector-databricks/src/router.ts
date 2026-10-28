@@ -2,7 +2,7 @@ import {
   newConnectorRouter,
   newConnectorTRPC,
   newMetadataRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { router as adminRouter } from "./accesses/admin/handler.ts";
 import { router as privilegeRouter } from "./accesses/privilege/handler.ts";

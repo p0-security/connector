@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -31,7 +31,7 @@ import {
 vi.mock("@aws-sdk/client-sts", async (importOriginal) =>
   (await import("../../../__tests__/sts.ts")).fakeStsModule(importOriginal)
 );
-vi.mock("@p0security/connector", async (importOriginal) =>
+vi.mock("@p0security/connector-core", async (importOriginal) =>
   (await import("../../../__tests__/logs.ts")).recordingLoggerModule(
     importOriginal
   )
@@ -554,6 +554,53 @@ describe("domain verification on revoke", () => {
       expect(fake.held("schema/main.sales", ALICE.userName)).toEqual([]);
     });
   });
+});
+
+// The framework runs `userIsNamespacedByBody` before `setPoliciesForUser` and
+// `deleteUser`. Once a request has staged, P0 sends the requestor's current
+// email with the `userName` it recorded, and the check passes on that, even
+// when the email has since left DOMAIN_PATTERN.
+describe("the framework's body check, on the userBody P0 sends after stage", () => {
+  const orders = selectOnTable("orders");
+  const sentBody: UserBody = {
+    email: "alice@elsewhere.example",
+    userName: ALICE.userName,
+  };
+
+  it("passes before setPoliciesForUser on a grant", async () => {
+    await expect(
+      grant({ policies: orders, requestGrants: orders, userBody: sentBody })
+    ).resolves.toBeNull();
+    expect(fake.held("table/main.sales.orders", ALICE.userName)).toEqual([
+      "SELECT",
+    ]);
+    expect(domainWarnings()).toBe(0);
+  });
+
+  it("passes before setPoliciesForUser on a revoke", async () => {
+    await grant({ policies: orders, requestGrants: orders });
+
+    await expect(
+      revoke({ policies: [], requestGrants: orders, userBody: sentBody })
+    ).resolves.toBeNull();
+    expect(fake.held("table/main.sales.orders", ALICE.userName)).toEqual([]);
+    expect(domainWarnings()).toBe(0);
+  });
+
+  it.each(["grant", "revoke"] as const)(
+    "passes before deleteUser when the call says %s",
+    async (operation) => {
+      await expect(
+        caller().deleteUser({
+          userId: ALICE.userName,
+          userBody: sentBody,
+          context: context([], operation),
+        })
+      ).resolves.toBeNull();
+      expect(domainWarnings()).toBe(0);
+      expect(fetchMock).not.toHaveBeenCalled();
+    }
+  );
 });
 
 describe("the operation the context names", () => {

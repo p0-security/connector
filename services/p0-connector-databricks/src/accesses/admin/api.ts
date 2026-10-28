@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 import { z } from "zod";
 
 import { isNotFound, parse, withForbiddenAs } from "../../databricks/api.ts";
