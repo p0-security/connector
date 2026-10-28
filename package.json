@@ -19,7 +19,8 @@
     ":publish": "yarn :build && yarn workspaces foreach --all --topological --no-private npm publish --tolerate-republish"
   },
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "services/*"
   ],
   "devDependencies": {
     "@eslint/js": "^10.0.1",
