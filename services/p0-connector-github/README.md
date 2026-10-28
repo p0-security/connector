@@ -290,7 +290,6 @@ account, which needs `roles/run.invoker` on the service, and `roles/run.viewer`
 so P0 can look up the service's URL. The Terraform and script that P0's
 installer generates set `INVOKER_SA_EMAIL` to that service account: the
 connector refuses every caller whose token isn't for it, on top of Cloud Run's
-own check. The service also needs `CONNECTOR_AUDIENCE`, the service URL the
-Cloud Run API reports as `uri`. Without both variables it refuses to start.
+own check. Without it the service refuses to start.
 
 It needs to reach `api.github.com`, and doesn't need a VPC.

@@ -61,7 +61,6 @@ const authorize = (middleware: RequestHandler, token: string) =>
 
 beforeEach(() => {
   vi.stubEnv("INVOKER_SA_EMAIL", INVOKER);
-  vi.stubEnv("CONNECTOR_AUDIENCE", AUDIENCE);
   // Serve the test key in place of Google's published certificates.
   vi.spyOn(
     OAuth2Client.prototype,
@@ -81,27 +80,13 @@ afterEach(() => {
 });
 
 describe("runCloudRunConnector at startup", () => {
-  it.each([
-    ["INVOKER_SA_EMAIL", undefined],
-    ["INVOKER_SA_EMAIL", ""],
-    ["CONNECTOR_AUDIENCE", undefined],
-    ["CONNECTOR_AUDIENCE", ""],
-  ])("throws without serving when %s is %j", (name, value) => {
-    vi.stubEnv(name, value);
-
-    expect(() => runCloudRunConnector("test", emptyRouter)).toThrow(
-      /is not set or present/
-    );
-    expect(runExpressApp).not.toHaveBeenCalled();
-  });
-
-  it.each(["   ", ` ${AUDIENCE}`, `${AUDIENCE}\n`])(
-    "throws without serving when CONNECTOR_AUDIENCE is %j",
+  it.each([undefined, ""])(
+    "throws without serving when INVOKER_SA_EMAIL is %j",
     (value) => {
-      vi.stubEnv("CONNECTOR_AUDIENCE", value);
+      vi.stubEnv("INVOKER_SA_EMAIL", value);
 
       expect(() => runCloudRunConnector("test", emptyRouter)).toThrow(
-        /leading or trailing whitespace/
+        /is not set or present/
       );
       expect(runExpressApp).not.toHaveBeenCalled();
     }
@@ -109,22 +94,20 @@ describe("runCloudRunConnector at startup", () => {
 });
 
 describe("the bearer check runCloudRunConnector serves", () => {
-  it("admits a token for the invoker and the configured audience", async () => {
+  it("admits a token for the invoker", async () => {
     const token = mintToken({ aud: AUDIENCE, email: INVOKER });
 
     await expect(authorize(startConnector(), token)).resolves.toBeUndefined();
   });
 
-  it("rejects a token minted for another audience", async () => {
-    // What P0 mints when another tenant registers this connector's URL.
+  it("admits a token for the invoker minted for another audience", async () => {
+    // The connector leaves the audience to Cloud Run's invoker check.
     const token = mintToken({
       aud: "https://connector.example.com?p0_org=tenant-b",
       email: INVOKER,
     });
 
-    await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
-      AuthError
-    );
+    await expect(authorize(startConnector(), token)).resolves.toBeUndefined();
   });
 
   it("rejects a token for another service account", async () => {

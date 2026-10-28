@@ -111,14 +111,11 @@ run();
 
 - **GCP (Cloud Run)**: calling the `run()` that `newCustomAppCloudRunServer` returns starts an
   Express server on `$PORT` (default `8080`), gated by a bearer-token check on the Google ID token P0
-  sends. Two variables are required. `INVOKER_SA_EMAIL` is the service account P0 impersonates to
-  call your connector, and the token's `email` claim must match it. `CONNECTOR_AUDIENCE` is the
-  audience P0 mints the token for, and the token's `aud` claim must equal it exactly. On Cloud Run it
-  is the service URL the Cloud Run API reports as `uri`. P0 will show the exact string when it
-  supports hosting outside Cloud Run. `run()` throws before binding a port if either variable is unset or empty, or
-  if `CONNECTOR_AUDIENCE` has leading or trailing whitespace. On Cloud Run, also grant
-  `INVOKER_SA_EMAIL` `roles/run.invoker` on the service. Hosted anywhere else, the bearer check is
-  the only gate in front of the connector. The one exception is `GET /health`, which answers `200`
+  sends. Set `INVOKER_SA_EMAIL` to the service account P0 impersonates to call your connector; the
+  token's `email` claim must match it, and `run()` throws before binding a port if it's unset or
+  empty. The connector doesn't check the token's audience, so deploy the service private and grant
+  `INVOKER_SA_EMAIL` `roles/run.invoker` on it: Cloud Run's invoker check is what turns away a
+  token minted for another service. The one exception is `GET /health`, which answers `200`
   without a token so a load balancer can health-check the container. It returns only the module
   name and reaches none of your actions.
 - **AWS (Lambda)**: `newCustomAppLambdaHandler` returns your handler directly. There is no
