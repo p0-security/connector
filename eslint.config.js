@@ -11,8 +11,8 @@ export default defineConfig([
       ecmaVersion: "latest",
       sourceType: "module",
       parserOptions: {
-        // Every linted package has a tsconfig, so type-aware linting can
-        // resolve each file to its project automatically.
+        // Every linted package/service has a tsconfig, so type-aware linting
+        // can resolve each file to its project automatically.
         projectService: true,
       },
     },
@@ -22,7 +22,7 @@ export default defineConfig([
   },
   {
     name: "Universal JS/TS Config",
-    files: ["packages/*/src/**"],
+    files: ["{packages,services}/*/src/**"],
     extends: [
       js.configs.recommended,
       tseslint.configs.recommendedTypeChecked,
@@ -73,7 +73,7 @@ export default defineConfig([
   },
   {
     name: "Universal TS/JS Rules",
-    files: ["packages/*/src/**"],
+    files: ["{packages,services}/*/src/**"],
     rules: {
       // Explicit any should be used judiciously to avoid undue wrestling with TS
       "@typescript-eslint/no-explicit-any": "off",

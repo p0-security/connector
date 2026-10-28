@@ -1,0 +1,73 @@
+# Define custom function directory
+ARG FUNCTION_DIR="/var/task"
+# If you change the major version of node here, ensure the Lambda base image is also updated below.
+FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.0-dev AS build
+ARG WORKSPACE
+ARG BUILD_DATE
+ARG GIT_REF
+ARG FUNCTION_DIR
+RUN test -n "$WORKSPACE" || (echo "WORKSPACE build arg is required" && exit 1)
+RUN test -n "$BUILD_DATE" || (echo "BUILD_DATE build arg is required" && exit 1)
+RUN test -n "$GIT_REF" || (echo "GIT_REF build arg is required" && exit 1)
+ENV WORKSPACE=$WORKSPACE
+ENV BUILD_DATE=$BUILD_DATE
+ENV GIT_REF=$GIT_REF
+
+USER root
+
+RUN corepack enable yarn
+
+WORKDIR /app
+COPY .yarn.lock yarn.lock
+COPY ./ ./
+ENV YARN_CACHE_FOLDER=/root/.yarn
+RUN --mount=type=cache,target=$YARN_CACHE_FOLDER \
+  yarn workspaces focus --all && \
+  yarn workspaces foreach --recursive --topological --from "${WORKSPACE}" run build && \
+  yarn workspace "${WORKSPACE}" run build-within-docker && \
+  yarn workspace "${WORKSPACE}" exec sh -c 'ln -s "$(pwd)/dist" /app/dist'
+
+#AWS lambda ric takes time to build. separating it into it's own build stage helps speed up the build
+FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.0-dev AS aws-build
+ARG FUNCTION_DIR
+USER root
+
+RUN corepack enable yarn
+# Build dependencies required for aws-lambda-ric native compilation
+RUN apk update && apk add --no-cache cmake autoconf automake libtool python3 py3-setuptools
+WORKDIR ${FUNCTION_DIR}
+# npm v12 (shipped in the 24.18 Chainguard image via npm 12.0.0-pre; 24.16 was still on
+# npm 11.x) default-denies dependency install scripts (allowScripts opt-in). aws-lambda-ric
+# relies on an implicit node-gyp rebuild to compile the native rapid-client.node addon;
+# without allow-listing it, npm install "succeeds" but skips the build, and the Lambda
+# crashes at init with "Cannot find module './rapid-client.node'".
+RUN printf 'allow-scripts[]=aws-lambda-ric\n' > .npmrc \
+  && npm install aws-lambda-ric@4.0.2
+
+FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.0
+# Include global arg in this stage of the build
+ARG WORKSPACE
+ARG FUNCTION_DIR
+ARG BUILD_DATE
+ARG GIT_REF
+ENV WORKSPACE=$WORKSPACE
+ENV BUILD_DATE=$BUILD_DATE
+ENV GIT_REF=$GIT_REF
+
+# Set working directory to function root directory
+WORKDIR ${FUNCTION_DIR}
+
+
+COPY --from=aws-build ${FUNCTION_DIR} ${FUNCTION_DIR}
+COPY --from=build /app/dist/index.mjs ${FUNCTION_DIR}
+# The runtime image defaults to node, which cannot delete the npm tree.
+# npx only resolved aws-lambda-ric, which is already installed in the function
+# directory. That tree bundles unpatched http-cache-semantics.
+USER root
+RUN rm -rf /usr/lib/node_modules/npm \
+ && rm -f /usr/bin/npm /usr/bin/npx \
+ && rm -f /var/lib/db/sbom/npm-*.spdx.json
+USER node
+
+ENTRYPOINT ["/var/task/node_modules/.bin/aws-lambda-ric"]
+CMD ["index.handler"]
