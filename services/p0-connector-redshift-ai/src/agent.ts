@@ -1,4 +1,4 @@
-import { ConnectorError, type Logger } from "@p0security/connector";
+import { ConnectorError, type Logger } from "@p0security/connector-core";
 
 import type { InstallContext } from "./context.ts";
 import type { RedshiftSession } from "./redshift/data-api.ts";

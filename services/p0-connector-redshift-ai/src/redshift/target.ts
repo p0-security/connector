@@ -6,7 +6,7 @@ import {
   GetWorkgroupCommand,
   RedshiftServerlessClient,
 } from "@aws-sdk/client-redshift-serverless";
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 import type { InstallContext, TargetType } from "../context.ts";
 import { toConnectorError } from "./data-api.ts";

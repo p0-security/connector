@@ -12,7 +12,7 @@ import {
   ConnectorError,
   type ConnectorErrorOptions,
   type Logger,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import type { InstallContext } from "../context.ts";
 

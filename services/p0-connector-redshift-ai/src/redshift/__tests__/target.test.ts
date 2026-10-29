@@ -1,4 +1,4 @@
-import type { ConnectorError } from "@p0security/connector";
+import type { ConnectorError } from "@p0security/connector-core";
 import { describe, expect, it } from "vitest";
 
 import { install, provisioned } from "../../__tests__/fakes.ts";

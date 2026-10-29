@@ -1,4 +1,4 @@
-import { createLogger } from "@p0security/connector";
+import { createLogger } from "@p0security/connector-core";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { fakeDataApi, install } from "../../__tests__/fakes.ts";

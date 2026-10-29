@@ -5,7 +5,7 @@ import {
   type ResourceRootParsers,
   type ResourceRootSchema,
   newResourceRootRouter,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { createAgent, dropAgent, findAgent, revokeAgent } from "../agent.ts";
 import type {

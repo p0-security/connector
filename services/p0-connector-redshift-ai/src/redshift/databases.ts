@@ -1,4 +1,4 @@
-import type { Logger } from "@p0security/connector";
+import type { Logger } from "@p0security/connector-core";
 
 import { isIdentifier } from "../sql.ts";
 import type { RedshiftSession } from "./data-api.ts";

@@ -4,7 +4,7 @@ import {
   type ConnectorErrorOptions,
   type Logger,
   withRouteLogging,
-} from "@p0security/connector";
+} from "@p0security/connector-core";
 
 import { type InstallContext, installContext } from "../context.ts";
 import {

@@ -1,4 +1,4 @@
-import type { AnyConnectorTRPCInstance } from "@p0security/connector";
+import type { AnyConnectorTRPCInstance } from "@p0security/connector-core";
 
 import { ensurePrivilegeRole } from "../../agent.ts";
 import type { RedshiftSession } from "../../redshift/data-api.ts";

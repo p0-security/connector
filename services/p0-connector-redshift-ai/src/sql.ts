@@ -1,4 +1,4 @@
-import { ConnectorError } from "@p0security/connector";
+import { ConnectorError } from "@p0security/connector-core";
 
 // The Data API takes parameters only as values, never as identifiers, and
 // `CREATE USER`, `GRANT` and `ALTER … OWNER TO` name everything by
