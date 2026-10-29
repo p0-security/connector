@@ -1,5 +1,5 @@
 import type { secretmanager_v1 } from "@googleapis/secretmanager";
-import { createClients } from "@p0security/gcloud-common";
+import { createClients } from "@p0security/connector-gcloud-common";
 import { randomBytes } from "node:crypto";
 
 import {
@@ -112,7 +112,7 @@ const toVersionMetadata = (
 
 /**
  * GCP Secret Manager implementation, built on the auth/client bundle from
- * `@p0security/gcloud-common`. Uses the global (non-regionalized)
+ * `@p0security/connector-gcloud-common`. Uses the global (non-regionalized)
  * `projects.secrets.*` API; secret and version resource names are used
  * directly as `SecretRef`/`SecretVersionRef`.
  */

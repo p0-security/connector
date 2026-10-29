@@ -1,4 +1,4 @@
-import type * as secretManagerClient from "@p0security/secret-manager-client";
+import type * as secretManagerClient from "@p0security/connector-secret-manager-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -27,10 +27,13 @@ const vault = vi.hoisted(() => ({
   getSecretValue: vi.fn(),
 }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof secretManagerClient>()),
-  createSecretManagerClient: vault.createSecretManagerClient,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof secretManagerClient>()),
+    createSecretManagerClient: vault.createSecretManagerClient,
+  })
+);
 
 const { log } = newRecordingLogger();
 

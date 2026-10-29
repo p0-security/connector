@@ -12,7 +12,7 @@ import {
   SecretNotFoundError,
   type SecretRef,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import { getInstallSecret } from "../../secrets.ts";
 import {

@@ -1,5 +1,5 @@
 import { ConnectorError, createLogger } from "@p0security/connector-core";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "../../looker/looker-api.ts";
@@ -10,10 +10,13 @@ vi.mock("../../looker/looker-api.ts");
 // `vi.hoisted` guarantees this exists before the (hoisted) `vi.mock` factory runs.
 const secretManager = vi.hoisted(() => ({ create: vi.fn() }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof SecretManagerClientModule>()),
-  createSecretManagerClient: secretManager.create,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof SecretManagerClientModule>()),
+    createSecretManagerClient: secretManager.create,
+  })
+);
 
 const BASE_URL = "https://example.looker.app";
 const ADMIN_KEY = { client_id: "admin-id", client_secret: "admin-secret" };

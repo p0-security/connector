@@ -1,5 +1,5 @@
 import { createLogger } from "@p0security/connector-core";
-import { getServiceAccountEmail } from "@p0security/gcloud-common";
+import { getServiceAccountEmail } from "@p0security/connector-gcloud-common";
 import knex, { type Knex } from "knex";
 
 import { type Cloud, type Endpoint, getConfig } from "./clouds/index.ts";

@@ -1,5 +1,5 @@
 {
-  "name": "@p0security/secret-manager-client",
+  "name": "@p0security/connector-secret-manager-client",
   "version": "1.1.0",
   "private": true,
   "description": "Shared client for interacting with secret manager providers",
@@ -21,7 +21,7 @@
     "@aws-sdk/client-secrets-manager": "^3.975.0",
     "@azure/identity": "^4.13.0",
     "@azure/keyvault-secrets": "^4.11.2",
-    "@p0security/gcloud-common": "workspace:^"
+    "@p0security/connector-gcloud-common": "workspace:^"
   },
   "devDependencies": {
     "@googleapis/secretmanager": "^7.0.0",

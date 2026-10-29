@@ -10,7 +10,7 @@ import {
   SecretNotFoundError,
   UnauthorizedError,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import type { SecretRef } from "./install/definition.ts";
 

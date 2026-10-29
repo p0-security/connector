@@ -169,7 +169,7 @@ The Cloud Run service account needs two roles, both bound on the secret:
 `roles/secretmanager.secretAccessor` and `roles/secretmanager.viewer`.
 
 The accessor role isn't enough on its own. The shared secret client
-(`@p0security/secret-manager-client`) reads the latest version's value, then
+(`@p0security/connector-secret-manager-client`) reads the latest version's value, then
 reads that version's metadata, and the second call needs
 `secretmanager.versions.get`, which the accessor role doesn't have. Without
 it the read is refused, and the connector reports that it isn't allowed to

@@ -2,7 +2,7 @@ import { ConnectorError } from "@p0security/connector-core";
 import type {
   SecretManagerClient,
   SecretRef,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 /** Reads the admin service account's client secret. The secret value is the client
  * secret itself. */

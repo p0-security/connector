@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@p0security/connector-core": "workspace:^",
-    "@p0security/secret-manager-client": "workspace:^",
+    "@p0security/connector-secret-manager-client": "workspace:^",
     "@trpc/server": "^11.10.0",
     "pino": "^9.14.0",
     "snowflake-sdk": "^3.4.0",

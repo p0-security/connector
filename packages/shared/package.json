@@ -1,5 +1,5 @@
 {
-  "name": "@p0security/sp-shared",
+  "name": "@p0security/connector-sp-shared",
   "license": "SEE LICENSE IN LICENSE",
   "version": "1.0.0",
   "private": true,

@@ -24,7 +24,7 @@ Two properties are worth knowing before reading the code:
   in this service's own organization. A compromised control plane is exactly
   the case this service exists to contain.
 
-The primitives themselves live in `@p0security/gcloud-common`
+The primitives themselves live in `@p0security/connector-gcloud-common`
 (`packages/gcloud/src/agentic-identity`); this service is their transport.
 
 ## Creating local builds

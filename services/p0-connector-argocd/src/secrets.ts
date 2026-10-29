@@ -14,7 +14,7 @@ import {
   type SecretRef,
   UnauthorizedError,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 import { z } from "zod";
 
 import { type FailureFacts, describeFailure, failureFacts } from "./failure.ts";

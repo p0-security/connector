@@ -4,7 +4,7 @@ import {
   type SecretManagerClient,
   SecretNotFoundError,
   UnauthorizedError,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import type { RequestContext } from "./context.ts";
 import { secretRef } from "./secrets.ts";

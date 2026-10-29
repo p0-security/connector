@@ -1,6 +1,6 @@
 import { createLogger } from "@p0security/connector-core";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
-import type { SecretVersionRef } from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
+import type { SecretVersionRef } from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { t } from "../../../router.ts";
@@ -20,25 +20,28 @@ const { secretManagerConfigs } = vi.hoisted(() => ({
   secretManagerConfigs: [] as unknown[],
 }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof SecretManagerClientModule>();
-  return {
-    ...actual,
-    createSecretManagerClient: async (config: unknown) => {
-      secretManagerConfigs.push(config);
-      return {
-        getSecretValue: async ({ ref }: { ref: string }) => {
-          const value = store.get(ref);
-          if (value === undefined)
-            throw new actual.SecretVersionNotFoundError(
-              ref as SecretVersionRef
-            );
-          return { value };
-        },
-      };
-    },
-  };
-});
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof SecretManagerClientModule>();
+    return {
+      ...actual,
+      createSecretManagerClient: async (config: unknown) => {
+        secretManagerConfigs.push(config);
+        return {
+          getSecretValue: async ({ ref }: { ref: string }) => {
+            const value = store.get(ref);
+            if (value === undefined)
+              throw new actual.SecretVersionNotFoundError(
+                ref as SecretVersionRef
+              );
+            return { value };
+          },
+        };
+      },
+    };
+  }
+);
 
 const facade = {
   findAgent: vi.fn(),

@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@p0security/connector-core": "workspace:^",
-    "@p0security/gcloud-common": "workspace:*",
+    "@p0security/connector-gcloud-common": "workspace:*",
     "@p0security/p0-connector-mysql": "workspace:^",
     "@p0security/p0-connector-pg": "workspace:^",
     "@trpc/server": "^11.10.0",

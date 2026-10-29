@@ -2,7 +2,7 @@ import {
   type SecretManagerProviderConfig,
   type SecretRef,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 export const getGithubPrivateKey = async (
   config: SecretManagerProviderConfig,

@@ -6,20 +6,20 @@ import type {
   AnyConnectorTRPCInstance,
   ConnectorErrorType,
 } from "@p0security/connector-core";
-import { getServiceAccountEmail } from "@p0security/gcloud-common";
+import { getServiceAccountEmail } from "@p0security/connector-gcloud-common";
 import {
   SecretAlreadyExistsError,
   SecretNotFoundError,
   SecretVersionNotFoundError,
   UnauthorizedError,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 import type {
   SecretManagerClient,
   SecretRef,
   SecretVersionRef,
   VersionMetadata,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import { spec } from "./definition.ts";
 

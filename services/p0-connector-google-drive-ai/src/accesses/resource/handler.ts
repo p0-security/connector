@@ -9,7 +9,7 @@ import {
   ConnectorError,
   newResourceRootRouter,
 } from "@p0security/connector-core";
-import { isAgenticIdentityEmail } from "@p0security/gcloud-common";
+import { isAgenticIdentityEmail } from "@p0security/connector-gcloud-common";
 
 import type { DriveApi, DrivePermission } from "../../drive/api.ts";
 import { newDriveApi } from "../../drive/api.ts";

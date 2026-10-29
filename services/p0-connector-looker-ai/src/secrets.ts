@@ -6,7 +6,7 @@ import {
   type SecretPayload,
   type SecretRef,
   UnauthorizedError,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 import { z } from "zod";
 
 import type { LookerApiKey } from "./looker/looker-api.ts";

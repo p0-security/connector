@@ -1,5 +1,5 @@
 import { ConnectorError, createLogger } from "@p0security/connector-core";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -32,10 +32,13 @@ vi.mock("../../snowflake/client.ts", async (importOriginal) => {
   };
 });
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof SecretManagerClientModule>();
-  return { ...actual, createSecretManagerClient: async () => secrets.client };
-});
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof SecretManagerClientModule>();
+    return { ...actual, createSecretManagerClient: async () => secrets.client };
+  }
+);
 
 const answerEverything = () => {
   snowflake.on("SELECT CURRENT_USER", () => [
@@ -52,7 +55,7 @@ const answerEverything = () => {
 
 beforeEach(async () => {
   const actual = await vi.importActual<typeof SecretManagerClientModule>(
-    "@p0security/secret-manager-client"
+    "@p0security/connector-secret-manager-client"
   );
   snowflake = fakeSession();
   secrets = fakeSecrets(actual);

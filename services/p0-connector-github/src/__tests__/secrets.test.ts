@@ -3,8 +3,8 @@ import {
   SecretNotFoundError,
   type SecretRef,
   UnauthorizedError,
-} from "@p0security/secret-manager-client";
-import type * as secretManagerClient from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
+import type * as secretManagerClient from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { PrivateKeyPointer } from "../accesses/common/definition.ts";
@@ -16,10 +16,13 @@ const vault = vi.hoisted(() => ({
   getSecretValue: vi.fn(),
 }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof secretManagerClient>()),
-  createSecretManagerClient: vault.createSecretManagerClient,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof secretManagerClient>()),
+    createSecretManagerClient: vault.createSecretManagerClient,
+  })
+);
 
 const AWS: PrivateKeyPointer = {
   manager: "aws",

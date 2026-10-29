@@ -1,6 +1,6 @@
 import { createLogger } from "@p0security/connector-core";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
-import type { SecretRef } from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
+import type { SecretRef } from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { t } from "../../../router.ts";
@@ -32,20 +32,23 @@ const { secretManagerConfigs } = vi.hoisted(() => ({
   secretManagerConfigs: [] as unknown[],
 }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof SecretManagerClientModule>();
-  return {
-    ...actual,
-    createSecretManagerClient: async (config: unknown) => {
-      secretManagerConfigs.push(config);
-      return secretManager;
-    },
-  };
-});
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof SecretManagerClientModule>();
+    return {
+      ...actual,
+      createSecretManagerClient: async (config: unknown) => {
+        secretManagerConfigs.push(config);
+        return secretManager;
+      },
+    };
+  }
+);
 
 const { SecretNotFoundError } = await vi.importActual<
   typeof SecretManagerClientModule
->("@p0security/secret-manager-client");
+>("@p0security/connector-secret-manager-client");
 
 const provisioner = {
   findUser: vi.fn(),

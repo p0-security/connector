@@ -7,7 +7,7 @@ import {
   createClients,
   gcloudServiceMetadata,
   newMemberVerifier,
-} from "@p0security/gcloud-common";
+} from "@p0security/connector-gcloud-common";
 import { noop } from "lodash-es";
 
 import {

@@ -13,13 +13,13 @@
  * framework's id-keyed calls need to re-check an address against its project.
  *
  * This module deliberately does not import the connector framework: the
- * framework already depends on `@p0security/gcloud-common`, so the dependency
+ * framework already depends on `@p0security/connector-gcloud-common`, so the dependency
  * only runs one way. The types below restate the framework's resource-root
  * contract structurally, and the service that mounts the router is where the
  * two are checked against each other.
  */
 import type { cloudresourcemanager_v3 } from "@googleapis/cloudresourcemanager";
-import { ProxyError, ValidationError } from "@p0security/sp-shared";
+import { ProxyError, ValidationError } from "@p0security/connector-sp-shared";
 
 import type { GcloudClients } from "../client.ts";
 import { getOrgId } from "../helpers/ancestry.ts";

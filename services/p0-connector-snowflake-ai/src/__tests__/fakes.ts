@@ -1,9 +1,9 @@
 import type { Logger } from "@p0security/connector-core";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
 import type {
   SecretManagerClient,
   SecretRef,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 import { generateKeyPairSync } from "node:crypto";
 import { Writable } from "node:stream";
 import { pino } from "pino";

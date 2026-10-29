@@ -7,7 +7,7 @@ import {
   SecretVersionNotFoundError,
   UnauthorizedError,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import type { InstallContext } from "./context.ts";
 import { type SnowflakeSignIn, exportPrivateKey } from "./snowflake/client.ts";

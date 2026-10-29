@@ -3,7 +3,7 @@ import type {
   SecretManagerClient,
   SecretPayload,
   SecretRef,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 import { z } from "zod";
 
 import type { ConnectedApp } from "./tableau/tableau-api.ts";

@@ -1,5 +1,5 @@
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
-import type { SecretRef } from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
+import type { SecretRef } from "@p0security/connector-secret-manager-client";
 
 /**
  * An in-memory Google Secret Manager, keyed by `<projectId>/<secret name>`.

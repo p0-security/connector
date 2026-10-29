@@ -1,4 +1,4 @@
-import { ProxyError, ValidationError } from "@p0security/sp-shared";
+import { ProxyError, ValidationError } from "@p0security/connector-sp-shared";
 
 import {
   isAgenticIdentitySubject,

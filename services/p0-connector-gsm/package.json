@@ -25,8 +25,8 @@
   "dependencies": {
     "@p0security/connector-cli": "workspace:^",
     "@p0security/connector-core": "workspace:^",
-    "@p0security/gcloud-common": "workspace:^",
-    "@p0security/secret-manager-client": "workspace:^",
+    "@p0security/connector-gcloud-common": "workspace:^",
+    "@p0security/connector-secret-manager-client": "workspace:^",
     "@trpc/server": "^11.10.0",
     "pino": "^9.14.0",
     "zod": "^4.3.6"

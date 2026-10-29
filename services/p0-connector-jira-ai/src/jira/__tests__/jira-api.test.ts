@@ -1,5 +1,5 @@
 import { ConnectorError } from "@p0security/connector-core";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -28,17 +28,20 @@ import {
 
 const vault = vi.hoisted((): { fake?: FakeSecretManager } => ({}));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof SecretManagerClientModule>();
-  const { fakeSecretManager } =
-    await import("../../__tests__/secret-manager-mock.ts");
-  const fake = fakeSecretManager(actual);
-  vault.fake = fake;
-  return {
-    ...actual,
-    createSecretManagerClient: fake.createSecretManagerClient,
-  };
-});
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof SecretManagerClientModule>();
+    const { fakeSecretManager } =
+      await import("../../__tests__/secret-manager-mock.ts");
+    const fake = fakeSecretManager(actual);
+    vault.fake = fake;
+    return {
+      ...actual,
+      createSecretManagerClient: fake.createSecretManagerClient,
+    };
+  }
+);
 
 const fakeVault = () => {
   if (vault.fake === undefined)
