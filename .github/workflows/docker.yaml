@@ -249,9 +249,8 @@ jobs:
           images: |
             us-west1-docker.pkg.dev/p0-prod/docker-repository/p0/${{ matrix.image }}
             p0security/${{ matrix.image }}
-          # sha- tags only: p0-security-perimeter still pushes `latest` for
-          # these images until the cutover hands it over.
           tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
             type=sha
 
       - name: Get the time as UTC datetime for the build
