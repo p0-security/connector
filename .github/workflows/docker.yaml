@@ -1,0 +1,312 @@
+# No pull_request trigger: the Docker Hub secrets live in the main-only
+# `docker-publish` environment, so a PR build couldn't log in.
+on:
+  workflow_call:
+    outputs:
+      docker_image_tags:
+        description: "Docker image tags"
+        value: ${{ jobs.docker-build-and-push.outputs.docker_image_tags }}
+
+name: Publish Docker image
+
+jobs:
+  # this job is to build images for each service and push them to Docker Hub
+  docker-build-and-push:
+    name: Push Docker image to Docker Hub
+    runs-on: ubuntu-latest
+    environment: docker-publish
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      # This is a matrix build that will build and push the Docker image for each service
+      matrix:
+        include:
+          - image: p0-connector-pg
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-pg"
+            context: .
+          - image: p0-connector-mysql
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-mysql"
+            context: .
+          - image: p0-connector-cloudsql
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-cloudsql"
+            context: .
+          - image: p0-connector-gsm
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-gsm"
+            context: .
+          - image: p0-connector-gcp-service-account
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-gcp-service-account"
+            context: .
+          - image: p0-connector-google-drive-ai
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-google-drive-ai"
+            context: .
+          - image: p0-connector-github-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-github-ai"
+            context: .
+          - image: p0-connector-github-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-github-ai"
+            context: .
+          - image: p0-connector-databricks
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-databricks"
+            context: .
+          - image: p0-connector-databricks-ai
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-databricks-ai"
+            context: .
+          - image: p0-connector-datadog-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-datadog-ai"
+            context: .
+          - image: p0-connector-datadog-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-datadog-ai"
+            context: .
+          - image: p0-connector-gitlab-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-gitlab-ai"
+            context: .
+          - image: p0-connector-gitlab-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-gitlab-ai"
+            context: .
+          - image: p0-connector-tableau-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-tableau-ai"
+            context: .
+          - image: p0-connector-tableau-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-tableau-ai"
+            context: .
+          - image: p0-connector-pagerduty-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-pagerduty-ai"
+            context: .
+          - image: p0-connector-pagerduty-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-pagerduty-ai"
+            context: .
+          - image: p0-connector-salesforce-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-salesforce-ai"
+            context: .
+          - image: p0-connector-salesforce-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-salesforce-ai"
+            context: .
+          - image: p0-connector-servicenow-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-servicenow-ai"
+            context: .
+          - image: p0-connector-servicenow-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-servicenow-ai"
+            context: .
+          - image: p0-connector-snowflake-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-snowflake-ai"
+            context: .
+          - image: p0-connector-snowflake-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-snowflake-ai"
+            context: .
+          - image: p0-connector-mongodb-atlas-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-mongodb-atlas-ai"
+            context: .
+          - image: p0-connector-mongodb-atlas-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-mongodb-atlas-ai"
+            context: .
+          - image: p0-connector-looker-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-looker-ai"
+            context: .
+          - image: p0-connector-github-repositories
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-github-repositories"
+            context: .
+          - image: p0-connector-github
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-github"
+            context: .
+          - image: p0-connector-github-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-github"
+            context: .
+          - image: p0-connector-docker
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-docker"
+            context: .
+          - image: p0-connector-docker-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-docker"
+            context: .
+          - image: p0-connector-harbor
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-harbor"
+            context: .
+          - image: p0-connector-harbor-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-harbor"
+            context: .
+          - image: p0-connector-argocd
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-argocd"
+            context: .
+          - image: p0-connector-argocd-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-argocd"
+            context: .
+          - image: p0-connector-clickhouse
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-clickhouse"
+            context: .
+          - image: p0-connector-clickhouse-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-clickhouse"
+            context: .
+          - image: p0-connector-1password
+            dockerfile: docker/connector/lambda-1password/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-1password"
+            context: .
+            smoke_test: lambda-1password
+          - image: p0-connector-1password-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-1password"
+            context: .
+            smoke_test: cloud-run-1password
+          - image: p0-connector-jira-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-jira-ai"
+            context: .
+          - image: p0-connector-auth0
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-auth0"
+            context: .
+          - image: p0-connector-auth0-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-auth0"
+            context: .
+          - image: p0-connector-tailscale
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-tailscale"
+            context: .
+          - image: p0-connector-tailscale-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-tailscale"
+            context: .
+          - image: p0-connector-launchdarkly
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-launchdarkly"
+            context: .
+          - image: p0-connector-launchdarkly-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-launchdarkly"
+            context: .
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          token_format: access_token
+          project_id: p0-prod
+          workload_identity_provider: projects/228132571547/locations/global/workloadIdentityPools/github-actions/providers/github-actions-provider
+          service_account: github-connector@p0-prod.iam.gserviceaccount.com
+          create_credentials_file: false
+
+      - name: Log in to Google Artifact Registry
+        uses: docker/login-action@v3
+        with:
+          registry: us-west1-docker.pkg.dev
+          username: oauth2accesstoken
+          password: ${{ steps.auth.outputs.access_token }}
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: |
+            us-west1-docker.pkg.dev/p0-prod/docker-repository/p0/${{ matrix.image }}
+            p0security/${{ matrix.image }}
+          # sha- tags only: p0-security-perimeter still pushes `latest` for
+          # these images until the cutover hands it over.
+          tags: |
+            type=sha
+
+      - name: Get the time as UTC datetime for the build
+        id: now
+        run: echo "NOW_UTC=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
+
+      # Only for an image whose matrix entry names a smoke test: builds it
+      # into the local daemon, which the push below then reuses.
+      - name: Build the image for its smoke test
+        if: matrix.smoke_test
+        uses: docker/build-push-action@v4
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: false
+          load: true
+          tags: smoke-test:local
+          build-args: |
+            WORKSPACE=${{ matrix.WORKSPACE }}
+            GIT_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.now.outputs.NOW_UTC }}
+
+      # The 1Password SDK reads its WebAssembly core from disk: check the
+      # image ships it where the connector loads it from, and that it loads.
+      - name: Smoke-test the 1Password Lambda image
+        if: matrix.smoke_test == 'lambda-1password'
+        run: |
+          docker run --rm --entrypoint node smoke-test:local \
+            -e "require('/var/task/node_modules/@1password/sdk')"
+          docker run --rm --entrypoint node -e DOMAIN_ALLOW_PATTERN='^example\.com$' \
+            smoke-test:local --input-type=module -e "$SMOKE_TEST"
+        env:
+          SMOKE_TEST: |
+            const { handler } = await import("/var/task/index.mjs");
+            if (typeof handler !== "function") throw new Error("no handler");
+            // The connector's own lazy import, resolved from /var/task. Loading
+            // the SDK reads its WebAssembly core.
+            const { createClient } = await import("@1password/sdk");
+            if (typeof createClient !== "function") throw new Error("no SDK");
+
+      - name: Smoke-test the 1Password Cloud Run image
+        if: matrix.smoke_test == 'cloud-run-1password'
+        run: |
+          docker run --rm --entrypoint node \
+            --workdir /app/services/p0-connector-1password smoke-test:local \
+            -e "require('@1password/sdk')"
+
+      - name: Build and push Docker image
+        id: docker-build-and-push
+        uses: docker/build-push-action@v4
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            WORKSPACE=${{ matrix.WORKSPACE }}
+            GIT_REF=${{ github.sha }}
+            BUILD_DATE=${{ steps.now.outputs.NOW_UTC }}
+    outputs:
+      docker_image_tags: ${{ steps.meta.outputs.tags }}
