@@ -14,21 +14,9 @@ const verifyToken = () => {
   if (!invokerSAEmail) {
     throw new Error("Invoker service account email is not set or present");
   }
-  // google-auth-library compares the audience whenever one is passed, so an
-  // empty string would reject every token; treat it as unset. Surrounding
-  // whitespace (say, a trailing newline from a secret) would do the same.
-  // Refuse it rather than trim it, since the value must match what P0 mints.
-  const audience = process.env.CONNECTOR_AUDIENCE ?? "";
-  if (!audience) {
-    throw new Error("Connector audience is not set or present");
-  }
-  if (audience !== audience.trim()) {
-    throw new Error("Connector audience has leading or trailing whitespace");
-  }
   return async (token: string) => {
     const ticket = await client.verifyIdToken({
       idToken: token,
-      audience,
     });
     const payload = ticket.getPayload();
     if (!payload || !payload.email) {
@@ -44,8 +32,10 @@ const verifyToken = () => {
  * `/trpc`, gated by bearer-token auth.
  *
  * Requests must carry a Google-signed ID token whose `email` claim is
- * `$INVOKER_SA_EMAIL` and whose `aud` claim is exactly `$CONNECTOR_AUDIENCE`.
- * Throws before binding a port if either variable is unset or empty.
+ * `$INVOKER_SA_EMAIL`. The token's audience isn't checked: Cloud Run's own
+ * invoker check is what turns away a token minted for another service, so the
+ * service has to stay private. Throws before binding a port if
+ * `INVOKER_SA_EMAIL` is unset or empty.
  *
  * `GET /health` is the one route served without a token, for load balancer
  * health checks. It returns `{ module: moduleName }`.
