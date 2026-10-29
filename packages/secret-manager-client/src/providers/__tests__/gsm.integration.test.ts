@@ -1,4 +1,4 @@
-import { createClients } from "@p0security/gcloud-common";
+import { createClients } from "@p0security/connector-gcloud-common";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
@@ -19,7 +19,7 @@ import type {
  * tearing down a throwaway secret.
  *
  * Requires `gcloud auth login --update-adc` to have been run locally (auth
- * is resolved via Application Default Credentials by @p0security/gcloud-common),
+ * is resolved via Application Default Credentials by @p0security/connector-gcloud-common),
  * plus `GCP_PROJECT_ID` set to a project where the caller has been granted
  * the secretManager.Editor role (or equivalent). Skips cleanly if
  * GCP_PROJECT_ID isn't set. Excluded from the default vitest run — see root

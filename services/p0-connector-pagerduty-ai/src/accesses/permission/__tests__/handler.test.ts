@@ -1,9 +1,9 @@
 import { createLogger } from "@p0security/connector-core";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
 import type {
   SecretRef,
   SecretVersionRef,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as api from "../../../pagerduty/pagerduty-api.ts";
@@ -19,43 +19,48 @@ const GRANT_REF = "grant-secret";
 const store = new Map<string, string>();
 const secrets = new Set<string>();
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof SecretManagerClientModule>();
-  return {
-    ...actual,
-    createSecretManagerClient: async () => ({
-      getSecretValue: async ({ ref }: { ref: string }) => {
-        const value = store.get(ref);
-        if (value === undefined)
-          throw new actual.SecretVersionNotFoundError(ref as SecretVersionRef);
-        return { value };
-      },
-      createSecretVersion: async ({
-        ref,
-        value,
-      }: {
-        ref: string;
-        value: Buffer;
-      }) => {
-        store.set(ref, value.toString("utf8"));
-      },
-      deleteSecret: async ({ ref }: { ref: string }) => {
-        store.delete(ref);
-      },
-      // Like GCP: a ref is the full resource name, a name is its last part.
-      createSecret: async ({ name }: { name: string }) => {
-        secrets.add(name);
-        return { ref: `projects/1/secrets/${name}`, name };
-      },
-      getSecret: async ({ ref }: { ref: string }) => {
-        const name = ref.split("/").pop() ?? ref;
-        if (!secrets.has(name))
-          throw new actual.SecretNotFoundError(ref as SecretRef);
-        return { ref: `projects/1/secrets/${name}`, name };
-      },
-    }),
-  };
-});
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof SecretManagerClientModule>();
+    return {
+      ...actual,
+      createSecretManagerClient: async () => ({
+        getSecretValue: async ({ ref }: { ref: string }) => {
+          const value = store.get(ref);
+          if (value === undefined)
+            throw new actual.SecretVersionNotFoundError(
+              ref as SecretVersionRef
+            );
+          return { value };
+        },
+        createSecretVersion: async ({
+          ref,
+          value,
+        }: {
+          ref: string;
+          value: Buffer;
+        }) => {
+          store.set(ref, value.toString("utf8"));
+        },
+        deleteSecret: async ({ ref }: { ref: string }) => {
+          store.delete(ref);
+        },
+        // Like GCP: a ref is the full resource name, a name is its last part.
+        createSecret: async ({ name }: { name: string }) => {
+          secrets.add(name);
+          return { ref: `projects/1/secrets/${name}`, name };
+        },
+        getSecret: async ({ ref }: { ref: string }) => {
+          const name = ref.split("/").pop() ?? ref;
+          if (!secrets.has(name))
+            throw new actual.SecretNotFoundError(ref as SecretRef);
+          return { ref: `projects/1/secrets/${name}`, name };
+        },
+      }),
+    };
+  }
+);
 
 const context = {
   requestId: "r-2",

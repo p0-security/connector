@@ -24,7 +24,7 @@
     "@aws-sdk/rds-signer": "^3.975.0",
     "@p0security/connector-cli": "workspace:^",
     "@p0security/connector-core": "workspace:^",
-    "@p0security/gcloud-common": "workspace:^",
+    "@p0security/connector-gcloud-common": "workspace:^",
     "@trpc/client": "^11.10.0",
     "@trpc/server": "^11.10.0",
     "aws-ssl-profiles": "^1.1.2",

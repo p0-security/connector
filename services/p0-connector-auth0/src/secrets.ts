@@ -6,7 +6,7 @@ import {
   type SecretValue,
   UnauthorizedError,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import type { ClientSecret } from "./credentials.ts";
 

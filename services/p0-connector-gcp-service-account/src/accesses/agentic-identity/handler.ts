@@ -6,7 +6,7 @@
  * asked. The "user" of the resource-root contract is that service account; the
  * "policies" are which federated principal may impersonate it, and until when.
  *
- * The GCP-side implementation lives in `@p0security/gcloud-common`, next to
+ * The GCP-side implementation lives in `@p0security/connector-gcloud-common`, next to
  * the member verifier and policy router it is built from; this service is the
  * transport.
  */
@@ -20,7 +20,7 @@ import {
   createClients,
   gcloudServiceMetadata,
   newAgenticIdentityPrimitives,
-} from "@p0security/gcloud-common";
+} from "@p0security/connector-gcloud-common";
 
 import { spec } from "./definition.ts";
 

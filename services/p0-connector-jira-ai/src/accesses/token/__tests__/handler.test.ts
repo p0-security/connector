@@ -1,5 +1,5 @@
 import type { Logger } from "@p0security/connector-core";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -14,17 +14,20 @@ import { router } from "../handler.ts";
 
 const vault = vi.hoisted((): { fake?: FakeSecretManager } => ({}));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => {
-  const actual = await importOriginal<typeof SecretManagerClientModule>();
-  const { fakeSecretManager } =
-    await import("../../../__tests__/secret-manager-mock.ts");
-  const fake = fakeSecretManager(actual);
-  vault.fake = fake;
-  return {
-    ...actual,
-    createSecretManagerClient: fake.createSecretManagerClient,
-  };
-});
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => {
+    const actual = await importOriginal<typeof SecretManagerClientModule>();
+    const { fakeSecretManager } =
+      await import("../../../__tests__/secret-manager-mock.ts");
+    const fake = fakeSecretManager(actual);
+    vault.fake = fake;
+    return {
+      ...actual,
+      createSecretManagerClient: fake.createSecretManagerClient,
+    };
+  }
+);
 
 const fakeVault = () => {
   if (vault.fake === undefined)
@@ -223,7 +226,7 @@ describe("grant", () => {
     const { failures, secrets } = fakeVault();
     secrets.set(KEY, undefined);
     const actual = await vi.importActual<typeof SecretManagerClientModule>(
-      "@p0security/secret-manager-client"
+      "@p0security/connector-secret-manager-client"
     );
     failures.set("createSecretVersion", new actual.UnauthorizedError("gcp"));
 

@@ -1,6 +1,6 @@
-import { createClients } from "@p0security/gcloud-common";
-import { createSecretManagerClient } from "@p0security/secret-manager-client";
-import type { SecretRef } from "@p0security/secret-manager-client";
+import { createClients } from "@p0security/connector-gcloud-common";
+import { createSecretManagerClient } from "@p0security/connector-secret-manager-client";
+import type { SecretRef } from "@p0security/connector-secret-manager-client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { router as secretsRouter } from "../accesses/secrets/handler.ts";

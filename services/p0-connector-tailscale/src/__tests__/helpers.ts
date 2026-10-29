@@ -41,7 +41,7 @@ type Vault = {
 
 /**
  * Makes the mocked vault hold `secret` at `version`. Each test file mocks
- * `@p0security/secret-manager-client` with its own hoisted `vault`.
+ * `@p0security/connector-secret-manager-client` with its own hoisted `vault`.
  */
 export const holdSecret = (vault: Vault, secret: string, version = "v1") => {
   vault.createSecretManagerClient.mockResolvedValue({

@@ -6,8 +6,8 @@ import {
   SecretNotFoundError,
   type SecretRef,
   UnauthorizedError,
-} from "@p0security/secret-manager-client";
-import type * as secretManagerClient from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
+import type * as secretManagerClient from "@p0security/connector-secret-manager-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SecretPointer } from "../instance.ts";
@@ -32,10 +32,13 @@ const vault = vi.hoisted(() => ({
     vi.fn<secretManagerClient.SecretManagerClient["getSecretValue"]>(),
 }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof secretManagerClient>()),
-  createSecretManagerClient: vault.createSecretManagerClient,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof secretManagerClient>()),
+    createSecretManagerClient: vault.createSecretManagerClient,
+  })
+);
 
 // The secret as the customer stores it.
 const STORED = JSON.stringify({ token: TOKEN });

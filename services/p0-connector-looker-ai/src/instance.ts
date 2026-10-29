@@ -2,7 +2,7 @@ import { ConnectorError, type Logger } from "@p0security/connector-core";
 import {
   type SecretManagerClient,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import type { InstanceContext } from "./accesses/model/definition.ts";
 import { type LookerSession, login, logout } from "./looker/looker-api.ts";

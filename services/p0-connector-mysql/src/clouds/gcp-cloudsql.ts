@@ -1,4 +1,4 @@
-import { fetchDbPassword } from "@p0security/gcloud-common";
+import { fetchDbPassword } from "@p0security/connector-gcloud-common";
 import z from "zod";
 
 import type { PoolConfig, SslConfig } from "../dbclient.ts";

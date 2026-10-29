@@ -6,8 +6,8 @@ import {
   type SecretVersionRef,
   UnauthorizedError,
   type VersionMetadata,
-} from "@p0security/secret-manager-client";
-import type * as secretManagerClient from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
+import type * as secretManagerClient from "@p0security/connector-secret-manager-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SecretPointer } from "../account.ts";
@@ -30,10 +30,13 @@ const vault = vi.hoisted(() => ({
     vi.fn<secretManagerClient.SecretManagerClient["getSecretValue"]>(),
 }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof secretManagerClient>()),
-  createSecretManagerClient: vault.createSecretManagerClient,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof secretManagerClient>()),
+    createSecretManagerClient: vault.createSecretManagerClient,
+  })
+);
 
 /** The version every read answers from. The connector reads none of it. */
 const VERSION: VersionMetadata = {

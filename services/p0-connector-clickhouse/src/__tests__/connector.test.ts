@@ -19,7 +19,7 @@ import { LOAD_TIMEOUT_MS, ORGANIZATION_ID } from "./fixtures.ts";
 vi.mock("../router.ts", () => {
   throw new Error("./connector loaded the router");
 });
-vi.mock("@p0security/secret-manager-client", () => {
+vi.mock("@p0security/connector-secret-manager-client", () => {
   throw new Error("./connector loaded the secret manager client");
 });
 

@@ -10,7 +10,7 @@ import {
   type SecretManagerProviderConfig,
   type SecretRef,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import { AGENT_KEY_PATTERN, newFacadeClient } from "../../salesforce/facade.ts";
 import { getConsumerSecret } from "../../secrets.ts";

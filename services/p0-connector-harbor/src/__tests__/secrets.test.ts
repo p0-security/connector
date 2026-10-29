@@ -2,8 +2,8 @@ import {
   SecretNotFoundError,
   type SecretRef,
   UnauthorizedError,
-} from "@p0security/secret-manager-client";
-import type * as secretManagerClient from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
+import type * as secretManagerClient from "@p0security/connector-secret-manager-client";
 import { inspect } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -27,10 +27,13 @@ const vault = vi.hoisted(() => ({
     vi.fn<secretManagerClient.SecretManagerClient["getSecretValue"]>(),
 }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof secretManagerClient>()),
-  createSecretManagerClient: vault.createSecretManagerClient,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof secretManagerClient>()),
+    createSecretManagerClient: vault.createSecretManagerClient,
+  })
+);
 
 // The admin credential, as the customer stores it.
 const STORED = JSON.stringify(ADMIN_CREDENTIAL);

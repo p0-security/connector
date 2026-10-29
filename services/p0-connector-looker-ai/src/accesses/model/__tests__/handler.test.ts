@@ -3,8 +3,8 @@ import {
   SecretAlreadyExistsError,
   SecretNotFoundError,
   type SecretRef,
-} from "@p0security/secret-manager-client";
-import type * as SecretManagerClientModule from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
+import type * as SecretManagerClientModule from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as folder from "../../../folder.ts";
@@ -20,10 +20,13 @@ vi.mock("../../../folder.ts");
 // `vi.hoisted` guarantees this exists before the (hoisted) `vi.mock` factory runs.
 const secretManager = vi.hoisted(() => ({ create: vi.fn() }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof SecretManagerClientModule>()),
-  createSecretManagerClient: secretManager.create,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof SecretManagerClientModule>()),
+    createSecretManagerClient: secretManager.create,
+  })
+);
 
 const ADMIN_SECRET = "p0_install_looker_acme_admin-key";
 const GRANT = "p0_access-token_looker_acme_1a2b3c4d";

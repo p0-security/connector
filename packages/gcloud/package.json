@@ -1,5 +1,5 @@
 {
-  "name": "@p0security/gcloud-common",
+  "name": "@p0security/connector-gcloud-common",
   "version": "1.0.0",
   "private": true,
   "description": "google cloud common functions",
@@ -22,7 +22,7 @@
     "@googleapis/secretmanager": "^7.0.0",
     "@googleapis/sqladmin": "^37.0.0",
     "@googleapis/storage": "^21.3.0",
-    "@p0security/sp-shared": "workspace:*",
+    "@p0security/connector-sp-shared": "workspace:*",
     "axios": "^1.17.0",
     "google-auth-library": "10.5.0",
     "googleapis-common": "^8.0.0",

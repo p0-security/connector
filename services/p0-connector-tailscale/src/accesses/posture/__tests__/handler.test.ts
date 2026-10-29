@@ -1,5 +1,5 @@
 import { createLogger } from "@p0security/connector-core";
-import type * as secretManagerClient from "@p0security/secret-manager-client";
+import type * as secretManagerClient from "@p0security/connector-secret-manager-client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { failing } from "../../../__tests__/fake-tailscale.ts";
@@ -32,10 +32,13 @@ const vault = vi.hoisted(() => ({
   getSecretValue: vi.fn(),
 }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof secretManagerClient>()),
-  createSecretManagerClient: vault.createSecretManagerClient,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof secretManagerClient>()),
+    createSecretManagerClient: vault.createSecretManagerClient,
+  })
+);
 
 const logger = createLogger();
 logger.level = "silent";

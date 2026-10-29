@@ -2,7 +2,7 @@
  * Project → organization resolution, shared by every guard that answers "is
  * this thing inside the organization this perimeter serves?".
  */
-import { ProxyError } from "@p0security/sp-shared";
+import { ProxyError } from "@p0security/connector-sp-shared";
 import axios from "axios";
 
 import type { GcloudClients } from "../client.ts";

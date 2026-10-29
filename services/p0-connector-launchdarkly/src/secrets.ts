@@ -12,7 +12,7 @@ import {
   type SecretRef,
   UnauthorizedError,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import type { SecretPointer } from "./account.ts";
 import { type FailureFacts, failureFacts, renderFailure } from "./failure.ts";

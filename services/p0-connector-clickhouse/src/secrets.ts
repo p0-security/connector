@@ -5,7 +5,7 @@ import {
   type SecretRef,
   UnauthorizedError,
   createSecretManagerClient,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 
 import { API_KEY_SHAPE, type ApiKey, parseApiKey } from "./api-key.ts";
 import type { SecretPointer } from "./credentials.ts";

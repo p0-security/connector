@@ -6,7 +6,7 @@ import {
   type SecretRef,
   type SecretVersionRef,
   UnauthorizedError,
-} from "@p0security/secret-manager-client";
+} from "@p0security/connector-secret-manager-client";
 import { inspect } from "node:util";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 

@@ -1,4 +1,4 @@
-import { createClients } from "@p0security/gcloud-common";
+import { createClients } from "@p0security/connector-gcloud-common";
 import type { Mock } from "vitest";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -11,7 +11,7 @@ import {
 import type { SecretRef, SecretVersionRef } from "../../types.ts";
 import { createGsmSecretManagerClient } from "../gsm.ts";
 
-vi.mock("@p0security/gcloud-common", () => ({
+vi.mock("@p0security/connector-gcloud-common", () => ({
   createClients: vi.fn(),
 }));
 

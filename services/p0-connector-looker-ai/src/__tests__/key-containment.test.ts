@@ -1,5 +1,5 @@
 import { createLogger } from "@p0security/connector-core";
-import type * as secretManagerClient from "@p0security/secret-manager-client";
+import type * as secretManagerClient from "@p0security/connector-secret-manager-client";
 import { format, inspect } from "node:util";
 import type * as pinoModule from "pino";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -22,10 +22,13 @@ import { connectorRouter } from "../router.ts";
 const vault = vi.hoisted(() => ({ createSecretManagerClient: vi.fn() }));
 const logged = vi.hoisted(() => ({ lines: [] as string[] }));
 
-vi.mock("@p0security/secret-manager-client", async (importOriginal) => ({
-  ...(await importOriginal<typeof secretManagerClient>()),
-  createSecretManagerClient: vault.createSecretManagerClient,
-}));
+vi.mock(
+  "@p0security/connector-secret-manager-client",
+  async (importOriginal) => ({
+    ...(await importOriginal<typeof secretManagerClient>()),
+    createSecretManagerClient: vault.createSecretManagerClient,
+  })
+);
 
 // Every logger, the connector's own included, writes here instead of stdout,
 // at every level, so a debug line can't hide a leak. The redaction is the real
