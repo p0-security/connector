@@ -1,7 +1,7 @@
 # Define custom function directory
 ARG FUNCTION_DIR="/var/task"
 # If you change the major version of node here, ensure the Lambda base image is also updated below.
-FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.0-dev AS build
+FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.1-dev AS build
 ARG WORKSPACE
 ARG BUILD_DATE
 ARG GIT_REF
@@ -28,7 +28,7 @@ RUN --mount=type=cache,target=$YARN_CACHE_FOLDER \
   yarn workspace "${WORKSPACE}" exec sh -c 'ln -s "$(pwd)/dist" /app/dist'
 
 #AWS lambda ric takes time to build. separating it into it's own build stage helps speed up the build
-FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.0-dev AS aws-build
+FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.1-dev AS aws-build
 ARG FUNCTION_DIR
 USER root
 
@@ -43,8 +43,20 @@ WORKDIR ${FUNCTION_DIR}
 # crashes at init with "Cannot find module './rapid-client.node'".
 RUN printf 'allow-scripts[]=aws-lambda-ric\n' > .npmrc \
   && npm install aws-lambda-ric@4.0.2
+# node-gyp is only needed while that install compiles rapid-client.node, yet
+# it stays a dependency of the installed package, so the Lambda would ship it
+# and the 90-odd packages only it needs (make-fetch-happen, http-cache-semantics,
+# tar), which image scanners score. Drop it from the package's dependencies and
+# let npm prune the rest. npm's hidden lockfile has to go or prune keeps them.
+RUN node -e 'const f = "node_modules/aws-lambda-ric/package.json"; \
+      const p = require("./" + f); delete p.dependencies["node-gyp"]; \
+      require("fs").writeFileSync(f, JSON.stringify(p, null, 2));' \
+  && rm -f package-lock.json node_modules/.package-lock.json \
+  && npm prune --no-audit --no-fund \
+  && test -f node_modules/aws-lambda-ric/rapid-client.node \
+  && test ! -d node_modules/node-gyp
 
-FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.0
+FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.1
 # Include global arg in this stage of the build
 ARG WORKSPACE
 ARG FUNCTION_DIR
@@ -62,11 +74,12 @@ COPY --from=aws-build ${FUNCTION_DIR} ${FUNCTION_DIR}
 COPY --from=build /app/dist/index.mjs ${FUNCTION_DIR}
 # The runtime image defaults to node, which cannot delete the npm tree.
 # npx only resolved aws-lambda-ric, which is already installed in the function
-# directory. That tree bundles unpatched http-cache-semantics.
+# directory. npm bundles unpatched http-cache-semantics, and node-gyp in the
+# base image bundles undici 8.11.2. Neither is called at runtime.
 USER root
-RUN rm -rf /usr/lib/node_modules/npm \
+RUN rm -rf /usr/lib/node_modules/npm /usr/lib/node_modules/node-gyp \
  && rm -f /usr/bin/npm /usr/bin/npx \
- && rm -f /var/lib/db/sbom/npm-*.spdx.json
+ && rm -f /var/lib/db/sbom/npm-*.spdx.json /var/lib/db/sbom/node-gyp-*.spdx.json
 USER node
 
 ENTRYPOINT ["/var/task/node_modules/.bin/aws-lambda-ric"]

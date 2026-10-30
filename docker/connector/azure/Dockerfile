@@ -1,5 +1,5 @@
 # When changing node version, please update the .nvmrc to match
-FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.0-dev AS build
+FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.1-dev AS build
 ARG WORKSPACE
 ARG BUILD_DATE
 ARG GIT_REF
@@ -33,7 +33,7 @@ RUN printf '%s\n%s\n' \
   > /app/entrypoint.sh && \
   chmod +x /app/entrypoint.sh
 
-FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.0
+FROM us-west1-docker.pkg.dev/p0-prod/chainguard/p0.dev/p0-node:24.22.1
 ARG WORKSPACE
 ARG BUILD_DATE
 ARG GIT_REF
@@ -43,6 +43,12 @@ ENV GIT_REF=$GIT_REF
 
 USER root
 RUN npm install -g corepack && corepack enable yarn
+# npm exists only to install corepack. The runtime calls yarn. node-gyp is a
+# build tool the runtime never loads. npm bundles unpatched
+# http-cache-semantics, and node-gyp bundles undici 8.11.2.
+RUN rm -rf /usr/lib/node_modules/npm /usr/lib/node_modules/node-gyp \
+ && rm -f /usr/bin/npm /usr/bin/npx \
+ && rm -f /var/lib/db/sbom/npm-*.spdx.json /var/lib/db/sbom/node-gyp-*.spdx.json
 
 USER node
 COPY --from=build --chown=node:node /app /app
