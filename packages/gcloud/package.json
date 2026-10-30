@@ -22,7 +22,6 @@
     "@googleapis/secretmanager": "^7.0.0",
     "@googleapis/sqladmin": "^37.0.0",
     "@googleapis/storage": "^21.3.0",
-    "@p0security/connector-sp-shared": "workspace:*",
     "axios": "^1.17.0",
     "google-auth-library": "10.5.0",
     "googleapis-common": "^8.0.0",

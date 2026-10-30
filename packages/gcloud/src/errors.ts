@@ -49,19 +49,6 @@ export class BaseError extends Error {
   }
 }
 
-export class AuthError extends BaseError implements PublicError {
-  readonly type = "auth";
-
-  constructor(message: string, cause?: unknown) {
-    super(message, cause);
-    this.name = "AuthError";
-  }
-
-  get publicMessage() {
-    return "P0 could not properly identify you.";
-  }
-}
-
 export class ProxyError extends BaseError implements PublicError {
   readonly type = "proxy";
   readonly service: string;
@@ -95,10 +82,3 @@ export class ValidationError extends BaseError implements PublicError {
     return this.message;
   }
 }
-
-export type UpstreamError = ProxyError;
-
-export const isPublicError = (error: unknown): error is PublicError =>
-  error instanceof Error &&
-  "publicMessage" in error &&
-  typeof error.publicMessage === "string";

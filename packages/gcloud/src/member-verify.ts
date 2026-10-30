@@ -1,10 +1,9 @@
-import { ProxyError, ValidationError } from "@p0security/connector-sp-shared";
-
 import {
   isAgenticIdentitySubject,
   parseWorkloadIdentityPrincipal,
 } from "./agentic-identity/naming.ts";
 import type { GcloudClients } from "./client.ts";
+import { ProxyError, ValidationError } from "./errors.ts";
 import { getOrgId, getOrgIdByProjectNumber } from "./helpers/ancestry.ts";
 import logger from "./logger.ts";
 

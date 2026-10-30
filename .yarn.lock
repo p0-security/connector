@@ -2112,7 +2112,6 @@ __metadata:
     "@googleapis/secretmanager": "npm:^7.0.0"
     "@googleapis/sqladmin": "npm:^37.0.0"
     "@googleapis/storage": "npm:^21.3.0"
-    "@p0security/connector-sp-shared": "workspace:*"
     "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
     "@types/lodash-es": "npm:^4.17.12"
     axios: "npm:^1.17.0"
@@ -2152,22 +2151,6 @@ __metadata:
     "@p0security/connector-gcloud-common": "workspace:^"
     "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
     prettier: "npm:^3.8.1"
-    typescript: "npm:^5.9.2"
-    vitest: "npm:^3.2.4"
-  languageName: unknown
-  linkType: soft
-
-"@p0security/connector-sp-shared@workspace:*, @p0security/connector-sp-shared@workspace:packages/shared":
-  version: 0.0.0-use.local
-  resolution: "@p0security/connector-sp-shared@workspace:packages/shared"
-  dependencies:
-    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
-    "@types/express": "npm:^4.17.25"
-    axios: "npm:^1.17.0"
-    express: "npm:^4.22.1"
-    pino: "npm:^9.14.0"
-    prettier: "npm:^3.8.1"
-    recheck: "npm:^4.5.0"
     typescript: "npm:^5.9.2"
     vitest: "npm:^3.2.4"
   languageName: unknown

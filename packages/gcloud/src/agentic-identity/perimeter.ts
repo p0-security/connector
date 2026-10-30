@@ -19,9 +19,9 @@
  * two are checked against each other.
  */
 import type { cloudresourcemanager_v3 } from "@googleapis/cloudresourcemanager";
-import { ProxyError, ValidationError } from "@p0security/connector-sp-shared";
 
 import type { GcloudClients } from "../client.ts";
+import { ProxyError, ValidationError } from "../errors.ts";
 import { getOrgId } from "../helpers/ancestry.ts";
 import logger from "../logger.ts";
 import { newMemberVerifier } from "../member-verify.ts";
