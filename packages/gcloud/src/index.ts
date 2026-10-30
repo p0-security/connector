@@ -5,9 +5,7 @@ export {
   getServiceAccountEmail,
   CLOUDSQL_LOGIN_SCOPE,
 } from "./client.ts";
-export { PolicyManager } from "./policy-manager.ts";
 export { PolicyRouter } from "./policy-router.ts";
-export { verifyToken } from "./helpers/verify-token.ts";
 export { fetchDbPassword } from "./helpers/cloudsql.ts";
 export { newMemberVerifier } from "./member-verify.ts";
 export { newAgenticIdentityPrimitives } from "./agentic-identity/index.ts";

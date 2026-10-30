@@ -377,11 +377,10 @@ export const newAgenticIdentityPrimitives = (
       const policyRouter = PolicyRouter(client);
       const policy = await policyRouter.getPolicy(target);
 
-      // Replace rather than amend, which is why this reaches for `PolicyRouter`
-      // instead of `PolicyManager`. A re-grant with a longer expiry matches no
-      // existing binding under `addMember`'s role-title-and-expression test, so
-      // it appends a second binding and leaves the first one granting until its
-      // own expiry; `removeMember` then matches by title alone and would not
+      // Replace rather than amend. Amending, by matching an existing binding on
+      // its role, title and expression, would miss a re-grant with a longer
+      // expiry, so it would append a second binding and leave the first one
+      // granting until its own expiry; removing by title alone would then not
       // find it. Every binding of this role on a P0-minted service account is
       // P0's, so dropping them all and re-adding the desired set is what makes
       // the result exactly the requested set — and, when the set is empty, no

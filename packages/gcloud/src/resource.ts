@@ -6,14 +6,6 @@ import { groupBy, map } from "lodash-es";
 import { GcloudConditionalIamSupportedResources } from "./constants.ts";
 import type { GcloudPolicyResource } from "./types.ts";
 
-// helper function to compare two CEL condition expressions for equality
-// checks string equality ignoring whitespace and ignoring backslashes
-export const celEqual = (exp1: string, exp2: string) => {
-  // remove whitespace and backslashes
-  const clean = (expr: string) => expr.replace(/[\s\\]/g, "");
-  return clean(exp1) === clean(exp2);
-};
-
 export const conditionalIAMSupported = (resource: GcloudPolicyResource) =>
   isa(GcloudConditionalIamSupportedResources, resource.type);
 
