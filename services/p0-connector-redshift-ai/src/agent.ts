@@ -17,8 +17,10 @@ import {
 
 /** Returns `user` when Redshift has it, else `null`. */
 export const findAgent = async (session: RedshiftSession, user: string) => {
+  // svv_user_info shows a user that isn't a superuser only its own row, even
+  // with ACCESS SYSTEM TABLE. pg_user shows every user.
   const rows = await session.query(
-    `SELECT user_name FROM svv_user_info WHERE user_name = ${quoteLiteral(assertAgentUser(user))}`
+    `SELECT usename FROM pg_user WHERE usename = ${quoteLiteral(assertAgentUser(user))}`
   );
   return rows.length > 0 ? user : null;
 };

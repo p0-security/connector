@@ -189,8 +189,8 @@ export const fakeCatalog = (
   );
   on("SELECT current_user", () => [{ user_name: CONNECTOR_USER }]);
 
-  on(/FROM svv_user_info/, (sql) =>
-    c.users.has(literals(sql)[0]!) ? [{ user_name: literals(sql)[0]! }] : []
+  on(/FROM pg_user WHERE usename =/, (sql) =>
+    c.users.has(literals(sql)[0]!) ? [{ usename: literals(sql)[0]! }] : []
   );
   on(/^CREATE USER/, (sql) => {
     const [user] = quoted(sql);
