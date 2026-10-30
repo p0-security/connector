@@ -25,6 +25,7 @@ const answerEverything = () => {
     { role_name: "p0_connector_admin" },
   ]);
   api.on("SELECT system_privilege", () => [
+    { system_privilege: "ACCESS SYSTEM TABLE" },
     { system_privilege: "ALTER TABLE" },
     { system_privilege: "DROP SCHEMA" },
     { system_privilege: "DROP FUNCTION" },
@@ -126,7 +127,7 @@ describe("install validation", () => {
     const data = await failureOf();
     expect(data.payload).toMatchObject({ step: "admin_roles" });
     expect(data.message).toContain(
-      "DROP SCHEMA, DROP FUNCTION, DROP PROCEDURE"
+      "ACCESS SYSTEM TABLE, DROP SCHEMA, DROP FUNCTION, DROP PROCEDURE"
     );
   });
 

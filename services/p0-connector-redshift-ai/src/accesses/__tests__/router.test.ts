@@ -90,7 +90,7 @@ describe("provisionUser", () => {
 
   it("allows a user created after it looked", async () => {
     fakeCatalog(api);
-    api.on(/FROM svv_user_info/, () => []);
+    api.on(/FROM pg_user WHERE usename =/, () => []);
     api.on(/^CREATE USER/, () => ({
       error: `ERROR: user "${AGENT}" already exists`,
     }));

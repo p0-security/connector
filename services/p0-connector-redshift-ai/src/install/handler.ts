@@ -29,9 +29,12 @@ import type {
  * The system permissions revoke needs: `ALTER TABLE` hands an agent's
  * tables, views and materialized views over, and the `DROP` permissions
  * remove its functions, procedures and empty schemas, whose owner only a
- * superuser can change.
+ * superuser can change. `ACCESS SYSTEM TABLE` lets it see the agent's rows
+ * in svv_user_grants, svv_relation_privileges and svv_schema_privileges,
+ * which show a user that isn't a superuser only its own rows.
  */
 export const REQUIRED_SYSTEM_PERMISSIONS = [
+  "ACCESS SYSTEM TABLE",
   "ALTER TABLE",
   "DROP SCHEMA",
   "DROP FUNCTION",
