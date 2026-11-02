@@ -13,8 +13,8 @@ token, as `secret`. The connector calls `api.miro.com` only.
 
 ## What it does
 
-So far the connector runs install validation and reports its metadata. The
-`board` access, with its grant, revoke and board listing, comes in INT-1110.
+The connector runs install validation, the `board` access's grants,
+revokes and listings, and reports its metadata.
 
 ### Install validation
 
@@ -36,6 +36,50 @@ It returns `teamId` and `shareableBoards`. Every check only reads. Nothing
 of the token is reported.
 
 A failed check fails the call. The error's `payload.step` names the check.
+
+### The `board` access
+
+A requester's own Miro user gets a role (`viewer`, `commenter` or
+`editor`) on one board, raised for the grant and lowered back at its end.
+Roles rank `viewer < commenter < editor < coowner < owner`. P0 never grants
+`coowner` or `owner`.
+
+P0 finds the member with the `member` lister when a request is made, reads
+their role with `member-state` when it stages the grant, and sends it back
+in the request context as `priorRole`. `setPoliciesForUser` then:
+
+- **Grants:** checks that the token is still the team's, that the member is
+  still in the team with the requester's email and a Miro account, and that
+  the connector user is the board's owner or co-owner. Each refusal comes
+  before any write. Then it raises the member to the request's role and never
+  lowers: an existing member gets a PATCH, a new one a POST. Miro refuses a
+  POST at `viewer`, so a new viewer is added as `commenter` and lowered, and
+  removed again if the lowering fails.
+- **Revokes:** lowers the member to the highest role a sibling request
+  still holds, or to `priorRole`, removing them when that is `none`. It
+  never raises. A role that isn't one P0 could have left there changed
+  outside P0, and is left alone. A write Miro refuses with 403 is tried 3
+  times, then fails with `payload.revokeFailed: true`, the board and
+  `missingRole: "coowner"`: the connector user lost co-owner. A revoke
+  checks only the token's team, never the member: taking access away
+  mustn't depend on them.
+
+`setPoliciesForUser` returns nothing, so what P0 records per grant comes
+from the listers and from a revoke's error: the member id from `member`,
+the prior role from `member-state`, and **revoke failed** from the error.
+A role changed outside P0 is left in place and logged. P0 finds it by
+reading `member-state` before it revokes.
+
+The listers each check the token's team first:
+
+- `member { email }`: the team's member with the email, ignoring case, as
+  `[{ key: <user id>, value: <email> }]`. Miro's team list carries no email,
+  so each member is read in turn. Refuses with `not_in_team` or
+  `pending_invite`. P0 never invites, so it never spends a seat.
+- `member-state { boardId, memberId }`: `[{ key: "role", value: <role> }]`,
+  `none` for someone who isn't a direct member.
+- `boards`: the team's boards the connector user owns or co-owns, as
+  `[{ key: <board id>, value: <name> }]`, 50 to a page.
 
 ### Refusals
 

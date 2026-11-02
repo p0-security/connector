@@ -181,6 +181,7 @@ describe("the Miro client", () => {
     await expect(client().fetchTokenInfo()).resolves.toEqual({
       scopes: ALL_SCOPES,
       teamId: TEAM_ID,
+      teamName: "Dev team",
       userId: USER_ID,
     });
   });
@@ -218,5 +219,87 @@ describe("the Miro client", () => {
 
     expect(failure).toEqual({ kind: "unexpected", reason: "endless" });
     expect(miro.fetch).toHaveBeenCalledTimes(MAX_BOARD_PAGES);
+  });
+});
+
+describe("the Miro client's board member calls", () => {
+  const BOARD_ID = "uXjVOakxTk0=";
+  const MEMBER_ID = "3458764688981436603";
+  const EMAIL = "requester@example.com";
+
+  const miroWithBoard = () =>
+    newFakeMiro({
+      boardMembers: { [BOARD_ID]: [{ id: USER_ID, role: "coowner" }] },
+      numericIds: true,
+      users: [{ email: EMAIL, id: MEMBER_ID }],
+    });
+
+  it("encodes the board id as a path segment", async () => {
+    const miro = miroWithBoard();
+
+    await client().listBoardMembers(BOARD_ID);
+
+    expect(miro.calls()).toEqual([
+      `GET ${API}/v2/boards/uXjVOakxTk0%3D/members?limit=50&offset=0`,
+    ]);
+  });
+
+  it("sends a write's body as JSON, and reads the added member's id exactly", async () => {
+    const miro = miroWithBoard();
+
+    await expect(
+      client().addBoardMember(BOARD_ID, { email: EMAIL, role: "commenter" })
+    ).resolves.toBe(MEMBER_ID);
+
+    const [, init] = miro.fetch.mock.calls[0] ?? [];
+    expect(new Headers(init?.headers).get("content-type")).toBe(
+      "application/json"
+    );
+    expect(JSON.parse(typeof init?.body === "string" ? init.body : "")).toEqual(
+      {
+        emails: [EMAIL],
+        role: "commenter",
+      }
+    );
+  });
+
+  it("changes and removes a member", async () => {
+    const miro = miroWithBoard();
+    const miroClient = client();
+    await miroClient.addBoardMember(BOARD_ID, { email: EMAIL, role: "editor" });
+
+    await miroClient.setBoardMemberRole(BOARD_ID, MEMBER_ID, "commenter");
+    expect(miro.state.boardMembers?.[BOARD_ID]).toContainEqual({
+      id: MEMBER_ID,
+      role: "commenter",
+    });
+
+    await miroClient.removeBoardMember(BOARD_ID, MEMBER_ID);
+    expect(miro.state.boardMembers?.[BOARD_ID]).toEqual([
+      { id: USER_ID, role: "coowner" },
+    ]);
+  });
+
+  it("tries a write again after a 429, since Miro didn't act on it", async () => {
+    const miro = miroWithBoard();
+    let limited = false;
+    miro.intercept(() => {
+      if (limited) return undefined;
+      limited = true;
+      return tooManyRequests("1");
+    });
+
+    await client().setBoardMemberRole(BOARD_ID, USER_ID, "coowner");
+
+    expect(miro.fetch).toHaveBeenCalledTimes(2);
+    expect(pause).toHaveBeenCalledWith(1);
+  });
+
+  it("answers no user for one Miro doesn't have", async () => {
+    miroWithBoard();
+
+    await expect(client().fetchUser("3458764688000000000")).resolves.toBe(
+      undefined
+    );
   });
 });

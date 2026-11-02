@@ -35,21 +35,44 @@ export const BOARDS_PAGE_SIZE = 50;
 /** The most pages of boards the connector reads before giving up. */
 export const MAX_BOARD_PAGES = 200;
 
-type Method = "GET";
+/** Members per page of a team's or a board's members. */
+export const MEMBERS_PAGE_SIZE = 50;
+
+/** The most pages of members the connector reads before giving up. */
+export const MAX_MEMBER_PAGES = 200;
+
+type Method = "DELETE" | "GET" | "PATCH" | "POST";
 
 /**
  * What a call is, for its messages and its log lines. `route` is the path
- * as Miro's API reference writes it, so neither carries an id.
+ * as Miro's API reference writes it, with `{name}` for each id, so neither
+ * carries an id.
  */
 export type MiroCall = { method: Method; route: `/v${1 | 2}/${string}` };
 
 /**
  * Every call the connector may make, and nothing else: the allowlist is
- * closed. The skeleton reads only; the board access adds its own (INT-1110).
+ * closed. Install validation only reads. The board access also adds,
+ * changes and removes board members, and never anything else.
  */
 export const MIRO_ROUTES = {
+  addBoardMembers: { method: "POST", route: "/v2/boards/{board_id}/members" },
+  getBoardMembers: { method: "GET", route: "/v2/boards/{board_id}/members" },
   getBoards: { method: "GET", route: "/v2/boards" },
   getOAuthToken: { method: "GET", route: "/v1/oauth-token" },
+  getTeamUserConnections: {
+    method: "GET",
+    route: "/v1/teams/{team_id}/user-connections",
+  },
+  getUser: { method: "GET", route: "/v2/users/{user_id}" },
+  removeBoardMember: {
+    method: "DELETE",
+    route: "/v2/boards/{board_id}/members/{board_member_id}",
+  },
+  updateBoardMember: {
+    method: "PATCH",
+    route: "/v2/boards/{board_id}/members/{board_member_id}",
+  },
 } as const satisfies Record<string, MiroCall>;
 
 export type RouteName = keyof typeof MIRO_ROUTES;
@@ -188,20 +211,55 @@ const realPause: Pause = (seconds) => sleep(seconds * 1000);
 const issuesOf = ({ issues }: z.ZodError) =>
   issues.map(({ code, path }) => ({ code, path: path.map(String).join(".") }));
 
-/** What a read takes. */
-export type ReadRequest<T> = {
-  route: RouteName;
+/** What a call takes, beside its route. */
+type CallOptions = {
+  /** The value of each `{name}` in the route. Each is encoded as a segment. */
+  params?: Readonly<Record<string, string>>;
   query?: Readonly<Record<string, string>>;
+};
+
+/** What a read takes. */
+export type ReadRequest<T> = CallOptions & {
+  route: RouteName;
   answer: z.ZodType<T>;
+};
+
+/**
+ * What a write takes. `answer` is the shape of its 2xx answer, or
+ * `undefined` for one whose answer the connector doesn't read, such as a
+ * DELETE's empty 204.
+ */
+export type WriteRequest<T> = CallOptions & {
+  route: RouteName;
+  body?: unknown;
+  answer?: z.ZodType<T>;
 };
 
 /** Miro's REST API, as the connector user's access token. */
 export type MiroApi = {
   /** A read, whose 2xx answer must be `answer`'s shape. */
   read: <T>(request: ReadRequest<T>) => Promise<T>;
+  /** A write, sent once, with its body as JSON. */
+  write: <T = undefined>(request: WriteRequest<T>) => Promise<T | undefined>;
   /** The error for an answer Miro wouldn't give, logged. */
   unexpected: (call: MiroCall, reason: UnexpectedAnswer) => MiroError;
 };
+
+/**
+ * `route` with each `{name}` replaced by its value in `params`, encoded as
+ * a path segment. A missing value throws: a route can't go out half-filled.
+ */
+const fillRoute = (
+  route: string,
+  params: Readonly<Record<string, string>>
+): string =>
+  route.replace(/\{([a-z_]+)\}/g, (_match, name: string) => {
+    const value = params[name];
+    if (value === undefined || value === "") {
+      throw new Error(`the route's ${name} has no value`);
+    }
+    return encodeURIComponent(value);
+  });
 
 /**
  * Makes Miro calls with the connector user's access token, as
@@ -271,7 +329,7 @@ export const newMiroApi = ({
   /** One try: the 2xx answer's text, or `undefined` when over the cap. */
   const exchange = async (
     call: MiroCall,
-    query: Readonly<Record<string, string>>
+    { path, query, body }: Outgoing
   ): Promise<string | undefined> => {
     const { method, route } = call;
     const search =
@@ -282,14 +340,16 @@ export const newMiroApi = ({
       throw unreachable(call, error);
     };
 
-    const response = await fetch(`${origin}${route}${search}`, {
+    const response = await fetch(`${origin}${path}${search}`, {
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       method,
       redirect: "manual",
       signal: AbortSignal.timeout(MIRO_TIMEOUT_MS),
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     }).catch(fail);
 
     const { status } = response;
@@ -324,14 +384,17 @@ export const newMiroApi = ({
     });
   };
 
-  /** The call, tried again after a 429 as {@link newMiroApi} says. */
+  /**
+   * The call, tried again after a 429 as {@link newMiroApi} says. A 429
+   * means Miro didn't act on the call, so a write is tried again too.
+   */
   const withBackoff = async (
     call: MiroCall,
-    query: Readonly<Record<string, string>>
+    outgoing: Outgoing
   ): Promise<string | undefined> => {
     for (let attempt = 1; ; attempt++) {
       try {
-        return await exchange(call, query);
+        return await exchange(call, outgoing);
       } catch (error) {
         const rateLimited =
           error instanceof MiroError &&
@@ -355,43 +418,76 @@ export const newMiroApi = ({
     }
   };
 
+  /** The route's call, refused when it isn't on the allowlist. */
+  const callOf = (name: RouteName): MiroCall => {
+    const call: MiroCall | undefined = Object.prototype.hasOwnProperty.call(
+      MIRO_ROUTES,
+      name
+    )
+      ? MIRO_ROUTES[name]
+      : undefined;
+    if (call === undefined) {
+      throw new ConnectorError({
+        message:
+          "The connector refused to send a Miro call outside its allowlist. Contact P0 support.",
+        payload: {},
+        type: "validation_error",
+      });
+    }
+    return call;
+  };
+
+  /** The 2xx answer's text read as `answer`'s shape. */
+  const parseAnswer = <T>(
+    call: MiroCall,
+    text: string | undefined,
+    answer: z.ZodType<T>
+  ): T => {
+    if (text === undefined) throw unexpected(call, "too_large");
+    const json = parseJson(text);
+    if (json === undefined) throw unexpected(call, "not_json");
+    const parsed = answer.safeParse(json);
+    if (!parsed.success) {
+      throw unexpected(call, "wrong_shape", {
+        issues: issuesOf(parsed.error),
+      });
+    }
+    return parsed.data;
+  };
+
   return {
-    read: async ({ route: name, query = {}, answer }) => {
-      const call: MiroCall | undefined = Object.prototype.hasOwnProperty.call(
-        MIRO_ROUTES,
-        name
-      )
-        ? MIRO_ROUTES[name]
-        : undefined;
-      if (call === undefined) {
-        throw new ConnectorError({
-          message:
-            "The connector refused to send a Miro call outside its allowlist. Contact P0 support.",
-          payload: {},
-          type: "validation_error",
-        });
-      }
-      const text = await withBackoff(call, query);
-      if (text === undefined) throw unexpected(call, "too_large");
-      const json = parseJson(text);
-      if (json === undefined) throw unexpected(call, "not_json");
-      const parsed = answer.safeParse(json);
-      if (!parsed.success) {
-        throw unexpected(call, "wrong_shape", {
-          issues: issuesOf(parsed.error),
-        });
-      }
-      return parsed.data;
+    read: async ({ route: name, params = {}, query = {}, answer }) => {
+      const call = callOf(name);
+      const path = fillRoute(call.route, params);
+      return parseAnswer(
+        call,
+        await withBackoff(call, { path, query }),
+        answer
+      );
+    },
+
+    write: async ({ route: name, params = {}, query = {}, body, answer }) => {
+      const call = callOf(name);
+      const path = fillRoute(call.route, params);
+      const text = await withBackoff(call, { body, path, query });
+      return answer === undefined ? undefined : parseAnswer(call, text, answer);
     },
 
     unexpected: (call, reason) => unexpected(call, reason),
   };
 };
 
+/** What a call sends: its filled path, its query and its JSON body. */
+type Outgoing = {
+  path: string;
+  query: Readonly<Record<string, string>>;
+  body?: unknown;
+};
+
 // `GET /v1/oauth-token`'s answer, as much of it as the connector reads.
 const tokenInfo = z.object({
   scopes: z.array(z.string()),
-  team: z.object({ id: miroId }),
+  team: z.object({ id: miroId, name: z.string().optional() }),
   user: z.object({ id: miroId }),
 });
 
@@ -399,6 +495,8 @@ const tokenInfo = z.object({
 export type TokenInfo = {
   /** The team the token was installed into. */
   teamId: string;
+  /** The team's name, for messages. Its id when Miro gives none. */
+  teamName: string;
   /** The connector user, whom the token acts as. */
   userId: string;
   /** The scopes the token was issued with. */
@@ -411,6 +509,7 @@ const boardsPage = z.object({
   data: z.array(
     z.object({
       id: miroId,
+      name: z.string().optional(),
       currentUserMembership: z
         .object({ role: z.string() })
         .nullable()
@@ -421,7 +520,43 @@ const boardsPage = z.object({
 });
 
 /** The roles that let the connector user share a board. */
-const SHARING_ROLES: ReadonlySet<string> = new Set(["owner", "coowner"]);
+export const SHARING_ROLES: ReadonlySet<string> = new Set(["owner", "coowner"]);
+
+/** A board the connector user can share. */
+export type ShareableBoard = { id: string; name: string };
+
+// One page of `GET /v1/teams/{team_id}/user-connections`: each member's
+// user id and team role, and no email (spec V1). Its own `id` is the
+// connection's, not the user's.
+const userConnectionsPage = z.object({
+  data: z.array(z.object({ user: z.object({ id: miroId }) })),
+});
+
+// `GET /v2/users/{user_id}`. `state` is `not_registered` for someone
+// invited to the team who hasn't created a Miro account yet (spec V1).
+const user = z.object({
+  id: miroId,
+  email: z.string().optional(),
+  state: z.string().optional(),
+});
+
+/** A Miro user, as the connector reads one. */
+export type MiroUser = z.infer<typeof user>;
+
+// One page of `GET /v2/boards/{board_id}/members`. A member's id is their
+// Miro user id (spec V1). Only direct members are listed: someone who
+// reaches the board through team or link access isn't.
+const boardMembersPage = z.object({
+  data: z.array(z.object({ id: miroId, role: z.string() })),
+  total: z.number().int().nonnegative(),
+});
+
+/** A board's direct member: their user id and their role on the board. */
+export type BoardMember = { id: string; role: string };
+
+// `POST /v2/boards/{board_id}/members`: the member ids added, as JSON
+// numbers above 2^53 (spec V1).
+const addedMembers = z.object({ successful: z.array(miroId) });
 
 /** The Miro calls the connector makes, typed. */
 export type MiroClient = {
@@ -431,35 +566,182 @@ export type MiroClient = {
    * {@link BOARDS_PAGE_SIZE} to a page.
    */
   countShareableBoards: (teamId: string) => Promise<number>;
+  /**
+   * The team's boards the token's user owns or co-owns, each with its id
+   * and name, read {@link BOARDS_PAGE_SIZE} to a page.
+   */
+  listShareableBoards: (teamId: string) => Promise<ShareableBoard[]>;
+  /** The user id of every member of the team, invited ones included. */
+  listTeamMemberIds: (teamId: string) => Promise<string[]>;
+  /** The user, or `undefined` when Miro has no user with the id. */
+  fetchUser: (userId: string) => Promise<MiroUser | undefined>;
+  /** Every direct member of the board. */
+  listBoardMembers: (boardId: string) => Promise<BoardMember[]>;
+  /** Adds the user with `email` to the board at `role`. Their member id. */
+  addBoardMember: (
+    boardId: string,
+    { email, role }: { email: string; role: string }
+  ) => Promise<string>;
+  /** Changes a member's role on the board. */
+  setBoardMemberRole: (
+    boardId: string,
+    memberId: string,
+    role: string
+  ) => Promise<void>;
+  /** Removes a member from the board. Only their direct role goes. */
+  removeBoardMember: (boardId: string, memberId: string) => Promise<void>;
 };
 
-export const newMiroClient = (api: MiroApi): MiroClient => ({
-  fetchTokenInfo: async () => {
-    const { scopes, team, user } = await api.read({
-      route: "getOAuthToken",
-      answer: tokenInfo,
-    });
-    return { scopes, teamId: team.id, userId: user.id };
-  },
+/** Whether `error` is Miro answering `status`. */
+export const isStatus = (error: unknown, status: number): error is MiroError =>
+  error instanceof MiroError &&
+  error.failure.kind === "status" &&
+  error.failure.status === status;
 
-  countShareableBoards: async (teamId) => {
-    let count = 0;
-    for (let page = 0; page < MAX_BOARD_PAGES; page++) {
-      const offset = page * BOARDS_PAGE_SIZE;
-      const { data, total } = await api.read({
-        route: "getBoards",
-        query: {
-          limit: String(BOARDS_PAGE_SIZE),
-          offset: String(offset),
-          team_id: teamId,
-        },
-        answer: boardsPage,
+/** What `read` answers, or `undefined` when Miro answers 404. */
+const unlessNotFound = async <T>(read: () => Promise<T>) => {
+  try {
+    return await read();
+  } catch (error) {
+    if (isStatus(error, 404)) return undefined;
+    throw error;
+  }
+};
+
+export const newMiroClient = (api: MiroApi): MiroClient => {
+  /**
+   * Every item of a paged list, `MEMBERS_PAGE_SIZE` to a page, until a page
+   * is short or `total` is reached. Fails rather than read forever.
+   */
+  const readAll = async <Item>(
+    call: MiroCall,
+    readPage: (query: Record<string, string>) => Promise<{
+      data: Item[];
+      total?: number;
+    }>,
+    { pageSize, maxPages }: { pageSize: number; maxPages: number }
+  ): Promise<Item[]> => {
+    const items: Item[] = [];
+    for (let page = 0; page < maxPages; page++) {
+      const offset = page * pageSize;
+      const { data, total } = await readPage({
+        limit: String(pageSize),
+        offset: String(offset),
       });
-      count += data.filter(({ currentUserMembership }) =>
-        SHARING_ROLES.has(currentUserMembership?.role ?? "")
-      ).length;
-      if (data.length === 0 || offset + data.length >= total) return count;
+      items.push(...data);
+      const done =
+        data.length === 0 ||
+        (total === undefined
+          ? data.length < pageSize
+          : offset + data.length >= total);
+      if (done) return items;
     }
-    throw api.unexpected(MIRO_ROUTES.getBoards, "endless");
-  },
-});
+    throw api.unexpected(call, "endless");
+  };
+
+  const listShareableBoards = async (
+    teamId: string
+  ): Promise<ShareableBoard[]> => {
+    const all = await readAll(
+      MIRO_ROUTES.getBoards,
+      (query) =>
+        api.read({
+          route: "getBoards",
+          query: { ...query, team_id: teamId },
+          answer: boardsPage,
+        }),
+      { maxPages: MAX_BOARD_PAGES, pageSize: BOARDS_PAGE_SIZE }
+    );
+    return all
+      .filter(({ currentUserMembership }) =>
+        SHARING_ROLES.has(currentUserMembership?.role ?? "")
+      )
+      .map(({ id, name }) => ({ id, name: name ?? id }));
+  };
+
+  return {
+    fetchTokenInfo: async () => {
+      const { scopes, team, user } = await api.read({
+        route: "getOAuthToken",
+        answer: tokenInfo,
+      });
+      return {
+        scopes,
+        teamId: team.id,
+        teamName: team.name ?? team.id,
+        userId: user.id,
+      };
+    },
+
+    countShareableBoards: async (teamId) =>
+      (await listShareableBoards(teamId)).length,
+
+    listShareableBoards,
+
+    listTeamMemberIds: async (teamId) => {
+      const connections = await readAll(
+        MIRO_ROUTES.getTeamUserConnections,
+        (query) =>
+          api.read({
+            route: "getTeamUserConnections",
+            params: { team_id: teamId },
+            query,
+            answer: userConnectionsPage,
+          }),
+        { maxPages: MAX_MEMBER_PAGES, pageSize: MEMBERS_PAGE_SIZE }
+      );
+      return connections.map((connection) => connection.user.id);
+    },
+
+    fetchUser: (userId) =>
+      unlessNotFound(() =>
+        api.read({
+          route: "getUser",
+          params: { user_id: userId },
+          answer: user,
+        })
+      ),
+
+    listBoardMembers: (boardId) =>
+      readAll(
+        MIRO_ROUTES.getBoardMembers,
+        (query) =>
+          api.read({
+            route: "getBoardMembers",
+            params: { board_id: boardId },
+            query,
+            answer: boardMembersPage,
+          }),
+        { maxPages: MAX_MEMBER_PAGES, pageSize: MEMBERS_PAGE_SIZE }
+      ),
+
+    addBoardMember: async (boardId, { email, role }) => {
+      const answer = await api.write({
+        route: "addBoardMembers",
+        params: { board_id: boardId },
+        body: { emails: [email], role },
+        answer: addedMembers,
+      });
+      const [memberId, ...others] = answer?.successful ?? [];
+      if (memberId === undefined || others.length > 0) {
+        throw api.unexpected(MIRO_ROUTES.addBoardMembers, "wrong_shape");
+      }
+      return memberId;
+    },
+
+    setBoardMemberRole: async (boardId, memberId, role) => {
+      await api.write({
+        route: "updateBoardMember",
+        params: { board_id: boardId, board_member_id: memberId },
+        body: { role },
+      });
+    },
+
+    removeBoardMember: async (boardId, memberId) => {
+      await api.write({
+        route: "removeBoardMember",
+        params: { board_id: boardId, board_member_id: memberId },
+      });
+    },
+  };
+};

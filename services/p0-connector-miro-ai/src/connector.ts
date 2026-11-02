@@ -1,6 +1,7 @@
 /**
  * The contract the P0 control plane builds its typed client against: the
- * router's type, the team and install schemas, and the refusal reasons.
+ * router's type, the team and install schemas, the `board` access's
+ * parsers, and the refusal reasons.
  *
  * A separate entry point from `index.ts`, which constructs the Lambda handler
  * on import. The control plane needs the contract, not the handler, so
@@ -18,6 +19,12 @@ export {
   type InstallInput as MiroInstallInput,
   type Team as MiroTeam,
 } from "./team.ts";
+export {
+  spec as boardSpec,
+  type PriorRole as MiroPriorRole,
+  type RequestContext as MiroRequestContext,
+  type UserBody as MiroUserBody,
+} from "./accesses/board/definition.ts";
 export {
   installValidation,
   type InstallValidation as MiroInstallValidation,

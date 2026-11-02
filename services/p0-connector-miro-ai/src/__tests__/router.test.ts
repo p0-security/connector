@@ -12,9 +12,13 @@ const connector = connectorRouter.createCaller({ logger });
 describe("the connector's router", () => {
   // Everything P0 can ask of the connector is in this list. tRPC has no
   // public way to list a router's procedures, so this reads its definition.
-  // The board access joins it in INT-1110.
-  it("exposes install validation and metadata, under one namespace", () => {
+  it("exposes the board access, install validation and metadata, under one namespace", () => {
     expect(Object.keys(connectorRouter._def.procedures).sort()).toEqual([
+      "miro-ai.accesses.board.deleteUser",
+      "miro-ai.accesses.board.identifyUser",
+      "miro-ai.accesses.board.list",
+      "miro-ai.accesses.board.provisionUser",
+      "miro-ai.accesses.board.setPoliciesForUser",
       "miro-ai.install.validation.get",
       "miro-ai.metadata.get",
     ]);

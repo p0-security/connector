@@ -6,8 +6,11 @@ import type {
   MiroConnectorRouter,
   MiroInstallInput,
   MiroInstallValidation,
+  MiroPriorRole,
   MiroRefusalReason,
+  MiroRequestContext,
   MiroTeam,
+  MiroUserBody,
 } from "../connector.ts";
 
 // The control plane imports `./connector` to build its typed client, and
@@ -23,6 +26,7 @@ vi.mock("@p0security/connector-secret-manager-client", () => {
 it("./connector serves the schemas, and loads no router", () => {
   expect(Object.keys(connector).sort()).toEqual([
     "MIRO_REFUSAL_REASONS",
+    "boardSpec",
     "installInput",
     "installValidation",
     "miroRefusalReason",
@@ -47,6 +51,28 @@ type InstallValidation = { teamId: string; shareableBoards: number };
 
 type RefusalReason =
   "board_not_shareable" | "member_changed" | "not_in_team" | "pending_invite";
+
+type PriorRole =
+  "commenter" | "coowner" | "editor" | "none" | "owner" | "viewer";
+
+type RequestContext = {
+  teamId: string;
+  secret: SecretPointer;
+  boardId: string;
+  email: string;
+  operation: "grant" | "revoke";
+  priorRole: PriorRole;
+  requestId: string;
+  role: "commenter" | "editor" | "viewer";
+};
+
+type UserBody = { boardId: string; memberId: string; teamId: string };
+
+it("./connector serves the board access's request context and user body", () => {
+  expectTypeOf<MiroPriorRole>().toEqualTypeOf<PriorRole>();
+  expectTypeOf<MiroRequestContext>().toEqualTypeOf<RequestContext>();
+  expectTypeOf<MiroUserBody>().toEqualTypeOf<UserBody>();
+});
 
 it("./connector serves the team, install and refusal types", () => {
   expectTypeOf<MiroTeam>().toEqualTypeOf<Team>();
