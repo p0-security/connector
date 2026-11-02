@@ -4,4 +4,6 @@ import { connectorRouter } from "./router.ts";
 
 const logger = createLogger();
 const createContext = async () => ({ logger });
-runCloudRunConnector("P0 GitHub connector", connectorRouter, createContext);
+runCloudRunConnector("P0 GitHub connector", connectorRouter, createContext, {
+  audienceCheck: "cloud-run-iam",
+});

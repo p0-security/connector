@@ -34,7 +34,8 @@ describe("the Cloud Run entry point", () => {
     expect(runCloudRunConnector).toHaveBeenCalledWith(
       "P0 Docker Hub connector",
       expect.anything(),
-      expect.any(Function)
+      expect.any(Function),
+      { audienceCheck: "cloud-run-iam" }
     );
   });
 

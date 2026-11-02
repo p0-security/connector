@@ -21,7 +21,8 @@ describe("the Cloud Run entry point", () => {
     expect(runCloudRunConnector).toHaveBeenCalledWith(
       "P0 Harbor connector",
       connectorRouter,
-      expect.any(Function)
+      expect.any(Function),
+      { audienceCheck: "cloud-run-iam" }
     );
   });
 

@@ -87,6 +87,10 @@ describe("newCustomAppLambdaHandler", () => {
       status: 200,
       body: { result: { data: { connectorVersion: "1.2.3" } } },
     });
+    // Only the Cloud Run runner reports whether it checks the token's audience.
+    expect(
+      (res as { body: { result: { data: object } } }).body.result.data
+    ).not.toHaveProperty("audienceCheck");
   });
 
   it("passes a usable context to the actions factory on every request", async () => {

@@ -1,4 +1,5 @@
 import {
+  type AudienceCheck,
   type CloudFunctionOutput,
   type ConnectorContext,
   createLogger,
@@ -47,13 +48,25 @@ export const newCustomAppLambdaHandler = (
  * });
  * run();
  * ```
+ *
+ * By default the server requires `CONNECTOR_AUDIENCE` and rejects a token whose
+ * `aud` differs. On a private Cloud Run service you can pass
+ * `audienceCheck: "cloud-run-iam"` to leave that to Cloud Run IAM instead.
+ * P0 refuses to register a connector hosted at a plain URL that runs in that
+ * mode.
  * @category Deployment
  */
 export const newCustomAppCloudRunServer = (
-  params: CustomAppConnectorParams
+  params: CustomAppConnectorParams & {
+    /** Defaults to `"required"`. See `runCloudRunConnector`. */
+    audienceCheck?: AudienceCheck;
+  }
 ): (() => void) => {
   const router = newCustomAppConnectorRouter(params);
   const createContext = newConnectorContext();
+  const options = {
+    audienceCheck: params.audienceCheck ?? "required",
+  } as const;
   return () =>
-    runCloudRunConnector(CUSTOM_APP_NAMESPACE, router, createContext);
+    runCloudRunConnector(CUSTOM_APP_NAMESPACE, router, createContext, options);
 };

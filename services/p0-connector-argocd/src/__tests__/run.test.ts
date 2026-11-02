@@ -21,7 +21,8 @@ describe("the Cloud Run entry point", () => {
     expect(runCloudRunConnector).toHaveBeenCalledWith(
       "P0 Argo CD connector",
       connectorRouter,
-      expect.any(Function)
+      expect.any(Function),
+      { audienceCheck: "cloud-run-iam" }
     );
   });
 

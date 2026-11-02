@@ -13,5 +13,6 @@ runCloudRunConnector(
     PostgresConnectorRouter,
     MySqlConnectorRouter
   ),
-  createContext
+  createContext,
+  { audienceCheck: "cloud-run-iam" }
 );
