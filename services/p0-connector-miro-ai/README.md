@@ -96,8 +96,10 @@ P0 shows its own message for a refusal: a `validation_error` with a
 - On a 429 it waits `Retry-After`, at most 2 seconds, or 1 and then 2
   seconds when Miro says nothing, and tries again, 3 tries in all. It
   doesn't send any other failed call again: P0 decides when to try again.
-- It makes only the calls in its allowlist, by route: `GET /v1/oauth-token`
-  and `GET /v2/boards`. Anything else is refused before it is sent.
+- It makes only the calls in its allowlist, by route: `GET /v1/oauth-token`,
+  `GET /v2/boards`, `GET /v1/teams/{team_id}/user-connections`,
+  `GET /v2/users/{user_id}`, and `GET`, `POST`, `PATCH` and `DELETE` on a
+  board's members. Anything else is refused before it is sent.
 - Miro sends some ids as JSON numbers above 2^53, which `JSON.parse` alone
   rounds to another id. The connector reads every Miro id as a string.
 - Messages and log lines name a call by its route template, never its URL,
