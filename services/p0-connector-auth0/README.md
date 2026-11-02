@@ -206,11 +206,13 @@ accessor role doesn't have.
 The connector reads its configuration from environment variables, which the
 customer's Terraform sets on the deployment.
 
-| Variable               | What it is                                                                                                                                     | Required       |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
-| `DOMAIN_ALLOW_PATTERN` | A regular expression for the email domains the connector acts for. The connector refuses to start when it's missing, blank or doesn't compile. | Yes            |
-| `INVOKER_SA_EMAIL`     | The service account allowed to call the connector.                                                                                             | Cloud Run only |
-| `LOG_LEVEL`            | The pino log level. Defaults to `info`.                                                                                                        | No             |
+| Variable                   | What it is                                                                                                                                                                      | Required                           |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `CONNECTOR_AUDIENCE`       | The audience P0 mints the ID token for: the service URL the Cloud Run API reports as `uri`. When it's set, the token's `aud` claim must equal it.                               | No, see `CONNECTOR_AUDIENCE_CHECK` |
+| `CONNECTOR_AUDIENCE_CHECK` | The Cloud Run image sets it to `cloud-run-iam`, which leaves the token's audience to Cloud Run IAM, so the service must stay private. Ignored when `CONNECTOR_AUDIENCE` is set. | No (the image sets it)             |
+| `DOMAIN_ALLOW_PATTERN`     | A regular expression for the email domains the connector acts for. The connector refuses to start when it's missing, blank or doesn't compile.                                  | Yes                                |
+| `INVOKER_SA_EMAIL`         | The service account allowed to call the connector.                                                                                                                              | Cloud Run only                     |
+| `LOG_LEVEL`                | The pino log level. Defaults to `info`.                                                                                                                                         | No                                 |
 
 `DOMAIN_ALLOW_PATTERN` runs as written against the part of an email after the
 `@`, apart from whitespace around it, which is dropped. Nothing anchors it for

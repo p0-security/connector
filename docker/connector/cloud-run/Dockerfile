@@ -35,6 +35,16 @@ ARG GIT_REF
 ENV WORKSPACE=${WORKSPACE}
 ENV BUILD_DATE=$BUILD_DATE
 ENV GIT_REF=$GIT_REF
+# This image is built only for P0's own service connectors (see
+# .github/workflows/docker.yaml), which are deployed as private Cloud Run
+# services: P0's service account holds roles/run.invoker, and Cloud Run IAM
+# turns away a token minted for another service. So they skip the
+# connector's own `aud` comparison unless the deployment sets
+# CONNECTOR_AUDIENCE, which takes precedence. Off Cloud Run (no K_SERVICE) the
+# opt-out makes the connector refuse to start without CONNECTOR_AUDIENCE.
+# Don't copy this into the SDK's example image: a Custom Application connector
+# sets the opt-out in its own deploy config, where it's visible.
+ENV CONNECTOR_AUDIENCE_CHECK=cloud-run-iam
 
 USER root
 RUN npm install -g corepack && corepack enable yarn

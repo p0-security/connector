@@ -189,7 +189,11 @@ docker build \
 ```
 
 The service needs `INVOKER_SA_EMAIL`, P0's service account: it accepts a
-call only with an ID token for that account, and won't start without it.
+call only with an ID token for that account, and won't start without it. The
+image sets `CONNECTOR_AUDIENCE_CHECK=cloud-run-iam`, which leaves the token's
+audience to Cloud Run IAM, so the service has to stay private. Set
+`CONNECTOR_AUDIENCE`, the service URL the Cloud Run API reports as `uri`, to
+have the connector check the audience too.
 
 ## Publishing local builds
 

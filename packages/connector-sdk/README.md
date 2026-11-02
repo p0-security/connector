@@ -111,11 +111,21 @@ run();
 
 - **GCP (Cloud Run)**: calling the `run()` that `newCustomAppCloudRunServer` returns starts an
   Express server on `$PORT` (default `8080`), gated by a bearer-token check on the Google ID token P0
-  sends. Set `INVOKER_SA_EMAIL` to the service account P0 impersonates to call your connector; the
-  token's `email` claim must match it, and `run()` throws before binding a port if it's unset or
-  empty. The connector doesn't check the token's audience, so deploy the service private and grant
-  `INVOKER_SA_EMAIL` `roles/run.invoker` on it: Cloud Run's invoker check is what turns away a
-  token minted for another service. The one exception is `GET /health`, which answers `200`
+  sends. `INVOKER_SA_EMAIL` is required: it's the service account P0 impersonates to call your
+  connector, and the token's `email` claim must match it. `CONNECTOR_AUDIENCE` is the audience P0
+  mints the token for, and the token's `aud` claim must equal it exactly. On Cloud Run it is the
+  service URL the Cloud Run API reports as `uri`. Hosted anywhere other than Cloud Run, the bearer
+  check is the only gate in front of the connector, so `CONNECTOR_AUDIENCE` is required there. On a
+  private Cloud Run service you can set `CONNECTOR_AUDIENCE_CHECK=cloud-run-iam` instead: the
+  connector then skips the `aud` comparison and leaves it to Cloud Run IAM, which turns away a token
+  minted for another service. That only holds while the service stays private. A public service
+  with the opt-out has no audience check at all. The opt-out works only when `K_SERVICE` is set, as
+  Cloud Run sets it, and if `CONNECTOR_AUDIENCE` is also set the connector checks it and ignores the
+  opt-out. `app.metadata.get` reports which mode is on as `audienceCheck`. `run()` throws before
+  binding a port if `INVOKER_SA_EMAIL` is unset or empty, if `CONNECTOR_AUDIENCE` is empty or has
+  leading or trailing whitespace, if `CONNECTOR_AUDIENCE_CHECK` has any other value, or if neither is
+  set. On Cloud Run, also deploy the service private and grant `INVOKER_SA_EMAIL` `roles/run.invoker`
+  on it. The one exception to the bearer check is `GET /health`, which answers `200`
   without a token so a load balancer can health-check the container. It returns only the module
   name and reaches none of your actions.
 - **AWS (Lambda)**: `newCustomAppLambdaHandler` returns your handler directly. There is no

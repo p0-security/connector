@@ -14,22 +14,34 @@ into a Cloud Run service and packaged as a container image.
 
 ## Environment
 
-| Variable                             | Required | Purpose                                                                                                                        |
-| ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `INVOKER_SA_EMAIL`                   | **yes**  | Service account P0 impersonates to call you. Every request must carry a Google-signed ID token whose `email` claim matches it. |
-| `PORT`                               | no       | Listen port. Cloud Run injects this; the SDK defaults to `8080`.                                                               |
-| `LOG_LEVEL`                          | no       | pino level for the bundled logger. Defaults to `info`.                                                                         |
-| `GIT_REF`, `BUILD_DATE`, `WORKSPACE` | no       | Echoed back by `app.metadata.get`. Set them at deploy time so you can tell which build is live.                                |
+| Variable                             | Required                | Purpose                                                                                                                                                                                                                                             |
+| ------------------------------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `INVOKER_SA_EMAIL`                   | **yes**                 | Service account P0 impersonates to call you. Every request must carry a Google-signed ID token whose `email` claim matches it.                                                                                                                      |
+| `CONNECTOR_AUDIENCE`                 | **yes**, or the opt-out | The audience P0 mints that token for: the service URL the Cloud Run API reports as `uri`. The token's `aud` claim must equal it character for character, so another `run.app` URL for the same service, or a trailing slash, rejects every request. |
+| `CONNECTOR_AUDIENCE_CHECK`           | no                      | Set to `cloud-run-iam`, on a private Cloud Run service only, to leave the token's audience to Cloud Run IAM instead of setting `CONNECTOR_AUDIENCE`. Any other value refuses to start.                                                              |
+| `PORT`                               | no                      | Listen port. Cloud Run injects this; the SDK defaults to `8080`.                                                                                                                                                                                    |
+| `LOG_LEVEL`                          | no                      | pino level for the bundled logger. Defaults to `info`.                                                                                                                                                                                              |
+| `GIT_REF`, `BUILD_DATE`, `WORKSPACE` | no                      | Echoed back by `app.metadata.get`. Set them at deploy time so you can tell which build is live.                                                                                                                                                     |
 
-The SDK refuses to start when `INVOKER_SA_EMAIL` is unset or empty, rather than starting and
-answering every request — including P0's install-time reachability check — with a `403` that looks
-like a genuine auth failure from the outside.
+The SDK refuses to start when `INVOKER_SA_EMAIL` is unset or empty, when `CONNECTOR_AUDIENCE` is
+empty or has leading or trailing whitespace, or when neither `CONNECTOR_AUDIENCE` nor the opt-out
+is set, rather than starting and answering every request — including P0's install-time
+reachability check — with a `403` that looks like a genuine auth failure from the outside.
 
-The bearer check is not a substitute for IAM, and it doesn't look at the token's audience. Deploy
-the service private (`--no-allow-unauthenticated`) and grant `roles/run.invoker` to the same
-account you put in `INVOKER_SA_EMAIL`: IAM decides who may reach the container and turns away a
-token minted for another service, and the bearer check decides whose token the connector will act
-on.
+Deploy the service private (`--no-allow-unauthenticated`) and grant `roles/run.invoker` to the same
+account you put in `INVOKER_SA_EMAIL`. On Cloud Run, IAM checks the token before the request
+reaches the container, and the SDK checks its `email` and `aud` again. If you host the same image
+somewhere other than Cloud Run, the SDK's check is the only gate, which is why `CONNECTOR_AUDIENCE`
+is required there.
+
+On a private Cloud Run service you can set `CONNECTOR_AUDIENCE_CHECK=cloud-run-iam` in your deploy
+config instead of `CONNECTOR_AUDIENCE`. The SDK still checks the token's signature, issuer, expiry
+and `email`, but not its `aud`, and logs a warning at startup that Cloud Run IAM is the only
+audience check. The opt-out is only safe while the service stays private: on a public service
+nothing checks the audience. The SDK honours it only when `K_SERVICE` is set, as Cloud Run sets it,
+and refuses to start with it otherwise. If `CONNECTOR_AUDIENCE` is also set, the SDK checks it and ignores
+the opt-out. `app.metadata.get` reports `audienceCheck: true` or `false`, so P0 can tell which mode
+the connector runs in.
 
 `GET /health` is the one path that skips the token check. It answers `200` with
 `{"module":"<module name>"}` and reaches none of your actions, so point a load balancer's HTTP health check
