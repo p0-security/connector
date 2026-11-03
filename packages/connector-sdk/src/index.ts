@@ -8,6 +8,7 @@ export type {
 
 export {
   newCustomAppCloudRunServer,
+  newCustomAppHttpServer,
   newCustomAppLambdaHandler,
 } from "./deploy.ts";
 export type { CustomAppConnectorParams } from "./router.ts";
