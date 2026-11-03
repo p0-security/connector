@@ -30,4 +30,15 @@ describe("member-verify", () => {
       )
     ).rejects.toMatchSnapshot();
   });
+
+  it("loads without a valid pattern, and names it when a verifier is made", async () => {
+    process.env.DOMAIN_ALLOW_PATTERN = "(";
+    const { newMemberVerifier } = await import("../member-verify.js");
+    expect(() =>
+      newMemberVerifier(undefined as any, {
+        serviceAccountEmail: "test@test-project.serviceaccount.com",
+        projectId: "test-project",
+      })
+    ).toThrow("DOMAIN_ALLOW_PATTERN isn't a valid regular expression");
+  });
 });

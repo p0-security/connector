@@ -10,7 +10,22 @@ import logger from "./logger.ts";
 const SERVICE_ACCOUNT_MEMBER_PREFIX = "serviceAccount:";
 const WORKLOAD_IDENTITY_MEMBER_PREFIX = "principal://";
 
-const allowedDomainsRegex = new RegExp(process.env.DOMAIN_ALLOW_PATTERN ?? "");
+/** Compiled when a verifier is made, not when this module loads, so that
+ * loading `@p0security/connector-gcloud-common` reads no environment. Matched
+ * against the whole member string, unlike the connectors that match it against
+ * the domain only. */
+const compileAllowedDomains = (): RegExp => {
+  try {
+    return new RegExp(process.env.DOMAIN_ALLOW_PATTERN ?? "");
+  } catch (error) {
+    throw new Error(
+      `DOMAIN_ALLOW_PATTERN isn't a valid regular expression: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error }
+    );
+  }
+};
 
 export const newMemberVerifier = (
   client: GcloudClients,
@@ -19,6 +34,8 @@ export const newMemberVerifier = (
     projectId: string;
   }
 ) => {
+  const allowedDomainsRegex = compileAllowedDomains();
+
   const verifyUserOrGroup = (member: string) => {
     const [, ...email] = member.split(":");
     if (!allowedDomainsRegex.test(email.join())) {

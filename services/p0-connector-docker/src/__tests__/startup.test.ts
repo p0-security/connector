@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ALLOWED_PATTERN, LOAD_TIMEOUT_MS } from "./fixtures.ts";
 
-// Nothing is mocked here, on purpose. The framework compiles
-// `DOMAIN_ALLOW_PATTERN` itself as it loads, so these tests only pass if the
-// entry points check the pattern before they load anything else, which is
-// what a deployed connector does. `run.test.ts` covers the Cloud Run server,
-// which has to be mocked.
+// Nothing is mocked here, on purpose. The entry points load the real
+// framework, as a deployed connector does, so these tests also fail if
+// loading it ever reads `DOMAIN_ALLOW_PATTERN` again and throws first without
+// naming the variable. `run.test.ts` covers the Cloud Run server, which has
+// to be mocked.
 
 vi.setConfig({ testTimeout: LOAD_TIMEOUT_MS });
 
