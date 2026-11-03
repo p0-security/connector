@@ -64,9 +64,11 @@ export const newCustomAppCloudRunServer = (
 ): (() => void) => {
   const router = newCustomAppConnectorRouter(params);
   const createContext = newConnectorContext();
-  const options = {
-    audienceCheck: params.audienceCheck ?? "required",
-  } as const;
   return () =>
-    runCloudRunConnector(CUSTOM_APP_NAMESPACE, router, createContext, options);
+    runCloudRunConnector(
+      CUSTOM_APP_NAMESPACE,
+      router,
+      createContext,
+      params.audienceCheck
+    );
 };

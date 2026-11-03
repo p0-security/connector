@@ -24,11 +24,6 @@ import { createLogger } from "../logger.ts";
  */
 export type AudienceCheck = "cloud-run-iam" | "required";
 
-export type CloudRunConnectorOptions = {
-  /** Defaults to `"required"`. */
-  audienceCheck?: AudienceCheck;
-};
-
 const logger = createLogger({ module: "cloud-run-connector" });
 
 /**
@@ -91,7 +86,7 @@ const verifyToken = (mode: AudienceCheck) => {
     const { email } = payload;
     return invokerSAEmail.toLocaleLowerCase() === email.toLowerCase();
   };
-  return { verify, audienceCheck: audience !== undefined };
+  return { verify, audienceCheckOn: audience !== undefined };
 };
 
 /**
@@ -100,7 +95,7 @@ const verifyToken = (mode: AudienceCheck) => {
  *
  * Requests must carry a Google-signed ID token whose `email` claim is
  * `$INVOKER_SA_EMAIL` and, by default, whose `aud` claim is exactly
- * `$CONNECTOR_AUDIENCE`. Pass `{ audienceCheck: "cloud-run-iam" }` to skip the
+ * `$CONNECTOR_AUDIENCE`. Pass `audienceCheck: "cloud-run-iam"` to skip the
  * `aud` comparison on a private Cloud Run service; see {@link AudienceCheck}.
  * `app.metadata.get` reports which mode is on as `audienceCheck`.
  *
@@ -120,19 +115,17 @@ const verifyToken = (mode: AudienceCheck) => {
  * @param moduleName Name reported by `/health` and used in logs.
  * @param router The tRPC router to mount.
  * @param createContext Optional context factory; receives the Express adapter's options.
- * @param options See {@link CloudRunConnectorOptions}.
+ * @param audienceCheck Defaults to `"required"`. See {@link AudienceCheck}.
  */
 export const runCloudRunConnector = <T>(
   moduleName: string,
   router: AnyRouter,
   createContext?: (opts: CreateExpressContextOptions) => Promise<T>,
-  options: CloudRunConnectorOptions = {}
+  audienceCheck: AudienceCheck = "required"
 ) => {
   // Read the environment before serving, so a misconfigured connector fails to
   // start rather than answering every request with a 403.
-  const { verify, audienceCheck } = verifyToken(
-    options.audienceCheck ?? "required"
-  );
+  const { verify, audienceCheckOn } = verifyToken(audienceCheck);
 
   const trpcRouter = Router();
   trpcRouter.use(
@@ -142,7 +135,7 @@ export const runCloudRunConnector = <T>(
       // router is built before this runs.
       createContext: async (opts: CreateExpressContextOptions) =>
         Object.assign({}, await createContext?.(opts), {
-          [AUDIENCE_CHECK_CONTEXT_KEY]: audienceCheck,
+          [AUDIENCE_CHECK_CONTEXT_KEY]: audienceCheckOn,
         }),
     })
   );

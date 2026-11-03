@@ -32,14 +32,14 @@ afterEach(() => {
 });
 
 describe("newCustomAppCloudRunServer", () => {
-  it("requires the audience by default", () => {
+  it("leaves the default to the runner", () => {
     newCustomAppCloudRunServer({ actions, connectorVersion: "1.2.3" })();
 
     expect(core.runCloudRunConnector).toHaveBeenCalledWith(
       "app",
       expect.anything(),
       expect.any(Function),
-      { audienceCheck: "required" }
+      undefined
     );
   });
 
@@ -54,7 +54,7 @@ describe("newCustomAppCloudRunServer", () => {
       "app",
       expect.anything(),
       expect.any(Function),
-      { audienceCheck: "cloud-run-iam" }
+      "cloud-run-iam"
     );
   });
 });

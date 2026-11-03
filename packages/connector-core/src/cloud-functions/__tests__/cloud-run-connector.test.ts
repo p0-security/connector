@@ -17,7 +17,7 @@ import type * as loggerModule from "../../logger.ts";
 import { newMetadataRouter } from "../../metadata.ts";
 import { newConnectorRouter, newConnectorTRPC } from "../../trpc.ts";
 import {
-  type CloudRunConnectorOptions,
+  type AudienceCheck,
   runCloudRunConnector,
 } from "../cloud-run-connector.ts";
 
@@ -75,8 +75,8 @@ const t = newConnectorTRPC();
 const emptyRouter = t.router({});
 
 /** Starts the connector and returns the bearer middleware it would serve. */
-const startConnector = (options?: CloudRunConnectorOptions) => {
-  runCloudRunConnector("test", emptyRouter, undefined, options);
+const startConnector = (audienceCheck?: AudienceCheck) => {
+  runCloudRunConnector("test", emptyRouter, undefined, audienceCheck);
   const [, , middlewares] = vi.mocked(runExpressApp).mock.calls[0]!;
   return middlewares![0]!;
 };
@@ -91,7 +91,7 @@ const authorize = (middleware: RequestHandler, token: string) =>
     );
   });
 
-const OPT_OUT: CloudRunConnectorOptions = { audienceCheck: "cloud-run-iam" };
+const OPT_OUT: AudienceCheck = "cloud-run-iam";
 
 /** Unsets the audience, on what looks like Cloud Run. */
 const onCloudRunWithoutAudience = () => {
@@ -174,9 +174,7 @@ describe("runCloudRunConnector at startup", () => {
     onCloudRunWithoutAudience();
 
     expect(() =>
-      runCloudRunConnector("test", emptyRouter, undefined, {
-        audienceCheck: "required",
-      })
+      runCloudRunConnector("test", emptyRouter, undefined, "required")
     ).toThrow(/Connector audience is not set or present/);
     expect(runExpressApp).not.toHaveBeenCalled();
   });
@@ -334,8 +332,8 @@ describe("app.metadata.get served by runCloudRunConnector", () => {
   );
 
   /** Starts the connector and fetches its metadata, past the bearer check. */
-  const fetchMetadata = async (options?: CloudRunConnectorOptions) => {
-    runCloudRunConnector("test", appRouter, undefined, options);
+  const fetchMetadata = async (audienceCheck?: AudienceCheck) => {
+    runCloudRunConnector("test", appRouter, undefined, audienceCheck);
     const [, routes] = vi.mocked(runExpressApp).mock.calls[0]!;
     const app = express().use("/trpc", routes["/trpc"] as Router);
     const server = await new Promise<Server>((resolve) => {
