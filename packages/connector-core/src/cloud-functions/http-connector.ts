@@ -7,8 +7,12 @@ import {
 } from "./google-id-token-connector.ts";
 
 /**
- * Creates an HTTPS service, on any host, that exposes a tRPC router over
- * Express at `/trpc`, gated by bearer-token auth.
+ * Creates a service, on any host, that exposes a tRPC router over Express at
+ * `/trpc`, gated by bearer-token auth.
+ *
+ * The server speaks plain HTTP on `$PORT` (default `8080`). Put it behind a
+ * load balancer, ingress or proxy that terminates TLS, so the bearer token is
+ * never sent unencrypted.
  *
  * Requests must carry a Google-signed ID token whose `email` claim is
  * `$INVOKER_SA_EMAIL` and whose `aud` claim is exactly `$CONNECTOR_AUDIENCE`.
@@ -24,7 +28,7 @@ import {
  *
  * `GET /health` is the one route served without a token, for load balancer
  * health checks. It returns `{ module: moduleName }`.
- * @summary Creates an HTTPS service that exposes a tRPC router over Express.
+ * @summary Creates a service that exposes a tRPC router over Express.
  * @category Cloud Functions
  *
  * @param moduleName Name reported by `/health` and used in logs.

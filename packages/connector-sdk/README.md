@@ -1,7 +1,7 @@
 # @p0security/connector-sdk
 
 Build a **custom application connector**: a small service you write and deploy into your own AWS
-or GCP account, or onto any HTTPS host, that lets P0 grant and revoke access to a custom
+or GCP account, or onto any other host, that lets P0 grant and revoke access to a custom
 application.
 
 ## Implementing Actions
@@ -108,7 +108,7 @@ const run = newCustomAppCloudRunServer({
 run();
 ```
 
-**Any other HTTPS host**: use `newCustomAppHttpServer` the same way. It serves the same routes as
+**Any other host**: use `newCustomAppHttpServer` the same way. It serves the same routes as
 the Cloud Run server, and always checks the token's audience:
 
 ```ts
@@ -136,8 +136,10 @@ run();
   Set `CONNECTOR_AUDIENCE` to have the connector also reject a token whose `aud` claim differs from
   it. Without it, Cloud Run's invoker check is the only audience check, so the service must stay
   private.
-- **Any other HTTPS host**: the `run()` that `newCustomAppHttpServer` returns starts the same
-  server, with the same `INVOKER_SA_EMAIL` check and `GET /health` route. `CONNECTOR_AUDIENCE` is
+- **Any other host**: the `run()` that `newCustomAppHttpServer` returns starts the same
+  server, with the same `INVOKER_SA_EMAIL` check and `GET /health` route. It speaks plain HTTP on
+  `$PORT`, so put it behind a load balancer, ingress or proxy that terminates TLS. P0 sends a
+  bearer token with every request. `CONNECTOR_AUDIENCE` is
   required: nothing in front of the service checks the audience, so the connector rejects any token
   whose `aud` claim differs from it. `run()` throws before binding a port if it's unset, empty, or
   has leading or trailing whitespace.

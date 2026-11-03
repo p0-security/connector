@@ -64,8 +64,8 @@ export const newCustomAppCloudRunServer = (
 };
 
 /**
- * Builds an HTTPS server for a Custom Application connector, for any host
- * other than a private Cloud Run service:
+ * Builds a server for a Custom Application connector, for any host other than
+ * a private Cloud Run service:
  *
  * ```ts
  * const run = newCustomAppHttpServer({
@@ -76,7 +76,8 @@ export const newCustomAppCloudRunServer = (
  * ```
  *
  * The server requires `CONNECTOR_AUDIENCE` and rejects a token whose `aud`
- * differs.
+ * differs. It speaks plain HTTP on `$PORT`, so put it behind something that
+ * terminates TLS.
  * @category Deployment
  */
 export const newCustomAppHttpServer = (
