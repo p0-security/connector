@@ -14,9 +14,13 @@ const verifyToken = () => {
   if (!invokerSAEmail) {
     throw new Error("Invoker service account email is not set or present");
   }
+  // Optional until every deployment sets it: requiring it would stop
+  // connectors deployed before it existed from starting.
+  const audience = process.env.INVOKER_AUDIENCE?.trim() || undefined;
   return async (token: string) => {
     const ticket = await client.verifyIdToken({
       idToken: token,
+      audience,
     });
     const payload = ticket.getPayload();
     if (!payload || !payload.email) {
@@ -32,10 +36,11 @@ const verifyToken = () => {
  * `/trpc`, gated by bearer-token auth.
  *
  * Requests must carry a Google-signed ID token whose `email` claim is
- * `$INVOKER_SA_EMAIL`. The token's audience isn't checked: Cloud Run's own
- * invoker check is what turns away a token minted for another service, so the
- * service has to stay private. Throws before binding a port if
- * `INVOKER_SA_EMAIL` is unset or empty.
+ * `$INVOKER_SA_EMAIL`. When `$INVOKER_AUDIENCE` is set, the token's audience
+ * must also be it: the URL P0 calls the service by. Without it, Cloud Run's
+ * own invoker check is the only thing that turns away a token minted for
+ * another service, so the service has to stay private either way. Throws
+ * before binding a port if `INVOKER_SA_EMAIL` is unset or empty.
  *
  * `GET /health` is the one route served without a token, for load balancer
  * health checks. It returns `{ module: moduleName }`.

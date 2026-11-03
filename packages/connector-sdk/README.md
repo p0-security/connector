@@ -113,9 +113,10 @@ run();
   Express server on `$PORT` (default `8080`), gated by a bearer-token check on the Google ID token P0
   sends. Set `INVOKER_SA_EMAIL` to the service account P0 impersonates to call your connector; the
   token's `email` claim must match it, and `run()` throws before binding a port if it's unset or
-  empty. The connector doesn't check the token's audience, so deploy the service private and grant
-  `INVOKER_SA_EMAIL` `roles/run.invoker` on it: Cloud Run's invoker check is what turns away a
-  token minted for another service. The one exception is `GET /health`, which answers `200`
+  empty. Set `INVOKER_AUDIENCE` to the URL P0 calls your service by, and the token's audience must
+  match it too. Either way, deploy the service private and grant `INVOKER_SA_EMAIL`
+  `roles/run.invoker` on it: Cloud Run's invoker check is what turns away a token minted for another
+  service when `INVOKER_AUDIENCE` is unset. The one exception is `GET /health`, which answers `200`
   without a token so a load balancer can health-check the container. It returns only the module
   name and reaches none of your actions.
 - **AWS (Lambda)**: `newCustomAppLambdaHandler` returns your handler directly. There is no

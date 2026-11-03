@@ -100,14 +100,37 @@ describe("the bearer check runCloudRunConnector serves", () => {
     await expect(authorize(startConnector(), token)).resolves.toBeUndefined();
   });
 
-  it("admits a token for the invoker minted for another audience", async () => {
-    // The connector leaves the audience to Cloud Run's invoker check.
+  it.each([undefined, "", " "])(
+    "admits a token for the invoker minted for another audience when INVOKER_AUDIENCE is %j",
+    async (value) => {
+      // The connector leaves the audience to Cloud Run's invoker check.
+      vi.stubEnv("INVOKER_AUDIENCE", value);
+      const token = mintToken({
+        aud: "https://connector.example.com?p0_org=tenant-b",
+        email: INVOKER,
+      });
+
+      await expect(authorize(startConnector(), token)).resolves.toBeUndefined();
+    }
+  );
+
+  it("admits a token for the invoker minted for INVOKER_AUDIENCE", async () => {
+    vi.stubEnv("INVOKER_AUDIENCE", AUDIENCE);
+    const token = mintToken({ aud: AUDIENCE, email: INVOKER });
+
+    await expect(authorize(startConnector(), token)).resolves.toBeUndefined();
+  });
+
+  it("rejects a token for the invoker minted for another audience when INVOKER_AUDIENCE is set", async () => {
+    vi.stubEnv("INVOKER_AUDIENCE", AUDIENCE);
     const token = mintToken({
       aud: "https://connector.example.com?p0_org=tenant-b",
       email: INVOKER,
     });
 
-    await expect(authorize(startConnector(), token)).resolves.toBeUndefined();
+    await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
+      AuthError
+    );
   });
 
   it("rejects a token for another service account", async () => {

@@ -537,9 +537,9 @@ customer's Terraform sets on the deployment.
 
 On Cloud Run the caller sends a Google ID token as a bearer token, and the
 connector accepts it only when its `email` claim is `INVOKER_SA_EMAIL`. It
-doesn't look at the token's audience, so keep the service private: Cloud
-Run's own check on who may invoke it is what turns away a token made for
-another service. `/health` answers without a token. A Lambda checks no token:
+looks at the token's audience only when `INVOKER_AUDIENCE` is set, so keep
+the service private: Cloud Run's own check on who may invoke it is what turns
+away a token made for another service. `/health` answers without a token. A Lambda checks no token:
 IAM decides who may invoke the function.
 
 The Cloud Run service listens on `PORT`, 8080 when unset.
