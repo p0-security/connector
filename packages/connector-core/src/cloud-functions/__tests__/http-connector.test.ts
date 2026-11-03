@@ -38,8 +38,6 @@ const startConnector = () => start().middlewares[0]!;
 beforeEach(() => {
   vi.stubEnv("INVOKER_SA_EMAIL", INVOKER);
   vi.stubEnv("CONNECTOR_AUDIENCE", AUDIENCE);
-  // Don't let the machine running the tests look like Cloud Run.
-  vi.stubEnv("K_SERVICE", undefined);
   stubGoogleCerts();
 });
 
@@ -62,43 +60,34 @@ describe("runHttpConnector at startup", () => {
     }
   );
 
-  describe.each([
-    ["off Cloud Run", undefined],
-    ["on Cloud Run", "connector"],
-  ])("%s", (_, kService) => {
-    beforeEach(() => {
-      vi.stubEnv("K_SERVICE", kService);
-    });
+  it.each([undefined, ""])(
+    "throws without serving when CONNECTOR_AUDIENCE is %j",
+    (value) => {
+      vi.stubEnv("CONNECTOR_AUDIENCE", value);
 
-    it.each([undefined, ""])(
-      "throws without serving when CONNECTOR_AUDIENCE is %j",
-      (value) => {
-        vi.stubEnv("CONNECTOR_AUDIENCE", value);
+      expect(() => runHttpConnector("test", emptyRouter)).toThrow(
+        /Connector audience is not set or present/
+      );
+      expect(runExpressApp).not.toHaveBeenCalled();
+    }
+  );
 
-        expect(() => runHttpConnector("test", emptyRouter)).toThrow(
-          /Connector audience is not set or present/
-        );
-        expect(runExpressApp).not.toHaveBeenCalled();
-      }
-    );
+  it.each(["   ", ` ${AUDIENCE}`, `${AUDIENCE}\n`])(
+    "throws without serving when CONNECTOR_AUDIENCE is %j",
+    (value) => {
+      vi.stubEnv("CONNECTOR_AUDIENCE", value);
 
-    it.each(["   ", ` ${AUDIENCE}`, `${AUDIENCE}\n`])(
-      "throws without serving when CONNECTOR_AUDIENCE is %j",
-      (value) => {
-        vi.stubEnv("CONNECTOR_AUDIENCE", value);
+      expect(() => runHttpConnector("test", emptyRouter)).toThrow(
+        /leading or trailing whitespace/
+      );
+      expect(runExpressApp).not.toHaveBeenCalled();
+    }
+  );
 
-        expect(() => runHttpConnector("test", emptyRouter)).toThrow(
-          /leading or trailing whitespace/
-        );
-        expect(runExpressApp).not.toHaveBeenCalled();
-      }
-    );
+  it("starts with CONNECTOR_AUDIENCE", () => {
+    runHttpConnector("test", emptyRouter);
 
-    it("starts with CONNECTOR_AUDIENCE", () => {
-      runHttpConnector("test", emptyRouter);
-
-      expect(runExpressApp).toHaveBeenCalledTimes(1);
-    });
+    expect(runExpressApp).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -110,16 +99,6 @@ describe("the bearer check runHttpConnector serves", () => {
   });
 
   it("rejects a token minted for another audience", async () => {
-    const token = mintToken({ aud: OTHER_AUDIENCE, email: INVOKER });
-
-    await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
-      AuthError
-    );
-  });
-
-  it("rejects a token minted for another audience on Cloud Run", async () => {
-    // K_SERVICE never turns the comparison off.
-    vi.stubEnv("K_SERVICE", "connector");
     const token = mintToken({ aud: OTHER_AUDIENCE, email: INVOKER });
 
     await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(

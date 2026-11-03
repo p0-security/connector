@@ -51,8 +51,7 @@ export const newCustomAppLambdaHandler = (
  *
  * With `CONNECTOR_AUDIENCE` set, the server rejects a token whose `aud`
  * differs. Without it, the server leaves the audience to Cloud Run IAM, so the
- * service must stay private, and it refuses to start off Cloud Run. Off Cloud
- * Run, use {@link newCustomAppHttpServer}.
+ * service must stay private. Off Cloud Run, use {@link newCustomAppHttpServer}.
  * @category Deployment
  */
 export const newCustomAppCloudRunServer = (
