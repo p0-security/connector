@@ -134,15 +134,18 @@ run();
   balancer can health-check the container. It returns only the module name and reaches none of
   your actions. Deploy the service private and grant `INVOKER_SA_EMAIL` `roles/run.invoker` on it.
   Set `CONNECTOR_AUDIENCE` to have the connector also reject a token whose `aud` claim differs from
-  it. Without it, Cloud Run's invoker check is the only audience check, so the service must stay
+  it. P0 mints the token for the service's URL, so the value is that URL exactly as
+  `gcloud run services describe <service> --format='value(status.url)'` prints it, with no trailing
+  slash. Without it, Cloud Run's invoker check is the only audience check, so the service must stay
   private.
 - **Any other host**: the `run()` that `newCustomAppHttpServer` returns starts the same
   server, with the same `INVOKER_SA_EMAIL` check and `GET /health` route. It speaks plain HTTP on
   `$PORT`, so put it behind a load balancer, ingress or proxy that terminates TLS. P0 sends a
-  bearer token with every request. `CONNECTOR_AUDIENCE` is
-  required: nothing in front of the service checks the audience, so the connector rejects any token
-  whose `aud` claim differs from it. `run()` throws before binding a port if it's unset, empty, or
-  has leading or trailing whitespace.
+  bearer token with every request. `CONNECTOR_AUDIENCE` is required: nothing in front of the service
+  checks the audience, so the connector rejects any token whose `aud` claim differs from it. Set it
+  to the exact string P0 shows when you register the connector. It names both your connector and
+  your P0 organization, so copy it rather than building it. `run()` throws before binding a port if
+  it's unset, empty, or has leading or trailing whitespace.
 - **AWS (Lambda)**: `newCustomAppLambdaHandler` returns your handler directly. There is no
   bearer-token check here — a Lambda invoke payload carries no caller identity to check, so the
   boundary is purely `lambda:InvokeFunction` IAM on the role P0 assumes to call you. Grant that role
