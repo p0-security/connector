@@ -68,7 +68,7 @@ describe("runCloudRunConnector at startup", () => {
     vi.stubEnv("CONNECTOR_AUDIENCE", "");
 
     expect(() => runCloudRunConnector("test", emptyRouter)).toThrow(
-      /Connector audience is not set or present/
+      /Connector audience is set but empty/
     );
     expect(runExpressApp).not.toHaveBeenCalled();
   });

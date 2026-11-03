@@ -26,7 +26,7 @@ export const connectorAudienceFromEnv = (): string | undefined => {
   // trailing newline from a secret) would do the same. Refuse it rather than
   // trim it, since the value must match what P0 mints.
   if (!audience) {
-    throw new Error("Connector audience is not set or present");
+    throw new Error("Connector audience is set but empty");
   }
   if (audience !== audience.trim()) {
     throw new Error("Connector audience has leading or trailing whitespace");

@@ -60,14 +60,15 @@ describe("runHttpConnector at startup", () => {
     }
   );
 
-  it.each([undefined, ""])(
+  it.each([
+    [undefined, /Connector audience is not set/],
+    ["", /Connector audience is set but empty/],
+  ])(
     "throws without serving when CONNECTOR_AUDIENCE is %j",
-    (value) => {
+    (value, message) => {
       vi.stubEnv("CONNECTOR_AUDIENCE", value);
 
-      expect(() => runHttpConnector("test", emptyRouter)).toThrow(
-        /Connector audience is not set or present/
-      );
+      expect(() => runHttpConnector("test", emptyRouter)).toThrow(message);
       expect(runExpressApp).not.toHaveBeenCalled();
     }
   );

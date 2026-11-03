@@ -38,7 +38,7 @@ export const runHttpConnector = <T>(
 ) => {
   const audience = connectorAudienceFromEnv();
   if (audience === undefined) {
-    throw new Error("Connector audience is not set or present");
+    throw new Error("Connector audience is not set");
   }
   return serveGoogleIdTokenConnector(
     moduleName,
