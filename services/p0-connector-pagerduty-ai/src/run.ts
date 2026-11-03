@@ -7,6 +7,5 @@ const createContext = async () => ({ logger });
 runCloudRunConnector(
   "P0 PagerDuty (Agentic) connector",
   connectorRouter,
-  createContext,
-  { audienceCheck: "cloud-run-iam" }
+  createContext
 );

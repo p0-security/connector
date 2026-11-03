@@ -4,6 +4,4 @@ import { connectorRouter } from "./router.ts";
 
 const logger = createLogger();
 const createContext = async () => ({ logger });
-runCloudRunConnector("P0 GSM connector", connectorRouter, createContext, {
-  audienceCheck: "cloud-run-iam",
-});
+runCloudRunConnector("P0 GSM connector", connectorRouter, createContext);

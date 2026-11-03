@@ -9,11 +9,6 @@ const { createLogger, runCloudRunConnector } =
 const { connectorRouter } = await import("./router.ts");
 
 const logger = createLogger();
-runCloudRunConnector(
-  "P0 Auth0 connector",
-  connectorRouter,
-  async () => ({
-    logger,
-  }),
-  { audienceCheck: "cloud-run-iam" }
-);
+runCloudRunConnector("P0 Auth0 connector", connectorRouter, async () => ({
+  logger,
+}));

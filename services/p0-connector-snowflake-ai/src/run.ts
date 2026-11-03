@@ -7,6 +7,5 @@ const createContext = async () => ({ logger });
 runCloudRunConnector(
   "P0 Snowflake (AI) connector",
   connectorRouter,
-  createContext,
-  { audienceCheck: "cloud-run-iam" }
+  createContext
 );

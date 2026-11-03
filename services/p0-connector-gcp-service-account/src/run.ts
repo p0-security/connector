@@ -7,6 +7,5 @@ const createContext = async () => ({ logger });
 runCloudRunConnector(
   "P0 GCP service account connector",
   connectorRouter,
-  createContext,
-  { audienceCheck: "cloud-run-iam" }
+  createContext
 );

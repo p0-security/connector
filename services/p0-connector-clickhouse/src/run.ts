@@ -14,6 +14,5 @@ runCloudRunConnector(
   connectorRouter,
   async () => ({
     logger,
-  }),
-  { audienceCheck: "cloud-run-iam" }
+  })
 );

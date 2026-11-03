@@ -34,8 +34,7 @@ describe("the Cloud Run entry point", () => {
     expect(runCloudRunConnector).toHaveBeenCalledWith(
       "P0 1Password connector",
       expect.anything(),
-      expect.any(Function),
-      { audienceCheck: "cloud-run-iam" }
+      expect.any(Function)
     );
   });
 

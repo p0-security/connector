@@ -11,6 +11,5 @@ const createContext = async () => ({ logger });
 runCloudRunConnector(
   "P0 Tailscale connector",
   newTailscaleRouter({ identityToken: gcpIdentityToken }),
-  createContext,
-  { audienceCheck: "cloud-run-iam" }
+  createContext
 );
