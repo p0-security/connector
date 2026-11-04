@@ -3,7 +3,7 @@ import { vi } from "vitest";
 import { CLOUDFLARE_API } from "../cloudflare-api.ts";
 
 /** An answer with `json` as its body. */
-export const answer = (status: number, json: unknown) =>
+export const answer = (status: number, json: unknown): Response =>
   new Response(JSON.stringify(json), {
     headers: { "Content-Type": "application/json" },
     status,
@@ -13,7 +13,7 @@ export const answer = (status: number, json: unknown) =>
 export const ok = (
   result: unknown,
   resultInfo?: { page: number; total_pages: number }
-) =>
+): Response =>
   answer(200, {
     errors: [],
     messages: [],
@@ -26,7 +26,8 @@ export const ok = (
 export const failed = (
   status: number,
   errors: { code: number; message: string }[]
-) => answer(status, { errors, messages: [], result: null, success: false });
+): Response =>
+  answer(status, { errors, messages: [], result: null, success: false });
 
 type Handler = (url: URL, init: RequestInit) => Promise<Response> | Response;
 
