@@ -62,6 +62,20 @@ warning. Then, by the tokens with the grant's name:
 `deleteUser` deletes every token with the grant's name, then the secret. If a
 token delete fails, the secret stays for the retry.
 
+## Listings
+
+- `policies`, with `scope` `account` or `zone`: the account's permission
+  groups on that scope, by id. Zone groups serve one zone and all zones.
+- `zone`: `*` (all zones), then each of the account's zones, by name.
+
+`policies` hides, by group id, the groups that let an agent take over the
+account (token management, account settings, sign-in, billing, Access
+administration) and the groups of products that refuse account-owned tokens
+(Intel, Page Rules, Registrar, Turnstile). It also hides every group that
+isn't selectable, and every group on a scope other than the account or its
+zones, such as one R2 bucket or one Worker script. The app refuses any group
+the listing doesn't return.
+
 ## Errors
 
 A failed Cloudflare call names the call by its route template and status,

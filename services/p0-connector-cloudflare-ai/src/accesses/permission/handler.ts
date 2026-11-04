@@ -5,7 +5,6 @@ import {
   type Logger,
   type ResourceRootSchemaOf,
   newResourceRootRouter,
-  throwAssertNever,
 } from "@p0security/connector-core";
 import {
   SecretNotFoundError,
@@ -13,15 +12,15 @@ import {
   createSecretManagerClient,
 } from "@p0security/connector-secret-manager-client";
 
-import {
-  type CloudflareClient,
-  type ListedToken,
-  newCloudflareApi,
-  newCloudflareClient,
+import type {
+  CloudflareClient,
+  ListedToken,
 } from "../../cloudflare/cloudflare-api.ts";
+import { connectCloudflare } from "../../cloudflare/connect.ts";
 import { toConnectorError } from "../../cloudflare/errors.ts";
-import { readToken, secretManagerConfigOf } from "../../secrets.ts";
+import { secretManagerConfigOf } from "../../secrets.ts";
 import { spec } from "./definition.ts";
+import { list } from "./list.ts";
 import { toTokenPolicies, zoneNamesOf } from "./token-body.ts";
 
 type ResourceSchema = ResourceRootSchemaOf<typeof spec>;
@@ -46,11 +45,7 @@ const createSecretManager = async (context: RequestContext) => {
 /** The secret manager, plus Cloudflare as the install token. */
 const newAccountClients = async (context: RequestContext, logger: Logger) => {
   const secretManager = await createSecretManager(context);
-  const token = await readToken(context.secret, logger);
-  const cloudflare = newCloudflareClient(
-    newCloudflareApi({ logger, token }),
-    context.accountId
-  );
+  const cloudflare = await connectCloudflare(context, logger);
   return { secretManager, cloudflare };
 };
 
@@ -266,7 +261,5 @@ export const router = (t: AnyConnectorTRPCInstance) =>
       );
     },
 
-    list: async ({ type }) => {
-      throw throwAssertNever(type);
-    },
+    list: (query) => list(ctx.logger, query),
   }));
