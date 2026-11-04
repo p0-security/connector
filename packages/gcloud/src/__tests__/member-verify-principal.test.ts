@@ -47,16 +47,16 @@ describe("member-verify: workload identity principals", () => {
     process.env.DOMAIN_ALLOW_PATTERN = ".*@(example[.]com)$";
     const memberVerifier = await verifier();
     await expect(
-      memberVerifier.verifyMember(
-        principal("agentic-identity/0123456789abcdef")
-      )
+      memberVerifier.verifyMember(principal("mcps/drive/0123456789abcdef"))
     ).resolves.toBeUndefined();
   });
 
-  it("rejects a subject outside the agentic-identity namespace", async () => {
+  it("rejects a subject that is not a gateway access subject", async () => {
     const memberVerifier = await verifier();
     await expect(
-      memberVerifier.verifyMember(principal("mcps/backend/0123456789abcdef"))
+      memberVerifier.verifyMember(
+        principal("agentic-identity/0123456789abcdef")
+      )
     ).rejects.toThrow(/does not name an agentic identity subject/);
   });
 
@@ -64,9 +64,7 @@ describe("member-verify: workload identity principals", () => {
     getOrgIdByProjectNumber.mockResolvedValue("999999999999");
     const memberVerifier = await verifier();
     await expect(
-      memberVerifier.verifyMember(
-        principal("agentic-identity/0123456789abcdef")
-      )
+      memberVerifier.verifyMember(principal("mcps/drive/0123456789abcdef"))
     ).rejects.toThrow(/outside this organization/);
   });
 
@@ -74,9 +72,7 @@ describe("member-verify: workload identity principals", () => {
     getOrgIdByProjectNumber.mockResolvedValue(undefined);
     const memberVerifier = await verifier();
     await expect(
-      memberVerifier.verifyMember(
-        principal("agentic-identity/0123456789abcdef")
-      )
+      memberVerifier.verifyMember(principal("mcps/drive/0123456789abcdef"))
     ).rejects.toThrow(/outside this organization/);
   });
 
@@ -95,9 +91,7 @@ describe("member-verify: workload identity principals", () => {
     getOrgIdByProjectNumber.mockResolvedValue("999999999999");
     const memberVerifier = await verifier();
     await expect(
-      memberVerifier.verifyMember(
-        principal("agentic-identity/0123456789abcdef")
-      )
+      memberVerifier.verifyMember(principal("mcps/drive/0123456789abcdef"))
     ).rejects.toThrow(/outside this organization/);
     await expect(
       memberVerifier.verifyMember(principal("anything-at-all"))
