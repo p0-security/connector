@@ -4,6 +4,7 @@ import {
   createLogger,
   newCloudFunction,
   runCloudRunConnector,
+  runHttpConnector,
 } from "@p0security/connector-core";
 
 import { CUSTOM_APP_NAMESPACE } from "./constants.ts";
@@ -47,6 +48,10 @@ export const newCustomAppLambdaHandler = (
  * });
  * run();
  * ```
+ *
+ * With `CONNECTOR_AUDIENCE` set, the server rejects a token whose `aud`
+ * differs. Without it, the server leaves the audience to Cloud Run IAM, so the
+ * service must stay private. Off Cloud Run, use {@link newCustomAppHttpServer}.
  * @category Deployment
  */
 export const newCustomAppCloudRunServer = (
@@ -56,4 +61,29 @@ export const newCustomAppCloudRunServer = (
   const createContext = newConnectorContext();
   return () =>
     runCloudRunConnector(CUSTOM_APP_NAMESPACE, router, createContext);
+};
+
+/**
+ * Builds a server for a Custom Application connector, for any host other than
+ * a private Cloud Run service:
+ *
+ * ```ts
+ * const run = newCustomAppHttpServer({
+ *   actions,
+ *   connectorVersion: packageJson.version,
+ * });
+ * run();
+ * ```
+ *
+ * The server requires `CONNECTOR_AUDIENCE` and rejects a token whose `aud`
+ * differs. It speaks plain HTTP on `$PORT`, so put it behind something that
+ * terminates TLS.
+ * @category Deployment
+ */
+export const newCustomAppHttpServer = (
+  params: CustomAppConnectorParams
+): (() => void) => {
+  const router = newCustomAppConnectorRouter(params);
+  const createContext = newConnectorContext();
+  return () => runHttpConnector(CUSTOM_APP_NAMESPACE, router, createContext);
 };
