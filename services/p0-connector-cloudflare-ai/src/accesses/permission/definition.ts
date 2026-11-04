@@ -31,8 +31,25 @@ const policy = z.union([
 
 export type Policy = z.infer<typeof policy>;
 
-// Listings come with the hidden set. Until then, every query fails to parse.
-const listerQuery = z.object({ type: z.never(), context: account });
+/** Where a permission group applies. Zone groups serve one zone and all zones. */
+const groupScope = z.enum(["account", "zone"]);
+
+export type GroupScope = z.infer<typeof groupScope>;
+
+/**
+ * - `policies`: the groups an agent can request on `scope`, by id.
+ * - `zone`: `*` for all zones, then each of the account's zones, by name.
+ */
+const listerQuery = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("policies"),
+    scope: groupScope,
+    context: account,
+  }),
+  z.object({ type: z.literal("zone"), context: account }),
+]);
+
+export type ListerQuery = z.infer<typeof listerQuery>;
 
 const listerResponse = z
   .object({
@@ -41,6 +58,8 @@ const listerResponse = z
     group: z.string().optional(),
   })
   .array();
+
+export type ListerResponse = z.infer<typeof listerResponse>;
 
 const requestContext = z.object({
   requestId: z.string(),
