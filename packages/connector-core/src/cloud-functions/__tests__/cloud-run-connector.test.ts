@@ -58,7 +58,7 @@ describe("runCloudRunConnector at startup", () => {
   );
 
   it.each([undefined, "", " padded "])(
-    "ignores CONNECTOR_AUDIENCE when it's %j",
+    "starts whatever CONNECTOR_AUDIENCE is: %j",
     (value) => {
       vi.stubEnv("CONNECTOR_AUDIENCE", value);
 

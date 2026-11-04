@@ -38,9 +38,9 @@ at it.
 ### Running off Cloud Run
 
 The same image runs on any host that terminates HTTPS in front of it. In `src/index.ts`, replace
-`newCustomAppCloudRunServer` with `newCustomAppHttpServer`, and set `CONNECTOR_AUDIENCE` to the exact
-string P0 shows when you register the connector. The HTTP
-server refuses to start without it, since no IAM check sits in front of the service.
+`newCustomAppCloudRunServer` with `newCustomAppHttpServer`, and set `CONNECTOR_AUDIENCE` to the
+exact string P0 shows when you register the connector. The HTTP server refuses to start without it,
+since no IAM check sits in front of the service.
 
 ## What the actions do
 
