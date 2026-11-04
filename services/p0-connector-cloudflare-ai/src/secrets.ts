@@ -55,6 +55,11 @@ const vaultOf = (pointer: SecretPointer): Vault => {
   }
 };
 
+/** The secret manager that holds the install token. Grant secrets go there too. */
+export const secretManagerConfigOf = (
+  pointer: SecretPointer
+): SecretManagerProviderConfig => vaultOf(pointer).config;
+
 // Failures to reach the secret manager at all.
 const NETWORK_FAILURE_CODES: ReadonlySet<unknown> = new Set([
   "ENOTFOUND",

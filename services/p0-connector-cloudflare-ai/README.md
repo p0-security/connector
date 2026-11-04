@@ -40,6 +40,28 @@ only reads. Nothing of the token is reported.
 
 A failed check fails the call. The error's `payload.step` names the check.
 
+## Grant tokens
+
+The `permission` access is a resource root. Its user is the grant's secret,
+in the same secret manager as the install token. The secret holds one grant
+token, named `P0 <secret ref>`.
+
+`setPoliciesForUser` takes one policy, `{ expiresOn, resources }`. Each
+resource is `account`, `all-zones` or `zone` (by name), with permission group
+ids. Each resource becomes one allow policy on the token; zone resources nest
+under the account. A zone the account no longer has is left out, with a
+warning. Then, by the tokens with the grant's name:
+
+- None: mint one, then write its value to the secret. If the write fails,
+  delete the token.
+- One: `PUT` the policies and expiry. The secret doesn't change.
+- More than one: mint and write as for none, then delete the old ones, so a
+  failed delete leaves a valid token in the secret.
+- No resources left (`{ resources: [] }`): delete them all.
+
+`deleteUser` deletes every token with the grant's name, then the secret. If a
+token delete fails, the secret stays for the retry.
+
 ## Errors
 
 A failed Cloudflare call names the call by its route template and status,
