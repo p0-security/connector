@@ -49,8 +49,7 @@ export const newCustomAppLambdaHandler = (
  * run();
  * ```
  *
- * With `CONNECTOR_AUDIENCE` set, the server rejects a token whose `aud`
- * differs. Without it, the server leaves the audience to Cloud Run IAM, so the
+ * The server doesn't check the token's audience. Cloud Run IAM does, so the
  * service must stay private. Off Cloud Run, use {@link newCustomAppHttpServer}.
  * @category Deployment
  */

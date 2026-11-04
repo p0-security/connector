@@ -17,7 +17,6 @@ into a Cloud Run service and packaged as a container image.
 | Variable                             | Required | Purpose                                                                                                                        |
 | ------------------------------------ | -------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `INVOKER_SA_EMAIL`                   | **yes**  | Service account P0 impersonates to call you. Every request must carry a Google-signed ID token whose `email` claim matches it. |
-| `CONNECTOR_AUDIENCE`                 | no       | When set, the connector rejects a token whose `aud` claim differs from it. Required off Cloud Run.                             |
 | `PORT`                               | no       | Listen port. Cloud Run injects this; the SDK defaults to `8080`.                                                               |
 | `LOG_LEVEL`                          | no       | pino level for the bundled logger. Defaults to `info`.                                                                         |
 | `GIT_REF`, `BUILD_DATE`, `WORKSPACE` | no       | Echoed back by `app.metadata.get`. Set them at deploy time so you can tell which build is live.                                |
@@ -26,15 +25,11 @@ The SDK refuses to start when `INVOKER_SA_EMAIL` is unset or empty, rather than 
 answering every request — including P0's install-time reachability check — with a `403` that looks
 like a genuine auth failure from the outside.
 
-The bearer check is not a substitute for IAM. Deploy the service private
-(`--no-allow-unauthenticated`) and grant `roles/run.invoker` to the same account you put in
-`INVOKER_SA_EMAIL`. IAM decides who may reach the container, and the bearer check decides whose
-token the connector will act on.
-
-Cloud Run's invoker check also turns away a token minted for another service. Without
-`CONNECTOR_AUDIENCE`, that is the only audience check, so the service must stay private. With
-`CONNECTOR_AUDIENCE` set, the connector compares the token's `aud` claim to it as well.
-`app.metadata.get` reports which applies as `audienceCheck`.
+The bearer check is not a substitute for IAM, and it doesn't look at the token's audience. Deploy
+the service private (`--no-allow-unauthenticated`) and grant `roles/run.invoker` to the same
+account you put in `INVOKER_SA_EMAIL`: IAM decides who may reach the container and turns away a
+token minted for another service, and the bearer check decides whose token the connector will act
+on.
 
 `GET /health` is the one path that skips the token check. It answers `200` with
 `{"module":"<module name>"}` and reaches none of your actions, so point a load balancer's HTTP health check
@@ -43,9 +38,9 @@ at it.
 ### Running off Cloud Run
 
 The same image runs on any host that terminates HTTPS in front of it. In `src/index.ts`, replace
-`newCustomAppCloudRunServer` with `newCustomAppHttpServer`, and set `CONNECTOR_AUDIENCE` to the exact
-string P0 shows when you register the connector. The HTTP
-server refuses to start without it, since no IAM check sits in front of the service.
+`newCustomAppCloudRunServer` with `newCustomAppHttpServer`, and set `CONNECTOR_AUDIENCE` to the
+exact string P0 shows when you register the connector. The HTTP server refuses to start without it,
+since no IAM check sits in front of the service.
 
 ## What the actions do
 

@@ -130,14 +130,11 @@ run();
   Express server on `$PORT` (default `8080`), gated by a bearer-token check on the Google ID token P0
   sends. Set `INVOKER_SA_EMAIL` to the service account P0 impersonates to call your connector; the
   token's `email` claim must match it, and `run()` throws before binding a port if it's unset or
-  empty. The one exception is `GET /health`, which answers `200` without a token so a load
-  balancer can health-check the container. It returns only the module name and reaches none of
-  your actions. Deploy the service private and grant `INVOKER_SA_EMAIL` `roles/run.invoker` on it.
-  Set `CONNECTOR_AUDIENCE` to have the connector also reject a token whose `aud` claim differs from
-  it. P0 mints the token for the service's URL, so the value is that URL exactly as
-  `gcloud run services describe <service> --format='value(status.url)'` prints it, with no trailing
-  slash. Without it, Cloud Run's invoker check is the only audience check, so the service must stay
-  private.
+  empty. The connector doesn't check the token's audience, so deploy the service private and grant
+  `INVOKER_SA_EMAIL` `roles/run.invoker` on it: Cloud Run's invoker check is what turns away a
+  token minted for another service. The one exception is `GET /health`, which answers `200`
+  without a token so a load balancer can health-check the container. It returns only the module
+  name and reaches none of your actions.
 - **Any other host**: the `run()` that `newCustomAppHttpServer` returns starts the same
   server, with the same `INVOKER_SA_EMAIL` check and `GET /health` route. It speaks plain HTTP on
   `$PORT`, so put it behind a load balancer, ingress or proxy that terminates TLS. P0 sends a
@@ -150,8 +147,6 @@ run();
   bearer-token check here — a Lambda invoke payload carries no caller identity to check, so the
   boundary is purely `lambda:InvokeFunction` IAM on the role P0 assumes to call you. Grant that role
   invoke access on your function.
-- `app.metadata.get` reports `audienceCheck: true` when the server compares the token's audience
-  and `false` when it leaves that to Cloud Run. The Lambda handler omits the field.
 - `LOG_LEVEL` controls the bundled pino logger (default `info`).
 
 ## License

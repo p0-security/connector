@@ -3,11 +3,12 @@
  * test file mocks `runExpressApp`, so the helpers take the routes and
  * middlewares the runner handed it.
  */
-import express, {
-  type Request,
-  type RequestHandler,
-  type Response,
-  type Router,
+import type {
+  Express,
+  Request,
+  RequestHandler,
+  Response,
+  Router,
 } from "express";
 import { OAuth2Client } from "google-auth-library";
 import { type KeyObject, generateKeyPairSync, sign } from "node:crypto";
@@ -16,8 +17,7 @@ import type { AddressInfo } from "node:net";
 import { vi } from "vitest";
 
 import { createExpressApp } from "../../http/index.ts";
-import { newMetadataRouter } from "../../metadata.ts";
-import { newConnectorRouter, newConnectorTRPC } from "../../trpc.ts";
+import { newConnectorTRPC } from "../../trpc.ts";
 
 export const INVOKER = "invoker@p0-prod.iam.gserviceaccount.com";
 export const AUDIENCE = "https://connector.example.com?p0_org=tenant-a";
@@ -91,18 +91,9 @@ const t = newConnectorTRPC();
 
 export const emptyRouter = t.router({});
 
-/** An `app` router with only the metadata procedures, at version 1.2.3. */
-export const metadataAppRouter = newConnectorRouter(
-  "app",
-  t,
-  {},
-  t.router({}),
-  newMetadataRouter(t, "1.2.3")
-);
-
 /** Serves `app` on a free local port for the length of `use`. */
 const withServer = async <R>(
-  app: express.Express,
+  app: Express,
   use: (baseUrl: string) => Promise<R>
 ) => {
   const server = await new Promise<Server>((resolve) => {
@@ -115,16 +106,6 @@ const withServer = async <R>(
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 };
-
-/** Fetches `app.metadata.get` from the runner's `/trpc` routes, past the bearer check. */
-export const fetchMetadata = (routes: Record<string, Router>) =>
-  withServer(express().use("/trpc", routes["/trpc"]!), async (baseUrl) => {
-    const response = await fetch(`${baseUrl}/trpc/app.metadata.get`);
-    const body = (await response.json()) as {
-      result: { data: Record<string, unknown> };
-    };
-    return body.result.data;
-  });
 
 /** Fetches `GET /health` without a token from the app the runner would serve. */
 export const fetchHealth = (

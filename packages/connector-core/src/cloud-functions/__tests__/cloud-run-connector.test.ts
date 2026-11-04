@@ -11,8 +11,6 @@ import {
   authorize,
   emptyRouter,
   fetchHealth,
-  fetchMetadata,
-  metadataAppRouter,
   mintExpiredToken,
   mintToken,
   mintTokenWithBadSignature,
@@ -26,8 +24,8 @@ vi.mock("../../http/index.ts", async (importOriginal) => ({
 }));
 
 /** Starts the connector and returns what it would serve. */
-const start = (router = emptyRouter) => {
-  runCloudRunConnector("test", router);
+const start = () => {
+  runCloudRunConnector("test", emptyRouter);
   const [, routes, middlewares] = vi.mocked(runExpressApp).mock.calls[0]!;
   return { routes, middlewares: middlewares! };
 };
@@ -35,13 +33,8 @@ const start = (router = emptyRouter) => {
 /** Starts the connector and returns the bearer middleware it would serve. */
 const startConnector = () => start().middlewares[0]!;
 
-const withoutAudience = () => {
-  vi.stubEnv("CONNECTOR_AUDIENCE", undefined);
-};
-
 beforeEach(() => {
   vi.stubEnv("INVOKER_SA_EMAIL", INVOKER);
-  vi.stubEnv("CONNECTOR_AUDIENCE", AUDIENCE);
   stubGoogleCerts();
 });
 
@@ -64,133 +57,55 @@ describe("runCloudRunConnector at startup", () => {
     }
   );
 
-  it("throws without serving when CONNECTOR_AUDIENCE is empty", () => {
-    vi.stubEnv("CONNECTOR_AUDIENCE", "");
-
-    expect(() => runCloudRunConnector("test", emptyRouter)).toThrow(
-      /Connector audience is set but empty/
-    );
-    expect(runExpressApp).not.toHaveBeenCalled();
-  });
-
-  it.each(["   ", ` ${AUDIENCE}`, `${AUDIENCE}\n`])(
-    "throws without serving when CONNECTOR_AUDIENCE is %j",
+  it.each([undefined, "", " padded "])(
+    "starts whatever CONNECTOR_AUDIENCE is: %j",
     (value) => {
       vi.stubEnv("CONNECTOR_AUDIENCE", value);
 
-      expect(() => runCloudRunConnector("test", emptyRouter)).toThrow(
-        /leading or trailing whitespace/
-      );
-      expect(runExpressApp).not.toHaveBeenCalled();
+      runCloudRunConnector("test", emptyRouter);
+
+      expect(runExpressApp).toHaveBeenCalledTimes(1);
     }
   );
-
-  it("starts with CONNECTOR_AUDIENCE", () => {
-    runCloudRunConnector("test", emptyRouter);
-
-    expect(runExpressApp).toHaveBeenCalledTimes(1);
-  });
-
-  it("starts without CONNECTOR_AUDIENCE", () => {
-    withoutAudience();
-
-    runCloudRunConnector("test", emptyRouter);
-
-    expect(runExpressApp).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe("the bearer check runCloudRunConnector serves", () => {
-  describe("with CONNECTOR_AUDIENCE set", () => {
-    it("admits a token for the invoker and the configured audience", async () => {
-      const token = mintToken({ aud: AUDIENCE, email: INVOKER });
+  it.each([AUDIENCE, OTHER_AUDIENCE, "https://anything.example.com"])(
+    "admits a token for the invoker minted for %j",
+    async (aud) => {
+      // Cloud Run IAM, not the connector, turns away other audiences.
+      vi.stubEnv("CONNECTOR_AUDIENCE", AUDIENCE);
+      const token = mintToken({ aud, email: INVOKER });
 
       await expect(authorize(startConnector(), token)).resolves.toBeUndefined();
+    }
+  );
+
+  it("rejects a token for another service account", async () => {
+    const token = mintToken({
+      aud: AUDIENCE,
+      email: "someone-else@p0-prod.iam.gserviceaccount.com",
     });
 
-    it("rejects a token minted for another audience", async () => {
-      // What P0 mints when another tenant registers this connector's URL.
-      const token = mintToken({ aud: OTHER_AUDIENCE, email: INVOKER });
-
-      await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
-        AuthError
-      );
-    });
-
-    it("rejects a token for another service account", async () => {
-      const token = mintToken({
-        aud: AUDIENCE,
-        email: "someone-else@p0-prod.iam.gserviceaccount.com",
-      });
-
-      await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
-        AuthError
-      );
-    });
-  });
-
-  describe("without CONNECTOR_AUDIENCE", () => {
-    beforeEach(withoutAudience);
-
-    it.each([AUDIENCE, OTHER_AUDIENCE, "https://anything.example.com"])(
-      "admits a token for the invoker minted for %j",
-      async (aud) => {
-        const token = mintToken({ aud, email: INVOKER });
-
-        await expect(
-          authorize(startConnector(), token)
-        ).resolves.toBeUndefined();
-      }
+    await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
+      AuthError
     );
-
-    it("rejects a token for another service account", async () => {
-      const token = mintToken({
-        aud: AUDIENCE,
-        email: "someone-else@p0-prod.iam.gserviceaccount.com",
-      });
-
-      await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
-        AuthError
-      );
-    });
-
-    it("rejects a token with a bad signature", async () => {
-      const token = mintTokenWithBadSignature(AUDIENCE);
-
-      await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
-        AuthError
-      );
-    });
-
-    it("rejects an expired token", async () => {
-      const token = mintExpiredToken(AUDIENCE);
-
-      await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
-        AuthError
-      );
-    });
-  });
-});
-
-describe("app.metadata.get served by runCloudRunConnector", () => {
-  it("reports audienceCheck: true with CONNECTOR_AUDIENCE set", async () => {
-    await expect(
-      fetchMetadata(start(metadataAppRouter).routes)
-    ).resolves.toMatchObject({
-      connectorVersion: "1.2.3",
-      audienceCheck: true,
-    });
   });
 
-  it("reports audienceCheck: false without CONNECTOR_AUDIENCE", async () => {
-    withoutAudience();
+  it("rejects a token with a bad signature", async () => {
+    const token = mintTokenWithBadSignature(AUDIENCE);
 
-    await expect(
-      fetchMetadata(start(metadataAppRouter).routes)
-    ).resolves.toMatchObject({
-      connectorVersion: "1.2.3",
-      audienceCheck: false,
-    });
+    await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
+      AuthError
+    );
+  });
+
+  it("rejects an expired token", async () => {
+    const token = mintExpiredToken(AUDIENCE);
+
+    await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
+      AuthError
+    );
   });
 });
 
