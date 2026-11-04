@@ -1,19 +1,10 @@
 import { initTRPC } from "@trpc/server";
-import express, {
-  type Request,
-  type RequestHandler,
-  type Response,
-  type Router,
-} from "express";
+import type { Request, RequestHandler, Response } from "express";
 import jwt from "jsonwebtoken";
 import { generateKeyPairSync } from "node:crypto";
-import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as http from "../../http/index.ts";
-import { newMetadataRouter } from "../../metadata.ts";
-import { newConnectorRouter, newConnectorTRPC } from "../../trpc.ts";
 import { runAzureConnector } from "../azure-connector.ts";
 import { entraIssuer } from "../entra-token.ts";
 
@@ -131,51 +122,5 @@ describe("runAzureConnector", () => {
         ).toString("base64"),
       })
     ).resolves.toMatchObject({ type: "auth" });
-  });
-});
-
-describe("app.metadata.get served by runAzureConnector", () => {
-  beforeEach(() => {
-    vi.stubEnv("P0_INVOKER_TENANT_ID", TENANT_ID);
-    vi.stubEnv("P0_INVOKER_CLIENT_ID", CLIENT_ID);
-  });
-
-  afterEach(() => {
-    vi.unstubAllEnvs();
-    runExpressApp.mockReset();
-  });
-
-  it("doesn't report audienceCheck", async () => {
-    const t = newConnectorTRPC();
-    runAzureConnector(
-      "test connector",
-      newConnectorRouter(
-        "app",
-        t,
-        {},
-        t.router({}),
-        newMetadataRouter(t, "1.2.3")
-      )
-    );
-    const [, routes] = runExpressApp.mock.calls[0]!;
-    // Skip the bearer check: mount only the tRPC routes.
-    const app = express().use("/trpc", routes["/trpc"] as Router);
-    const server = await new Promise<Server>((resolve) => {
-      const s = app.listen(0, "127.0.0.1", () => resolve(s));
-    });
-    try {
-      const { port } = server.address() as AddressInfo;
-      const response = await fetch(
-        `http://127.0.0.1:${port}/trpc/app.metadata.get`
-      );
-      const body = (await response.json()) as {
-        result: { data: Record<string, unknown> };
-      };
-
-      expect(body.result.data).toMatchObject({ connectorVersion: "1.2.3" });
-      expect(body.result.data).not.toHaveProperty("audienceCheck");
-    } finally {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
-    }
   });
 });

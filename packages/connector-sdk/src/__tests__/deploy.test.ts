@@ -87,10 +87,6 @@ describe("newCustomAppLambdaHandler", () => {
       status: 200,
       body: { result: { data: { connectorVersion: "1.2.3" } } },
     });
-    // Only the Google ID token runners report whether they check the audience.
-    expect(
-      (res as { body: { result: { data: object } } }).body.result.data
-    ).not.toHaveProperty("audienceCheck");
   });
 
   it("passes a usable context to the actions factory on every request", async () => {

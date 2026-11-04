@@ -11,8 +11,6 @@ import {
   authorize,
   emptyRouter,
   fetchHealth,
-  fetchMetadata,
-  metadataAppRouter,
   mintExpiredToken,
   mintToken,
   mintTokenWithBadSignature,
@@ -26,8 +24,8 @@ vi.mock("../../http/index.ts", async (importOriginal) => ({
 }));
 
 /** Starts the connector and returns what it would serve. */
-const start = (router = emptyRouter) => {
-  runCloudRunConnector("test", router);
+const start = () => {
+  runCloudRunConnector("test", emptyRouter);
   const [, routes, middlewares] = vi.mocked(runExpressApp).mock.calls[0]!;
   return { routes, middlewares: middlewares! };
 };
@@ -108,15 +106,6 @@ describe("the bearer check runCloudRunConnector serves", () => {
     await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
       AuthError
     );
-  });
-});
-
-describe("app.metadata.get served by runCloudRunConnector", () => {
-  it("doesn't report audienceCheck", async () => {
-    const metadata = await fetchMetadata(start(metadataAppRouter).routes);
-
-    expect(metadata).toMatchObject({ connectorVersion: "1.2.3" });
-    expect(metadata).not.toHaveProperty("audienceCheck");
   });
 });
 

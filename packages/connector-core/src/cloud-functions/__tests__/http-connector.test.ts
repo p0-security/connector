@@ -11,8 +11,6 @@ import {
   authorize,
   emptyRouter,
   fetchHealth,
-  fetchMetadata,
-  metadataAppRouter,
   mintExpiredToken,
   mintToken,
   mintTokenWithBadSignature,
@@ -26,8 +24,8 @@ vi.mock("../../http/index.ts", async (importOriginal) => ({
 }));
 
 /** Starts the connector and returns what it would serve. */
-const start = (router = emptyRouter) => {
-  runHttpConnector("test", router);
+const start = () => {
+  runHttpConnector("test", emptyRouter);
   const [, routes, middlewares] = vi.mocked(runExpressApp).mock.calls[0]!;
   return { routes, middlewares: middlewares! };
 };
@@ -132,17 +130,6 @@ describe("the bearer check runHttpConnector serves", () => {
     await expect(authorize(startConnector(), token)).resolves.toBeInstanceOf(
       AuthError
     );
-  });
-});
-
-describe("app.metadata.get served by runHttpConnector", () => {
-  it("reports audienceCheck: true", async () => {
-    await expect(
-      fetchMetadata(start(metadataAppRouter).routes)
-    ).resolves.toMatchObject({
-      connectorVersion: "1.2.3",
-      audienceCheck: true,
-    });
   });
 });
 

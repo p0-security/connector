@@ -147,8 +147,6 @@ run();
   bearer-token check here — a Lambda invoke payload carries no caller identity to check, so the
   boundary is purely `lambda:InvokeFunction` IAM on the role P0 assumes to call you. Grant that role
   invoke access on your function.
-- `app.metadata.get` reports `audienceCheck: true` from the `newCustomAppHttpServer` server. The
-  Cloud Run server and the Lambda handler omit the field.
 - `LOG_LEVEL` controls the bundled pino logger (default `info`).
 
 ## License
