@@ -46,8 +46,14 @@ const SCOPE_KEYS: Record<GroupScope, string> = {
   zone: "com.cloudflare.api.account.zone",
 };
 
-const isHidden = (id: string) =>
-  Object.hasOwn(DENIED_GROUPS, id) || Object.hasOwn(UNSUPPORTED_GROUPS, id);
+// The app's backend compiles this file for ES2017, which has no
+// `Object.hasOwn`.
+const HIDDEN_IDS: ReadonlySet<string> = new Set([
+  ...Object.keys(DENIED_GROUPS),
+  ...Object.keys(UNSUPPORTED_GROUPS),
+]);
+
+const isHidden = (id: string) => HIDDEN_IDS.has(id);
 
 /**
  * The groups an agent can request on `scope`. A group on any other scope,
