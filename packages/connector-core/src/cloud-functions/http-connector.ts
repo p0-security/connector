@@ -1,10 +1,33 @@
 import type { AnyRouter } from "@trpc/server";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 
+import { AUDIENCE_CHECK_CONTEXT_KEY } from "../audience-check.ts";
 import {
-  connectorAudienceFromEnv,
+  newGoogleIdTokenVerifier,
   serveGoogleIdTokenConnector,
 } from "./google-id-token-connector.ts";
+
+/**
+ * Reads `CONNECTOR_AUDIENCE`, throwing when it's unset or set to a value that
+ * would reject every token.
+ */
+const connectorAudienceFromEnv = (): string => {
+  const audience = process.env.CONNECTOR_AUDIENCE;
+  if (audience === undefined) {
+    throw new Error("Connector audience is not set");
+  }
+  // google-auth-library compares the audience whenever one is passed, so an
+  // empty string would reject every token. Surrounding whitespace (say, a
+  // trailing newline from a secret) would do the same. Refuse it rather than
+  // trim it, since the value must match what P0 mints.
+  if (!audience) {
+    throw new Error("Connector audience is set but empty");
+  }
+  if (audience !== audience.trim()) {
+    throw new Error("Connector audience has leading or trailing whitespace");
+  }
+  return audience;
+};
 
 /**
  * Creates a service, on any host, that exposes a tRPC router over Express at
@@ -17,7 +40,7 @@ import {
  * Requests must carry a Google-signed ID token whose `email` claim is
  * `$INVOKER_SA_EMAIL` and whose `aud` claim is exactly `$CONNECTOR_AUDIENCE`.
  * Nothing in front of the service checks the audience, so the runner always
- * does, on Cloud Run or not. `app.metadata.get` reports `audienceCheck: true`.
+ * does. `app.metadata.get` reports `audienceCheck: true`.
  *
  * Throws before binding a port if `INVOKER_SA_EMAIL` is unset or empty, or if
  * `CONNECTOR_AUDIENCE` is unset, empty, or has leading or trailing whitespace.
@@ -40,14 +63,18 @@ export const runHttpConnector = <T>(
   router: AnyRouter,
   createContext?: (opts: CreateExpressContextOptions) => Promise<T>
 ) => {
-  const audience = connectorAudienceFromEnv();
-  if (audience === undefined) {
-    throw new Error("Connector audience is not set");
-  }
+  // Read the environment before serving, so a misconfigured connector fails to
+  // start rather than answering every request with a 403.
+  const verify = newGoogleIdTokenVerifier(connectorAudienceFromEnv());
   return serveGoogleIdTokenConnector(
     moduleName,
     router,
-    createContext,
-    audience
+    // Hand the mode to `app.metadata.get` through the context, since the
+    // router is built before this runs.
+    async (opts: CreateExpressContextOptions) =>
+      Object.assign({}, await createContext?.(opts), {
+        [AUDIENCE_CHECK_CONTEXT_KEY]: true,
+      }),
+    verify
   );
 };

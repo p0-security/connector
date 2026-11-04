@@ -12,8 +12,7 @@ const makeConnectorMetadata = (params: {
   workspace: process.env.WORKSPACE ?? "unknown",
   frameworkVersion: params.frameworkVersion ?? "unknown",
   connectorVersion: params.connectorVersion ?? "unknown",
-  // Only the Google ID token runners say whether they check the audience.
-  // The Lambda and Azure runtimes leave the field out.
+  // Only runHttpConnector reports the field. The other runtimes leave it out.
   ...(params.audienceCheck === undefined
     ? {}
     : { audienceCheck: params.audienceCheck }),
@@ -22,10 +21,9 @@ const makeConnectorMetadata = (params: {
 /**
  * Builds the `metadata` router P0 reads a connector's build and version from.
  *
- * Served by `runCloudRunConnector` or `runHttpConnector`, `get` also reports
- * `audienceCheck`: `true` when the connector compares the token's `aud` to
- * `CONNECTOR_AUDIENCE`, `false` when it leaves that to Cloud Run IAM. The
- * Lambda and Azure runtimes don't report the field.
+ * Served by `runHttpConnector`, `get` also reports `audienceCheck: true`, since
+ * that runner compares the token's `aud` to `CONNECTOR_AUDIENCE`. The other
+ * runtimes don't report the field.
  */
 export const newMetadataRouter = (
   t: AnyConnectorTRPCInstance,

@@ -1,12 +1,11 @@
 /**
- * The tRPC context key under which `runCloudRunConnector` and
- * `runHttpConnector` record whether they check the token's audience, so
- * `app.metadata.get` can report it.
+ * The tRPC context key under which `runHttpConnector` records that it checks
+ * the token's audience, so `app.metadata.get` can report it.
  *
- * The router is built before the runner reads the environment, and the Lambda
- * and Azure runtimes share it, so the mode can't be baked into the router.
- * Only those two runners set the key; on the other runtimes it's absent and
- * the metadata leaves the field out. A symbol keeps it apart from whatever the
+ * The router is built before the runner reads the environment, and the other
+ * runtimes share it, so the mode can't be baked into the router. Only
+ * `runHttpConnector` sets the key. On the other runtimes it's absent and the
+ * metadata leaves the field out. A symbol keeps it apart from whatever the
  * connector's own context factory returns, and `Symbol.for` keeps it the same
  * across two copies of this package.
  *
