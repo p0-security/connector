@@ -73,8 +73,10 @@ jobs:
             exit 1
           fi
 
-      # Builds every workspace, then publishes in topological order so
-      # connector-core reaches the registry before the SDK that depends on it.
+      # Builds every workspace, then publishes connector-core and connector-sdk
+      # only, in topological order so connector-core reaches the registry
+      # before the SDK that depends on it. The services workspaces ship as
+      # container images and must never be published.
       # `--tolerate-republish` makes an already-published version a warning, so
       # this job is safe to re-run after a partial failure.
       - name: Publish

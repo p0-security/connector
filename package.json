@@ -16,7 +16,7 @@
     ":clean-node-modules": "find . -name 'node_modules' -type d -prune -print -exec rm -rf '{}' \\;",
     ":lint:code": "eslint . --max-warnings 0",
     ":typecheck": "yarn workspaces foreach --all --topological run typecheck",
-    ":publish": "yarn :build && yarn workspaces foreach --all --topological --no-private npm publish --tolerate-republish"
+    ":publish": "yarn :build && yarn workspaces foreach --all --topological --no-private --include @p0security/connector-core --include @p0security/connector-sdk npm publish --tolerate-republish"
   },
   "workspaces": [
     "packages/*",
