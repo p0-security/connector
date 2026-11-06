@@ -25,12 +25,15 @@ export const AGENTIC_IDENTITY_ACCOUNT_ID = /^p0a-[a-z]+-[a-z]+-[0-9a-f]{8}$/;
 /** Google's cap on a service-account id. */
 const MAX_ACCOUNT_ID_LENGTH = 30;
 
-/** The federated subject permitted to impersonate an agentic identity.
+/** The federated subject permitted to impersonate an agentic identity: the
+ * gateway's own access subject for one MCP backend in one session,
+ * `mcps/<backendId>/<hash>`.
  *
- * Namespaced under `agentic-identity/` so it can never collide with a
- * gateway-derived `mcps/<backendId>/…` subject, and hashed so that a P0
- * session identifier never lands in a customer-readable IAM policy. */
-export const AGENTIC_IDENTITY_SUBJECT = /^agentic-identity\/[0-9a-f]{16}$/;
+ * The gateway signs this subject into its own token, so a requester cannot
+ * choose it. The session and actor are hashed so that a P0 session identifier
+ * never lands in a customer-readable IAM policy. */
+export const AGENTIC_IDENTITY_SUBJECT =
+  /^mcps\/[A-Za-z0-9._-]{1,64}\/[0-9a-f]{16}$/;
 
 /** A workload-identity-pool principal, as IAM writes it.
  *

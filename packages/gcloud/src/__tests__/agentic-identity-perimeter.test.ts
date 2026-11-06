@@ -16,7 +16,7 @@ const PERIMETER_PROJECT = "customer";
 const PROJECT = "customer-identities";
 const ACCOUNT_ID = "p0a-agile-otter-1f2e3d4c";
 const EMAIL = `${ACCOUNT_ID}@${PROJECT}.iam.gserviceaccount.com`;
-const SUBJECT = "agentic-identity/0123456789abcdef";
+const SUBJECT = "mcps/drive/0123456789abcdef";
 const MEMBER =
   "principal://iam.googleapis.com/projects/123456789/locations/global/" +
   `workloadIdentityPools/p0-pool/subject/${SUBJECT}`;
@@ -108,7 +108,7 @@ describe("agentic identity: namespacing guards", () => {
     await expect(
       user.userIsNamespacedByBody({
         ...USER_BODY,
-        subject: "mcps/backend/0123456789abcdef",
+        subject: "agentic-identity/0123456789abcdef",
       })
     ).resolves.toBe(false);
   });
@@ -261,7 +261,7 @@ describe("agentic identity: setPoliciesForUser converges", () => {
     role: "roles/iam.workloadIdentityUser",
     members: [
       "principal://iam.googleapis.com/projects/123456789/locations/global/" +
-        "workloadIdentityPools/p0-pool/subject/agentic-identity/ffffffffffffffff",
+        "workloadIdentityPools/p0-pool/subject/mcps/drive/ffffffffffffffff",
     ],
     condition: {
       title: "p0-agentic-identity-expires-2026-01-01T00:00:00Z",
@@ -342,7 +342,7 @@ describe("agentic identity: setPoliciesForUser converges", () => {
 
   it("names the member the policy carries, not one of its own choosing", async () => {
     const { client, serviceAccounts } = withStalePolicy();
-    const other = MEMBER.replace(SUBJECT, "agentic-identity/aaaaaaaaaaaaaaaa");
+    const other = MEMBER.replace(SUBJECT, "mcps/drive/aaaaaaaaaaaaaaaa");
     await primitivesFor(client).setPoliciesForUser(CONTEXT, EMAIL, USER_BODY, [
       { member: other },
     ]);
@@ -356,7 +356,9 @@ describe("agentic identity: setPoliciesForUser converges", () => {
     const { client, serviceAccounts } = withStalePolicy();
     await expect(
       primitivesFor(client).setPoliciesForUser(CONTEXT, EMAIL, USER_BODY, [
-        { member: MEMBER.replace(SUBJECT, "mcps/backend/0123456789abcdef") },
+        {
+          member: MEMBER.replace(SUBJECT, "agentic-identity/0123456789abcdef"),
+        },
       ])
     ).rejects.toThrow();
     expect(serviceAccounts.setIamPolicy).not.toHaveBeenCalled();
