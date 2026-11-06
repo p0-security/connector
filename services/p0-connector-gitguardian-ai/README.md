@@ -14,7 +14,8 @@ GitGuardian can't change a token's scopes or lifetime, so every policy change
 mints a new token, writes it to the secret, and then revokes the old one. A
 revoke revokes the token and deletes the secret. The token's lifetime covers
 the requester's longest open grant, rounded up to whole days, or 365 days when
-a grant has no end. The revoke is what removes access. The lifetime is a
+a grant has no end. The policy carries that end time as `grantEndsAt`, because
+the control plane builds the policy from every open grant. The revoke is what removes access. The lifetime is a
 backstop.
 
 A consumer sends the token as `Authorization: Bearer <token>` to GitGuardian's
