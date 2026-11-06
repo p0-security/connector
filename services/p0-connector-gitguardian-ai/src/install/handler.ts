@@ -41,7 +41,7 @@ const readAdminToken = async (
 
 /**
  * Checks the admin token, read-only: it is valid in the region, active,
- * belongs to the installed workspace, and can revoke tokens. A missing
+ * belongs to the installed workspace, and can find and revoke tokens. A missing
  * requestable scope and token-cap headroom are not checked here, because a
  * grant that hits either fails with its own message.
  */
@@ -70,6 +70,11 @@ const validate = async (
   if (!self.scopes.includes("api_tokens:write")) {
     throw refusal(
       "P0 can't revoke tokens without api_tokens:write. Create a new admin token with every scope and store it in the secret."
+    );
+  }
+  if (!self.scopes.includes("api_tokens:read")) {
+    throw refusal(
+      "P0 can't find grant tokens without api_tokens:read. Create a new admin token with every scope and store it in the secret."
     );
   }
 

@@ -1,2 +1,5 @@
-// The `permission` access spec is added with its handler.
-export const connectorSpec = {};
+import { spec as permissionSpec } from "./accesses/permission/definition.ts";
+
+export const connectorSpec = {
+  permission: permissionSpec,
+};

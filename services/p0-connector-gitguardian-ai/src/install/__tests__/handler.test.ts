@@ -62,7 +62,7 @@ const adminToken = (overrides: Record<string, unknown> = {}) => ({
   id: "tok-admin",
   name: "P0 connector admin",
   type: "personal_access_token",
-  scopes: ["scan", "incidents:write", "api_tokens:write"],
+  scopes: ["scan", "incidents:write", "api_tokens:read", "api_tokens:write"],
   member_id: 1908146,
   workspace_id: 942194,
   expire_at: null,
@@ -99,7 +99,12 @@ describe("install validation", () => {
       workspaceId: WORKSPACE,
       memberId: 1908146,
       type: "personal_access_token",
-      scopes: ["scan", "incidents:write", "api_tokens:write"],
+      scopes: [
+        "scan",
+        "incidents:write",
+        "api_tokens:read",
+        "api_tokens:write",
+      ],
       expireAt: null,
     });
   });
@@ -143,11 +148,19 @@ describe("install validation", () => {
     await expect(validate()).rejects.toThrow(/without api_tokens:write/);
   });
 
-  it("does not require the requestable scopes", async () => {
+  it("refuses a token without api_tokens:read", async () => {
     tokenRecord.current = adminToken({ scopes: ["api_tokens:write"] });
 
+    await expect(validate()).rejects.toThrow(/without api_tokens:read/);
+  });
+
+  it("does not require the requestable scopes", async () => {
+    tokenRecord.current = adminToken({
+      scopes: ["api_tokens:read", "api_tokens:write"],
+    });
+
     await expect(validate()).resolves.toMatchObject({
-      scopes: ["api_tokens:write"],
+      scopes: ["api_tokens:read", "api_tokens:write"],
     });
   });
 

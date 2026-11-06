@@ -6,10 +6,7 @@ import {
   createSecretManagerClient,
 } from "@p0security/connector-secret-manager-client";
 
-/** Where the admin token is stored, as the control plane sends it. */
-export type AdminTokenSecret =
-  | { manager: "aws"; adminTokenSecretId: string; region: string }
-  | { manager: "gcp"; adminTokenSecretId: string; projectId: string };
+import type { AdminTokenSecret } from "./secret-location.ts";
 
 const secretManagerConfig = (
   secret: AdminTokenSecret

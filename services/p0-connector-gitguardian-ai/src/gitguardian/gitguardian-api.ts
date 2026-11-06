@@ -55,11 +55,12 @@ const errorDetail = async (response: Response) =>
  * some failures share a status and differ only by it. The request, whose
  * header holds the token, is never logged or attached to the error.
  *
- * @returns The parsed JSON body, or `undefined` for a 204 response
+ * @returns The parsed JSON body, or `undefined` for a 204 response, and the
+ * `Link` header that list endpoints page with
  */
-const gitguardianRequest = async <T>(
+const gitguardianResponse = async <T>(
   request: GitguardianRequest
-): Promise<T> => {
+): Promise<{ data: T; link: string | null }> => {
   const { auth, method, path, body } = request;
 
   let response: Response;
@@ -108,8 +109,31 @@ const gitguardianRequest = async <T>(
     { method, path, status: response.status },
     "GitGuardian request succeeded"
   );
-  if (response.status === 204) return undefined as T;
-  return (await response.json()) as T;
+  const link = response.headers?.get("link") ?? null;
+  if (response.status === 204) return { data: undefined as T, link };
+  return { data: (await response.json()) as T, link };
+};
+
+const gitguardianRequest = async <T>(request: GitguardianRequest) =>
+  (await gitguardianResponse<T>(request)).data;
+
+/**
+ * The path and query of a `Link` header's `rel="next"` URL, or `null` on the
+ * last page. A URL on any other host is refused, so that a header cannot send
+ * the token elsewhere.
+ */
+const nextPagePath = (link: string | null, region: GitguardianRegion) => {
+  const match = link?.match(/<([^>]+)>;\s*rel="next"/);
+  if (!match) return null;
+  const url = new URL(match[1]);
+  if (url.host !== GitguardianApiHosts[region]) {
+    throw new ConnectorError({
+      type: "unknown",
+      message: `GitGuardian sent a next page on another host: ${url.host}`,
+      payload: { host: url.host },
+    });
+  }
+  return `${url.pathname}${url.search}`;
 };
 
 /** The calling token's own record. Needs no scope. */
@@ -118,4 +142,49 @@ export const getCurrentToken = (auth: GitguardianAuth) =>
     auth,
     method: "GET",
     path: "/v1/api_tokens/self",
+  });
+
+/**
+ * Mints a token for the calling token's owner. `lifetime` is in whole days,
+ * and GitGuardian requires it. The response is the only time the key is shown.
+ */
+export const mintToken = (
+  auth: GitguardianAuth,
+  body: {
+    name: string;
+    type: ApiToken["type"];
+    scopes: string[];
+    lifetime: number;
+  }
+) =>
+  gitguardianRequest<ApiToken & { key: string }>({
+    auth,
+    method: "POST",
+    path: "/v1/api_tokens",
+    body,
+  });
+
+/** A member's active tokens, across every page. Needs `api_tokens:read`. */
+export const listActiveTokens = async (
+  auth: GitguardianAuth,
+  memberId: number
+): Promise<ApiToken[]> => {
+  const tokens: ApiToken[] = [];
+  let path: string | null =
+    `/v1/api_tokens?member_id=${memberId}&status=active&per_page=100`;
+  while (path) {
+    const { data, link }: { data: ApiToken[]; link: string | null } =
+      await gitguardianResponse<ApiToken[]>({ auth, method: "GET", path });
+    tokens.push(...data);
+    path = nextPagePath(link, auth.region);
+  }
+  return tokens;
+};
+
+/** Revokes a token by id. Needs `api_tokens:write`. */
+export const deleteToken = (auth: GitguardianAuth, id: string) =>
+  gitguardianRequest<undefined>({
+    auth,
+    method: "DELETE",
+    path: `/v1/api_tokens/${encodeURIComponent(id)}`,
   });

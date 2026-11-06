@@ -5,19 +5,19 @@ import {
 } from "@p0security/connector-core";
 
 import gitguardianAiConnectorPackageJson from "../package.json" with { type: "json" };
+import { router as permissionRouter } from "./accesses/permission/handler.ts";
 import { router as validationRouter } from "./install/handler.ts";
 
 export const t = newConnectorTRPC();
 export const router = t.router;
 export const baseProcedure = t.procedure;
 
-// The `permission` access is added with its handler.
 const installRouter = router({ validation: validationRouter(t) });
 
 export const connectorRouter = newConnectorRouter(
   "gitguardian-ai" as const,
   t,
-  {},
+  { permission: permissionRouter(t) },
   installRouter,
   newMetadataRouter(t, gitguardianAiConnectorPackageJson.version ?? "unknown")
 );
