@@ -176,7 +176,7 @@ const setGrantScopes = async (
     });
   }
 
-  const [{ scopes }] = policies;
+  const [{ scopes, grantEndsAt }] = policies;
   const outside = scopes.filter(
     (scope) => !(requestableScopes as readonly string[]).includes(scope)
   );
@@ -203,7 +203,7 @@ const setGrantScopes = async (
     );
   }
 
-  const lifetime = lifetimeDays(context.grantEndsAt);
+  const lifetime = lifetimeDays(grantEndsAt);
   let token: ApiToken & { key: string };
   try {
     token = await withRetries(

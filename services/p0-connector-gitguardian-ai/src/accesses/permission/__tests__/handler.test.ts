@@ -181,7 +181,7 @@ const addToken = (overrides: Partial<FakeToken>) => {
   return token;
 };
 
-const context = (grantEndsAt: string | null = null) => ({
+const context = () => ({
   requestId: "r-1",
   region: "us" as const,
   workspaceId: "942194",
@@ -190,7 +190,6 @@ const context = (grantEndsAt: string | null = null) => ({
     adminTokenSecretId: ADMIN_REF,
     projectId: "p",
   },
-  grantEndsAt,
 });
 
 const caller = () => router(t).createCaller({ logger: createLogger() });
@@ -199,8 +198,8 @@ const setPolicies = (scopes: string[], grantEndsAt: string | null = null) =>
   caller().setPoliciesForUser({
     userId: GRANT_REF,
     userBody: "p0_grant",
-    policies: [{ scopes }],
-    context: context(grantEndsAt),
+    policies: [{ scopes, grantEndsAt }],
+    context: context(),
   });
 
 const deleteUser = () =>
@@ -271,6 +270,19 @@ describe("grant", () => {
     await setPolicies(["scan"], endsAt);
 
     expect(gg.mintBodies[0]).toMatchObject({ lifetime: 1 });
+  });
+
+  it("takes the end from the policy, not the request context", async () => {
+    const endsAt = new Date(Date.now() + 30 * 86_400_000).toISOString();
+
+    await caller().setPoliciesForUser({
+      userId: GRANT_REF,
+      userBody: "p0_grant",
+      policies: [{ scopes: ["scan"], grantEndsAt: null }],
+      context: { ...context(), grantEndsAt: endsAt } as any,
+    });
+
+    expect(gg.mintBodies[0]).toMatchObject({ lifetime: 365 });
   });
 });
 

@@ -30,6 +30,13 @@ const userId = z.string().min(1);
 // instead of a parse error.
 const policy = z.object({
   scopes: z.array(z.string().min(1)),
+  /**
+   * When the requester's longest open grant in this workspace ends, or `null`
+   * when one of them has no end. The connector turns it into the token's
+   * lifetime. It's in the policy because only the policy is built from every
+   * open grant. The request context comes from one request.
+   */
+  grantEndsAt: z.iso.datetime({ offset: true }).nullable(),
 });
 
 const workspace = {
@@ -54,12 +61,6 @@ const listerResponse = z
 const requestContext = z.object({
   requestId: z.string(),
   ...workspace,
-  /**
-   * When the requester's longest open grant in this workspace ends, or `null`
-   * when one of them has no end. The connector turns it into the token's
-   * lifetime.
-   */
-  grantEndsAt: z.iso.datetime({ offset: true }).nullable(),
 });
 
 export const schema = {
