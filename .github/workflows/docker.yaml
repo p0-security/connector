@@ -70,6 +70,14 @@ jobs:
             dockerfile: docker/connector/cloud-run/Dockerfile
             WORKSPACE: "@p0security/p0-connector-datadog-ai"
             context: .
+          - image: p0-connector-gitguardian-ai-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-gitguardian-ai"
+            context: .
+          - image: p0-connector-gitguardian-ai-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-gitguardian-ai"
+            context: .
           - image: p0-connector-gitlab-ai-aws
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-gitlab-ai"
