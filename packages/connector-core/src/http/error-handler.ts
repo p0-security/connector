@@ -21,6 +21,24 @@ const serializeError = (error: unknown) => {
   }
 };
 
+/**
+ * The 4xx status of an error Express's own middleware raised about the
+ * request, such as body-parser's 413 for a body over the limit, so the
+ * caller learns what was wrong with its request rather than seeing a 500.
+ */
+const clientErrorStatus = (error: unknown) => {
+  const { status, expose } = (error ?? {}) as {
+    status?: unknown;
+    expose?: unknown;
+  };
+  return expose === true &&
+    typeof status === "number" &&
+    status >= 400 &&
+    status < 500
+    ? status
+    : undefined;
+};
+
 export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   logger.error({ error }, "Error processing request");
 
@@ -31,7 +49,7 @@ export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
       break;
     // TODO: Identify and handle upstream errors
     default:
-      status = 500;
+      status = clientErrorStatus(error) ?? 500;
   }
 
   const serializedError = serializeError(error);

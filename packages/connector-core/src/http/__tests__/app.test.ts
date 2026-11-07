@@ -3,7 +3,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createExpressApp } from "../app.ts";
+import { JSON_BODY_LIMIT, createExpressApp } from "../app.ts";
 import { bearerAuthzMiddleware } from "../middlewares/bearer.ts";
 
 const TOKEN = "good-token";
@@ -15,6 +15,10 @@ beforeAll(async () => {
   const trpc = Router();
   trpc.get("/app.metadata.get", (_req, res) => {
     res.status(200).json({ ok: true });
+  });
+  trpc.post("/src.logs.read", (req, res) => {
+    const body = req.body as { query?: { permissions?: string[] } };
+    res.status(200).json({ permissions: body.query?.permissions?.length });
   });
 
   const app = createExpressApp("test-module", { "/trpc": trpc }, [
@@ -69,5 +73,39 @@ describe("routes behind the bearer middleware", () => {
     });
 
     expect(response.status).toBe(200);
+  });
+});
+
+describe("JSON bodies", () => {
+  const post = (body: string) =>
+    fetch(`${baseUrl}/trpc/src.logs.read`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${TOKEN}`,
+        "content-type": "application/json",
+      },
+      body,
+    });
+
+  it("accepts a logs read whose permission list is past Express's 100 KB default", async () => {
+    const permissions = Array.from(
+      { length: 4_000 },
+      (_, i) => `service.resources.permission${String(i).padStart(5, "0")}`
+    );
+    const body = JSON.stringify({ query: { permissions } });
+    expect(body.length).toBeGreaterThan(100 * 1024);
+
+    const response = await post(body);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ permissions: 4_000 });
+  });
+
+  it(`answers 413 for a body over ${JSON_BODY_LIMIT}`, async () => {
+    const response = await post(
+      JSON.stringify({ padding: "x".repeat(6 * 1024 * 1024) })
+    );
+
+    expect(response.status).toBe(413);
   });
 });

@@ -63,8 +63,18 @@ export type ResourceIntegrationRoutes<
   MetadataRouter extends AnyRouter = AnyRouter,
 > = CommonRoutes<InstallRouter, MetadataRouter> & { accesses: AccessRouters };
 
+/**
+ * The routes of a connector that reads access logs: the `logs` router from
+ * {@link newLogsRouter}.
+ */
+export type AccessLogsRoutes<
+  LogsRouter extends AnyRouter = AnyRouter,
+  InstallRouter extends AnyRouter = AnyRouter,
+  MetadataRouter extends AnyRouter = AnyRouter,
+> = CommonRoutes<InstallRouter, MetadataRouter> & { logs: LogsRouter };
+
 /** The routes a connector serves under its namespace. */
-export type ConnectorRoutes = ResourceIntegrationRoutes;
+export type ConnectorRoutes = AccessLogsRoutes | ResourceIntegrationRoutes;
 
 /**
  * Builds a connector's root router, which serves `routes` under `namespace`.
@@ -106,8 +116,31 @@ export type ResourceIntegrationConnectorRouter<
 >;
 
 /**
+ * Defines the complete type representation of an access logs connector's
+ * TRPC router
+ */
+export type AccessLogsConnectorRouter<
+  Namespace extends string = string,
+  TRPCInstance extends AnyConnectorTRPCInstance = AnyConnectorTRPCInstance,
+  LogsRouter extends AnyRouter = AnyRouter,
+  InstallRouter extends AnyRouter = AnyRouter,
+  MetadataRouter extends AnyRouter = AnyRouter,
+> = ReturnType<
+  typeof newConnectorRouter<
+    Namespace,
+    TRPCInstance,
+    AccessLogsRoutes<LogsRouter, InstallRouter, MetadataRouter>
+  >
+>;
+
+/**
  * Defines the complete type representation of the TRPC router on the
- * connector, whichever kind of connector it is.
+ * connector.
+ *
+ * Without `AccessLifecycleRouters`, it covers either kind of connector, so
+ * it can stand for any connector (a client that only calls `metadata`).
+ * Given access routers, it is a resource integration connector's router, so
+ * a client typed with it still sees `accesses`.
  * @summary Defines the complete type representation of the TRPC router on the connector
  *
  */
@@ -118,13 +151,30 @@ export type ConnectorRouter<
   AccessLifecycleRouters extends Record<string, AccessRouterTypes> = {},
   InstallRouter extends AnyRouter = AnyRouter,
   MetadataRouter extends AnyRouter = AnyRouter,
-> = ResourceIntegrationConnectorRouter<
-  Namespace,
-  TRPCInstance,
-  AccessLifecycleRouters,
-  InstallRouter,
-  MetadataRouter
->;
+> =
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  {} extends AccessLifecycleRouters
+    ? | AccessLogsConnectorRouter<
+          Namespace,
+          TRPCInstance,
+          AnyRouter,
+          InstallRouter,
+          MetadataRouter
+        >
+      | ResourceIntegrationConnectorRouter<
+          Namespace,
+          TRPCInstance,
+          AccessLifecycleRouters,
+          InstallRouter,
+          MetadataRouter
+        >
+    : ResourceIntegrationConnectorRouter<
+        Namespace,
+        TRPCInstance,
+        AccessLifecycleRouters,
+        InstallRouter,
+        MetadataRouter
+      >;
 
 /**
  * Creates a TRPC client for a defined {@link ConnectorRouter}
