@@ -134,6 +134,10 @@ jobs:
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-aws-cloudwatch"
             context: .
+          - image: p0-connector-gcp-cloud-logging-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-gcp-cloud-logging"
+            context: .
           - image: p0-connector-mongodb-atlas-ai-aws
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-mongodb-atlas-ai"
