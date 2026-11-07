@@ -41,6 +41,18 @@ const singleEntryRecord = <Key extends string, Value>(
   value: Value
 ): Record<Key, Value> => ({ [key]: value }) as Record<Key, Value>;
 
+/** The routes under a connector's namespace; `logs` only when the connector reads logs. */
+type NamespacedRoutes<
+  AccessRouters,
+  InstallRouter,
+  MetadataRouter,
+  LogsRouter,
+> = {
+  accesses: AccessRouters;
+  install: InstallRouter;
+  metadata: MetadataRouter;
+} & (LogsRouter extends AnyRouter ? { logs: LogsRouter } : unknown);
+
 export const newConnectorRouter = <
   Namespace extends string = string,
   TRPCInstance extends AnyConnectorTRPCInstance = AnyConnectorTRPCInstance,
@@ -48,19 +60,31 @@ export const newConnectorRouter = <
   AccessRouters extends Record<string, AccessRouterTypes> = {},
   InstallRouter extends AnyRouter = AnyRouter,
   MetadataRouter extends AnyRouter = AnyRouter,
+  LogsRouter extends AnyRouter | undefined = undefined,
 >(
   namespace: Namespace,
   t: TRPCInstance,
   accesses: AccessRouters,
   install: InstallRouter,
-  metadata: MetadataRouter
+  metadata: MetadataRouter,
+  /** A log-source connector's `logs` router, from {@link newLogsRouter}. */
+  logs?: LogsRouter
 ) => {
   const { router } = t;
-  const namespaced = router({
-    accesses: router(accesses),
-    install,
-    metadata,
-  });
+  const accessesRouter = router(accesses);
+  // The conditional route type can't be checked against the branch taken at
+  // runtime, so the assertion is contained here.
+  const routes = (
+    logs === undefined
+      ? { accesses: accessesRouter, install, metadata }
+      : { accesses: accessesRouter, install, metadata, logs }
+  ) as NamespacedRoutes<
+    typeof accessesRouter,
+    InstallRouter,
+    MetadataRouter,
+    LogsRouter
+  >;
+  const namespaced = router(routes);
   return router(singleEntryRecord(namespace, namespaced));
 };
 
@@ -76,13 +100,15 @@ export type ConnectorRouter<
   AccessLifecycleRouters extends Record<string, AccessRouterTypes> = {},
   InstallRouter extends AnyRouter = AnyRouter,
   MetadataRouter extends AnyRouter = AnyRouter,
+  LogsRouter extends AnyRouter | undefined = undefined,
 > = ReturnType<
   typeof newConnectorRouter<
     Namespace,
     TRPCInstance,
     AccessLifecycleRouters,
     InstallRouter,
-    MetadataRouter
+    MetadataRouter,
+    LogsRouter
   >
 >;
 
