@@ -130,6 +130,10 @@ jobs:
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-redshift-ai"
             context: .
+          - image: p0-connector-aws-cloudwatch-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-aws-cloudwatch"
+            context: .
           - image: p0-connector-mongodb-atlas-ai-aws
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-mongodb-atlas-ai"
