@@ -216,7 +216,7 @@ describe("logs.read for cloudtrail", () => {
     );
   });
 
-  it("needs the log group, and doesn't read phase 2 sources yet", async () => {
+  it("needs the log group, and doesn't read Cloud SQL", async () => {
     const aws = fakeAws();
     const caller = callerFor(aws);
     expect((await errorOf(caller.logs.read({ query: idcQuery }))).type).toBe(
@@ -227,10 +227,9 @@ describe("logs.read for cloudtrail", () => {
         await errorOf(
           caller.logs.read({
             query: {
-              source: "rds",
+              source: "cloudsql",
               window: idcQuery.window,
-              accountId: ACCOUNT,
-              region: "us-west-2",
+              projectId: "acme-prod",
               instanceId: "db-1",
               engine: "postgres",
               dbUser: "p0_alice",

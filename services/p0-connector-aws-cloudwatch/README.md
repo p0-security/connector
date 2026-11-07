@@ -35,3 +35,15 @@ and it's bound to the query, so it can't be used with any other.
 The execution role needs, on the CloudTrail group and `/aws/rds/*` in its account and region:
 `logs:StartQuery`, `logs:GetQueryResults`, `logs:StopQuery` and `logs:DescribeLogGroups`. For
 the trail checks it also needs `cloudtrail:DescribeTrails` and `cloudtrail:GetEventSelectors`.
+
+## Database audit logs
+
+An `rds` query reads the log group RDS exports the engine's audit log to:
+`/aws/rds/instance/<id>/postgresql` or `/audit`, and `/aws/rds/cluster/<id>/…` for Aurora. The
+query names the group, so these reads don't use `logGroupName`. For Postgres, the connector reads
+pgaudit `AUDIT:` lines and takes the user and database from the `%u@%d` part of RDS's
+`log_line_prefix`. For MySQL, it reads the audit plugin's CSV records. Rows are matched on the
+database user, and on the database and tables when the query names them. A statement that names no
+table is kept. A missing log group means auditing or log export is off, and the read returns a
+`not-delivered` gap that says "No database logs found for this instance." P0 never checks whether
+auditing is on, so `logs.check` returns nothing for `rds`.
