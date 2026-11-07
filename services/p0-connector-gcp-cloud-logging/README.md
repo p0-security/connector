@@ -33,3 +33,11 @@ backs off, and when its 20-second budget runs out it returns what it has with `s
 
 The service account needs `roles/logging.privateLogViewer` on the covered project or
 organization.
+
+## Database audit logs
+
+A `cloudsql` query reads the instance's entries in the project's Data Access log (`resource.type`
+`cloudsql_database`). These are pgAudit and MySQL audit records, matched on `request.user` or
+`request.gcpIamAccount`, plus IAM logins (`cloudsql.instances.login`) by the query's IAM email. The
+connector narrows them by database and by table, and keeps a record that names no table. P0 never
+checks whether auditing is on, so `logs.check` returns nothing for `cloudsql`.
