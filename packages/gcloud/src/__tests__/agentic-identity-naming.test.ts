@@ -73,29 +73,34 @@ describe("agentic identity naming", () => {
     ).toBe(false);
   });
 
-  it("namespaces the subject under agentic-identity, never mcps", () => {
+  it("accepts only the gateway's mcps access subject", () => {
+    expect(isAgenticIdentitySubject("mcps/drive/0123456789abcdef")).toBe(true);
+    expect(isAgenticIdentitySubject("mcps/drive/0123456789abcde")).toBe(false);
     expect(isAgenticIdentitySubject("agentic-identity/0123456789abcdef")).toBe(
-      true
-    );
-    expect(isAgenticIdentitySubject("agentic-identity/0123456789abcde")).toBe(
       false
     );
-    expect(isAgenticIdentitySubject("mcps/backend/0123456789abcdef")).toBe(
+    expect(isAgenticIdentitySubject("a2a/drive/0123456789abcdef")).toBe(false);
+    expect(isAgenticIdentitySubject("x/mcps/drive/0123456789abcdef")).toBe(
       false
     );
+    expect(isAgenticIdentitySubject("mcps/a/b/0123456789abcdef")).toBe(false);
+    expect(isAgenticIdentitySubject("mcps//0123456789abcdef")).toBe(false);
+    // The gateway presents the bare subject, never a URL-prefixed one.
     expect(
-      isAgenticIdentitySubject("x/agentic-identity/0123456789abcdef")
+      isAgenticIdentitySubject(
+        "https://gateway.test/mcps/drive/0123456789abcdef"
+      )
     ).toBe(false);
   });
 
   it("parses a workload identity principal into pool project, pool and subject", () => {
     const member =
       "principal://iam.googleapis.com/projects/123456789/locations/global/" +
-      "workloadIdentityPools/p0-pool/subject/agentic-identity/0123456789abcdef";
+      "workloadIdentityPools/p0-pool/subject/mcps/drive/0123456789abcdef";
     expect(parseWorkloadIdentityPrincipal(member)).toEqual({
       poolProjectNumber: "123456789",
       poolId: "p0-pool",
-      subject: "agentic-identity/0123456789abcdef",
+      subject: "mcps/drive/0123456789abcdef",
     });
     expect(parseWorkloadIdentityPrincipal("user:alice@example.com")).toBe(
       undefined
@@ -104,7 +109,7 @@ describe("agentic identity naming", () => {
     expect(
       parseWorkloadIdentityPrincipal(
         "principal://iam.googleapis.com/projects/my-project/locations/global/" +
-          "workloadIdentityPools/p0-pool/subject/agentic-identity/0123456789abcdef"
+          "workloadIdentityPools/p0-pool/subject/mcps/drive/0123456789abcdef"
       )
     ).toBe(undefined);
   });
