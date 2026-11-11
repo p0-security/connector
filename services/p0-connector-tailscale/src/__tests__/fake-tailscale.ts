@@ -57,7 +57,7 @@ export type FakeDevice = {
   advertisedRoutes?: string[];
   enabledRoutes?: string[];
   /** The device's attributes, its own and Tailscale's. */
-  attributes?: Record<string, boolean | number | string>;
+  attributes?: Record<string, unknown>;
   expiries?: Record<string, string>;
 };
 
