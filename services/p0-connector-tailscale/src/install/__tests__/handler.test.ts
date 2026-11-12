@@ -364,6 +364,16 @@ describe("scopes", () => {
     expect(error.payload).toMatchObject({ step: "scopes", extra: "all" });
   });
 
+  it("passes a device whose Tailscale attributes aren't scalars", async () => {
+    const tailnet = newTestTailnet();
+    const probe = tailnet.state.devices.find(
+      ({ nodeId }) => nodeId === BOBS_LAPTOP
+    );
+    if (probe) probe.attributes = { "ip:publicAddress": ["203.0.113.7"] };
+
+    await expect(validate()).resolves.toMatchObject({ tailnet: TAILNET });
+  });
+
   it("passes a credential with only the listed scopes, the read of devices:posture_attributes included", async () => {
     newTestTailnet({
       scopes: [...REQUIRED_SCOPES, "devices:posture_attributes:read"],

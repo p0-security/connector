@@ -50,15 +50,15 @@ const routes = z.object({
   enabledRoutes: z.array(z.string()).nullish(),
 });
 
+// Values are unknown: Tailscale's own attributes aren't all scalars, such as
+// `ip:publicAddress`, and the connector only compares its own keys to `true`.
 const attributes = z.object({
-  attributes: z
-    .record(z.string(), z.union([z.string(), z.number(), z.boolean()]))
-    .nullish(),
+  attributes: z.record(z.string(), z.unknown()).nullish(),
   expiries: z.record(z.string(), z.string()).nullish(),
 });
 
 export type DeviceAttributes = {
-  attributes: Record<string, boolean | number | string>;
+  attributes: Record<string, unknown>;
   expiries: Record<string, string>;
 };
 

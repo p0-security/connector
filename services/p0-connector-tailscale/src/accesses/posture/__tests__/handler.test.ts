@@ -125,6 +125,28 @@ describe("the posture access", () => {
     });
   });
 
+  it("grants on a device whose Tailscale attributes aren't scalars, and keeps them", async () => {
+    const tailnet = postureTailnet();
+    const laptop = tailnet.state.devices.find(
+      ({ nodeId }) => nodeId === LAPTOP
+    );
+    if (laptop) {
+      laptop.attributes = {
+        ...laptop.attributes,
+        "ip:publicAddress": ["203.0.113.7"],
+      };
+    }
+
+    await setPolicies("grant", [{ posture: "posture:p0_db", expiresAt: LATE }]);
+
+    expect(attributesOf(tailnet).attributes).toEqual({
+      "node:os": "macos",
+      "custom:team": "eng",
+      "ip:publicAddress": ["203.0.113.7"],
+      "custom:p0_db": true,
+    });
+  });
+
   it("holds a key two requests carry until the later one ends", async () => {
     const tailnet = postureTailnet();
 
