@@ -18,10 +18,8 @@ const installRouter = router({
   principal: principalRouter(t),
 });
 
-export const connectorRouter = newConnectorRouter(
-  "databricks-ai" as const,
-  t,
-  { data: dataRouter(t) },
-  installRouter,
-  newMetadataRouter(t, CONNECTOR_VERSION)
-);
+export const connectorRouter = newConnectorRouter("databricks-ai" as const, t, {
+  accesses: { data: dataRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(t, CONNECTOR_VERSION),
+});

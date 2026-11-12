@@ -13,10 +13,11 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({});
 
-export const connectorRouter = newConnectorRouter(
-  "servicenow-ai" as const,
-  t,
-  { role: roleRouter(t) },
-  installRouter,
-  newMetadataRouter(t, serviceNowAiConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("servicenow-ai" as const, t, {
+  accesses: { role: roleRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    serviceNowAiConnectorPackageJson.version ?? "unknown"
+  ),
+});

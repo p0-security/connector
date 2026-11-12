@@ -16,14 +16,15 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "github" as const,
-  t,
-  {
+export const connectorRouter = newConnectorRouter("github" as const, t, {
+  accesses: {
     role: roleRouter(t),
     team: teamRouter(t),
     "force-merge": forceMergeRouter(t),
   },
-  installRouter,
-  newMetadataRouter(t, githubConnectorPackageJson.version ?? "unknown")
-);
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    githubConnectorPackageJson.version ?? "unknown"
+  ),
+});

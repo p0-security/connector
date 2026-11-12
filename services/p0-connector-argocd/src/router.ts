@@ -13,10 +13,14 @@ const t = newConnectorTRPC();
 
 const installRouter = t.router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "argocd" as const,
-  t,
-  { globalRole: globalRoleRouter(t), projectRole: projectRoleRouter(t) },
-  installRouter,
-  newMetadataRouter(t, argocdConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("argocd" as const, t, {
+  accesses: {
+    globalRole: globalRoleRouter(t),
+    projectRole: projectRoleRouter(t),
+  },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    argocdConnectorPackageJson.version ?? "unknown"
+  ),
+});

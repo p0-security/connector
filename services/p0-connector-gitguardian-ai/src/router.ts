@@ -17,7 +17,12 @@ const installRouter = router({ validation: validationRouter(t) });
 export const connectorRouter = newConnectorRouter(
   "gitguardian-ai" as const,
   t,
-  { permission: permissionRouter(t) },
-  installRouter,
-  newMetadataRouter(t, gitguardianAiConnectorPackageJson.version ?? "unknown")
+  {
+    accesses: { permission: permissionRouter(t) },
+    install: installRouter,
+    metadata: newMetadataRouter(
+      t,
+      gitguardianAiConnectorPackageJson.version ?? "unknown"
+    ),
+  }
 );

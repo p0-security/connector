@@ -16,10 +16,11 @@ export const baseProcedure = t.procedure;
 // the install is IAM grant check that p0 backend is already granted via IAM management.
 const installRouter = router({});
 
-export const connectorRouter = newConnectorRouter(
-  "cloudsql" as const,
-  t,
-  { user: userRouter(t) },
-  installRouter,
-  newMetadataRouter(t, cloudsqlConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("cloudsql" as const, t, {
+  accesses: { user: userRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    cloudsqlConnectorPackageJson.version ?? "unknown"
+  ),
+});

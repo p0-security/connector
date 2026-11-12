@@ -18,10 +18,11 @@ const installRouter = t.router({
   share: shareCreationRouter(t),
 });
 
-export const connectorRouter = newConnectorRouter(
-  "1password" as const,
-  t,
-  { share: shareRouter(t) },
-  installRouter,
-  newMetadataRouter(t, onePasswordConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("1password" as const, t, {
+  accesses: { share: shareRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    onePasswordConnectorPackageJson.version ?? "unknown"
+  ),
+});

@@ -18,10 +18,12 @@ const installRouter = router({});
 export const connectorRouter = newConnectorRouter(
   "gcp-service-account" as const,
   t,
-  { agenticIdentity: agenticIdentityRouter(t) },
-  installRouter,
-  newMetadataRouter(
-    t,
-    gcpServiceAccountConnectorPackageJson.version ?? "unknown"
-  )
+  {
+    accesses: { agenticIdentity: agenticIdentityRouter(t) },
+    install: installRouter,
+    metadata: newMetadataRouter(
+      t,
+      gcpServiceAccountConnectorPackageJson.version ?? "unknown"
+    ),
+  }
 );

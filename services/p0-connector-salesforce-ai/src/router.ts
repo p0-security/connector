@@ -13,10 +13,11 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({});
 
-export const connectorRouter = newConnectorRouter(
-  "salesforce-ai" as const,
-  t,
-  { "permission-set": permissionSetRouter(t) },
-  installRouter,
-  newMetadataRouter(t, salesforceAiConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("salesforce-ai" as const, t, {
+  accesses: { "permission-set": permissionSetRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    salesforceAiConnectorPackageJson.version ?? "unknown"
+  ),
+});

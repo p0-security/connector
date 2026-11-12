@@ -14,10 +14,11 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "looker-ai" as const,
-  t,
-  { model: modelRouter(t) },
-  installRouter,
-  newMetadataRouter(t, lookerAiConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("looker-ai" as const, t, {
+  accesses: { model: modelRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    lookerAiConnectorPackageJson.version ?? "unknown"
+  ),
+});

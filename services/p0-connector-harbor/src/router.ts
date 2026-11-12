@@ -13,10 +13,14 @@ const t = newConnectorTRPC();
 
 const installRouter = t.router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "harbor" as const,
-  t,
-  { projectRole: projectRoleRouter(t), systemAdmin: systemAdminRouter(t) },
-  installRouter,
-  newMetadataRouter(t, harborConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("harbor" as const, t, {
+  accesses: {
+    projectRole: projectRoleRouter(t),
+    systemAdmin: systemAdminRouter(t),
+  },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    harborConnectorPackageJson.version ?? "unknown"
+  ),
+});

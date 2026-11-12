@@ -19,7 +19,12 @@ const installRouter = router({});
 export const connectorRouter = newConnectorRouter(
   "google-drive-ai" as const,
   t,
-  { resource: resourceRouter(t) },
-  installRouter,
-  newMetadataRouter(t, googleDriveAiConnectorPackageJson.version ?? "unknown")
+  {
+    accesses: { resource: resourceRouter(t) },
+    install: installRouter,
+    metadata: newMetadataRouter(
+      t,
+      googleDriveAiConnectorPackageJson.version ?? "unknown"
+    ),
+  }
 );

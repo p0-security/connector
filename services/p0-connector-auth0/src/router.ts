@@ -14,14 +14,15 @@ export const t = newConnectorTRPC();
 
 const installRouter = t.router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "auth0" as const,
-  t,
-  {
+export const connectorRouter = newConnectorRouter("auth0" as const, t, {
+  accesses: {
     role: roleRouter(t),
     permission: permissionRouter(t),
     organization: organizationRouter(t),
   },
-  installRouter,
-  newMetadataRouter(t, auth0ConnectorPackageJson.version ?? "unknown")
-);
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    auth0ConnectorPackageJson.version ?? "unknown"
+  ),
+});

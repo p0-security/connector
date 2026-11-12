@@ -12,12 +12,10 @@ const t = newConnectorTRPC();
 
 const installRouter = t.router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "miro-ai" as const,
-  t,
-  {
+export const connectorRouter = newConnectorRouter("miro-ai" as const, t, {
+  accesses: {
     board: boardRouter(t),
   },
-  installRouter,
-  newMetadataRouter(t, miroConnectorPackageJson.version ?? "unknown")
-);
+  install: installRouter,
+  metadata: newMetadataRouter(t, miroConnectorPackageJson.version ?? "unknown"),
+});

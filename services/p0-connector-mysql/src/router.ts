@@ -14,10 +14,11 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "mysql" as const,
-  t,
-  { role: roleRouter(t) },
-  installRouter,
-  newMetadataRouter(t, mysqlConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("mysql" as const, t, {
+  accesses: { role: roleRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    mysqlConnectorPackageJson.version ?? "unknown"
+  ),
+});

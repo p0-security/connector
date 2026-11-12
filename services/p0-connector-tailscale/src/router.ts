@@ -24,11 +24,12 @@ export const newTailscaleRouter = (deps: ConnectorDeps) => {
     destination: destinationRouter(t, deps),
   });
 
-  return newConnectorRouter(
-    "tailscale" as const,
-    t,
-    { posture: postureRouter(t, deps) },
-    installRouter,
-    newMetadataRouter(t, tailscaleConnectorPackageJson.version ?? "unknown")
-  );
+  return newConnectorRouter("tailscale" as const, t, {
+    accesses: { posture: postureRouter(t, deps) },
+    install: installRouter,
+    metadata: newMetadataRouter(
+      t,
+      tailscaleConnectorPackageJson.version ?? "unknown"
+    ),
+  });
 };

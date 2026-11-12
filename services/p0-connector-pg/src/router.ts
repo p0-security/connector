@@ -15,10 +15,8 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "pg" as const,
-  t,
-  { role: roleRouter(t), sql: sqlRouter(t) },
-  installRouter,
-  newMetadataRouter(t, pgConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("pg" as const, t, {
+  accesses: { role: roleRouter(t), sql: sqlRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(t, pgConnectorPackageJson.version ?? "unknown"),
+});

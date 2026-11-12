@@ -17,10 +17,12 @@ const installRouter = router({ validation: validationRouter(t) });
 export const connectorRouter = newConnectorRouter(
   "github-repositories" as const,
   t,
-  { role: roleRouter(t) },
-  installRouter,
-  newMetadataRouter(
-    t,
-    githubRepositoriesConnectorPackageJson.version ?? "unknown"
-  )
+  {
+    accesses: { role: roleRouter(t) },
+    install: installRouter,
+    metadata: newMetadataRouter(
+      t,
+      githubRepositoriesConnectorPackageJson.version ?? "unknown"
+    ),
+  }
 );
