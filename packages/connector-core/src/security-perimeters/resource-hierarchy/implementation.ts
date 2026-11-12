@@ -199,6 +199,21 @@ export const buildResourceHierarchySecurityPerimeter = <
     return await methods.getUser(context, userBody);
   },
 
+  deleteUser: async ({ userId, userBody, context }) => {
+    const { userIsNamespacedById, userIsNamespacedByBody } =
+      methods.validation(context).user ?? {};
+
+    if (userIsNamespacedById && !(await userIsNamespacedById(userId))) {
+      throw new Error(`Username ${userId} is not namespaced`);
+    }
+    if (userIsNamespacedByBody && !(await userIsNamespacedByBody(userBody))) {
+      throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
+    }
+
+    await methods.deleteUser(context, userId, userBody);
+    return null;
+  },
+
   createAccessResource: async ({ resourceBody, context }) => {
     const { resourceIsNamespacedByBody } =
       methods.validation(context).resource ?? {};
