@@ -288,7 +288,7 @@ export const connectPingOne = async (app: App, logger: Logger) => {
       return (
         await get(
           PINGONE_ROUTES.listUsers,
-          `/users?${filter}`,
+          `/users?${filter.toString()}`,
           embedded("users", pingOneUser)
         )
       )._embedded.users;
