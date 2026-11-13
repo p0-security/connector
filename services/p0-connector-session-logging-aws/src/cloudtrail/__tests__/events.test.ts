@@ -2,6 +2,7 @@ import { LogEntrySchema } from "@p0security/connector-core";
 import { describe, expect, it } from "vitest";
 
 import {
+  ACCOUNT,
   federatedDescribeInstances,
   federatedQuery,
   iamUserCreateKey,
@@ -258,8 +259,31 @@ describe("eventMatches", () => {
     ).toBe(false);
   });
 
-  it("matches an IAM user by ARN", () => {
+  it("matches an IAM user by name and account", () => {
     expect(eventMatches(iamUserQuery, iamUserCreateKey, window)).toBe(true);
     expect(eventMatches(iamUserQuery, idcGetObject, window)).toBe(false);
+  });
+
+  it("matches an IAM user with a path from an ARN without it", () => {
+    const withPath = {
+      ...iamUserCreateKey,
+      userIdentity: {
+        ...iamUserCreateKey.userIdentity,
+        arn: `arn:aws:iam::${ACCOUNT}:user/engineering/p0-carol`,
+      },
+    };
+    expect(eventMatches(iamUserQuery, withPath, window)).toBe(true);
+  });
+
+  it("doesn't match a same-named user from another account", () => {
+    const otherAccount = {
+      ...iamUserCreateKey,
+      userIdentity: {
+        ...iamUserCreateKey.userIdentity,
+        arn: "arn:aws:iam::999999999999:user/p0-carol",
+        accountId: "999999999999",
+      },
+    };
+    expect(eventMatches(iamUserQuery, otherAccount, window)).toBe(false);
   });
 });

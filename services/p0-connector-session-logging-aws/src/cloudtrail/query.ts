@@ -47,6 +47,15 @@ export const sessionArnSource = (
   }
 };
 
+/**
+ * The user name in an `iam-user` identity's `userArn`: its last segment.
+ * The ARN P0 sends may leave out the user's IAM path, which the grant doesn't
+ * store, so an IAM user is matched on its name and account, which identify
+ * it whatever its path, rather than on its ARN.
+ */
+export const iamUserName = (userArn: string) =>
+  userArn.slice(userArn.lastIndexOf("/") + 1);
+
 const identityFilters = (query: CloudTrailLogQuery) => {
   const { identity, accountId } = query;
   const filters: string[] = [];
@@ -60,7 +69,11 @@ const identityFilters = (query: CloudTrailLogQuery) => {
     );
   }
   if (identity.kind === "iam-user") {
-    filters.push(`userIdentity.arn = ${insightsString(identity.userArn)}`);
+    filters.push(
+      `userIdentity.type = "IAMUser"`,
+      `userIdentity.accountId = ${insightsString(accountId)}`,
+      `userIdentity.userName = ${insightsString(iamUserName(identity.userArn))}`
+    );
   }
   return filters;
 };
