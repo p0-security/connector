@@ -108,6 +108,41 @@ const failFor = async (label: string, response: Response) => {
   });
 };
 
+/** The title of the page a hibernating developer instance serves for every URL */
+const HIBERNATING_PAGE = /Instance Hibernating page/i;
+
+/**
+ * Reads a 2xx reply as JSON. A hibernating developer instance answers with 200
+ * and an HTML page, which would otherwise throw a `SyntaxError` that reaches
+ * P0 as a bare 500. The error keeps the `unknown` type, so P0 handles it as
+ * before; only the message names the cause.
+ */
+const readJson = async <T>(label: string, response: Response): Promise<T> => {
+  const { status } = response;
+  const text = await response.text();
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    const contentType = response.headers.get("content-type") ?? "";
+    const isHtml =
+      contentType.includes("text/html") || text.trimStart().startsWith("<");
+    const message = HIBERNATING_PAGE.test(text)
+      ? "returned HTML, not JSON: the instance is hibernating and must be woken"
+      : isHtml
+        ? "returned HTML, not JSON"
+        : "returned a reply that is not JSON";
+    logger.error(
+      { label, status, contentType, message },
+      "ServiceNow request returned a non-JSON response"
+    );
+    throw new ConnectorError({
+      type: "unknown",
+      message: `ServiceNow ${label} ${message}`,
+      payload: { status },
+    });
+  }
+};
+
 const requestToken = async (
   label: string,
   domain: string,
@@ -126,9 +161,10 @@ const requestToken = async (
     }
   );
   if (!response.ok) throw await failFor(label, response);
-  const { access_token } = (await response.json()) as {
-    access_token?: string;
-  };
+  const { access_token } = await readJson<{ access_token?: string }>(
+    label,
+    response
+  );
   if (!access_token) {
     throw new ConnectorError({
       type: "unknown",
@@ -212,7 +248,7 @@ export const newProvisionerClient = async (
     if (method === "DELETE" && response.status === 404) return undefined;
     if (!response.ok) throw await failFor(label, response);
     if (response.status === 204) return undefined;
-    return ((await response.json()) as { result: TableRow | TableRow[] })
+    return (await readJson<{ result: TableRow | TableRow[] }>(label, response))
       .result;
   };
 

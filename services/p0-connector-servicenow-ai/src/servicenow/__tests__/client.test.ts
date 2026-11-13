@@ -33,6 +33,16 @@ const json = (status: number, body: unknown) =>
     headers: { "Content-Type": "application/json" },
   });
 
+const html = (body: string) =>
+  new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/html;charset=UTF-8" },
+  });
+
+/** What a hibernating developer instance serves for every URL, trimmed */
+const hibernatingPage = `<html><head><title>ServiceNow Developers</title></head>
+<body><span>Instance Hibernating page</span></body></html>`;
+
 const fetchMock = vi.fn<typeof fetch>();
 
 beforeEach(() => {
@@ -105,6 +115,20 @@ describe("mintUserToken", () => {
     );
     expect(error).toBeInstanceOf(ConnectorError);
     expect((error as Error).message).toContain("User not found");
+  });
+
+  it("says the instance returned HTML when the exchange answers 200 with a page", async () => {
+    fetchMock.mockResolvedValue(html("<html><body>Log in</body></html>"));
+
+    const error = await mintUserToken(jwtBearer, "p0-agent-abc").catch(
+      (e: unknown) => e
+    );
+    expect(error).toBeInstanceOf(ConnectorError);
+    expect((error as ConnectorError).data).toMatchObject({
+      type: "unknown",
+      message: "ServiceNow agent token exchange returned HTML, not JSON",
+      payload: { status: 200 },
+    });
   });
 });
 
@@ -219,6 +243,45 @@ describe("newProvisionerClient", () => {
     const client = await newClient();
     await expect(client.findUser("p0-agent-abc")).rejects.toThrow(
       "Access to unscoped api is not allowed"
+    );
+  });
+
+  it("says the instance is hibernating when the login answers with the hibernation page", async () => {
+    fetchMock.mockResolvedValueOnce(html(hibernatingPage));
+
+    const error = await newClient().catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ConnectorError);
+    expect((error as Error).message).toBe(
+      "ServiceNow provisioner login returned HTML, not JSON: the instance is hibernating and must be woken"
+    );
+  });
+
+  it("says the instance returned HTML when the Table API answers 200 with a page", async () => {
+    login();
+    fetchMock.mockResolvedValueOnce(html("<html><body>Log in</body></html>"));
+
+    const client = await newClient();
+    await expect(client.findUser("p0-agent-abc")).rejects.toThrow(
+      new ConnectorError({
+        type: "unknown",
+        message: "ServiceNow user lookup returned HTML, not JSON",
+        payload: { status: 200 },
+      })
+    );
+  });
+
+  it("says the reply is not JSON when it is neither JSON nor HTML", async () => {
+    login();
+    fetchMock.mockResolvedValueOnce(
+      new Response("OK", {
+        status: 200,
+        headers: { "Content-Type": "text/plain" },
+      })
+    );
+
+    const client = await newClient();
+    await expect(client.listRoles()).rejects.toThrow(
+      "ServiceNow role listing returned a reply that is not JSON"
     );
   });
 });
