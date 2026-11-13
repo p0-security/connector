@@ -221,7 +221,7 @@ describe("logs.read for gcp-audit", () => {
     ).toBe("validation_error");
   });
 
-  it("checks nothing for gcp-audit and rejects other sources", async () => {
+  it("checks nothing for gcp-audit and rejects AWS sources", async () => {
     const logging = fakeLogging(() => ({}));
     const caller = callerFor(logging);
     expect(await caller.logs.check({ target: bucketQuery })).toEqual({
