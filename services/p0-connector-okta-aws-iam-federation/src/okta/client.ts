@@ -312,7 +312,10 @@ export const connectOkta = async (app: App, logger: Logger) => {
       });
       return parseAnswer(
         OKTA_ROUTES.searchUsers,
-        await call(OKTA_ROUTES.searchUsers, `/api/v1/users?${search}`),
+        await call(
+          OKTA_ROUTES.searchUsers,
+          `/api/v1/users?${search.toString()}`
+        ),
         z.array(oktaUser)
       );
     },
