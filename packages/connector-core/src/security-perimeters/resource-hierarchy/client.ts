@@ -7,9 +7,9 @@ import type { ResourceHierarchySchema } from "./schema.ts";
 import type { ResourceHierarchyRouter } from "./trpc.ts";
 
 /**
- * The security perimeter for a resource-hierarchy connector: provision users
- * and create, update policies on, bind, and delete access resources
- * beneath them.
+ * The security perimeter for a resource-hierarchy connector: provision and
+ * delete users, and create, update policies on, bind, and delete access
+ * resources beneath them.
  *
  * @summary The security perimeter for a resource-hierarchy connector.
  * @category High-Level
