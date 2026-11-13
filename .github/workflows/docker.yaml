@@ -134,6 +134,10 @@ jobs:
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-session-logging-aws"
             context: .
+          - image: p0-connector-session-logging-gcp
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-session-logging-gcp"
+            context: .
           - image: p0-connector-mongodb-atlas-ai-aws
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-mongodb-atlas-ai"
