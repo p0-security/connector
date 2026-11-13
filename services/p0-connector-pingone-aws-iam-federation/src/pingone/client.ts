@@ -150,7 +150,7 @@ const schemaAttribute = z.looseObject({
   name: z.string(),
   type: z.string(),
   multiValued: z.boolean().optional(),
-  enumeratedValues: z.array(z.unknown()).optional(),
+  enumeratedValues: z.array(z.unknown()).nullish(),
   regexValidation: z.unknown().optional(),
 });
 

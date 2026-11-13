@@ -54,7 +54,14 @@ const MAPPINGS = [
   SOURCE_IDENTITY_MAPPING,
 ];
 
-const ROLE_ATTRIBUTE = { name: "awsRoles", type: "STRING", multiValued: true };
+// PingOne sends `null` for an attribute without allowed values.
+const ROLE_ATTRIBUTE = {
+  name: "awsRoles",
+  type: "STRING",
+  multiValued: true,
+  enumeratedValues: null,
+  regexValidation: null,
+};
 const USER_ATTRIBUTES = [
   { name: "email", type: "STRING", multiValued: false },
   ROLE_ATTRIBUTE,
