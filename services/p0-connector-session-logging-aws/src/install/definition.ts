@@ -6,7 +6,9 @@ import { z } from "zod";
  * order fixed.
  *
  * - `log_group`: the CloudTrail log group exists.
- * - `recent_events`: it holds a CloudTrail event from the last 24 hours.
+ * - `recent_events`: it holds a CloudTrail event from the last 24 hours. A
+ *   sample that doesn't finish in time warns instead (see
+ *   {@link InstallWarning}).
  * - `coverage`: an `organization` item's group gets an organization trail.
  * - `data_events`: reading the trail's event selectors (never fails the
  *   install on what it finds; see {@link InstallWarning}).
@@ -46,6 +48,9 @@ export type InstallWarning =
   /** The trail doesn't deliver these data-event resource types
    * (`AWS::S3::Object`, `AWS::Lambda::Function`, `AWS::DynamoDB::Table`). */
   | { check: "data_events"; resourceTypes: string[] }
+  /** The sample of the group's last day didn't finish in time, so recent
+   * events, and without a trail the group's accounts, are unconfirmed. */
+  | { check: "recent_events"; message: string }
   /** No trail in this account and region names the group (an organization
    * trail seen from a member account, or a group fed some other way), so
    * coverage was judged from a sample of `recipientAccountId`s and data
@@ -62,10 +67,12 @@ export type InstallValidation = {
     logGroupArn?: string;
     /** Absent when the group keeps events forever. */
     retentionInDays?: number;
-    /** The newest event in the last 24 hours. */
-    latestEventTime: string;
-    /** The accounts whose events the group holds, sampled from the last 24 hours. */
-    accounts: string[];
+    /** The newest event in the last 24 hours. Absent when the sample didn't
+     * finish in time. */
+    latestEventTime?: string;
+    /** The accounts whose events the group holds, sampled from the last 24
+     * hours. Absent when the sample didn't finish in time. */
+    accounts?: string[];
     trail?: { arn: string; name: string; isOrganizationTrail: boolean };
     /** The data-event resource types the trail delivers. */
     dataEventTypes: string[];
