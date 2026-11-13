@@ -22,7 +22,7 @@ export const OKTA_SCOPES = [
   "okta.users.read",
 ] as const;
 
-type Method = "GET" | "POST" | "PUT";
+type Method = "DELETE" | "GET" | "POST" | "PUT";
 
 /** A call, by the path as Okta's API reference writes it, so it carries no id. */
 export type OktaCall = { method: Method; route: `/${string}` };
@@ -38,6 +38,17 @@ export const OKTA_ROUTES = {
   updateAppUserSchema: {
     method: "POST",
     route: "/api/v1/meta/schemas/apps/{appId}/default",
+  },
+  searchUsers: { method: "GET", route: "/api/v1/users" },
+  getAppUser: { method: "GET", route: "/api/v1/apps/{appId}/users/{userId}" },
+  assignAppUser: { method: "POST", route: "/api/v1/apps/{appId}/users" },
+  updateAppUser: {
+    method: "POST",
+    route: "/api/v1/apps/{appId}/users/{userId}",
+  },
+  unassignAppUser: {
+    method: "DELETE",
+    route: "/api/v1/apps/{appId}/users/{userId}",
   },
 } as const satisfies Record<string, OktaCall>;
 
@@ -215,6 +226,31 @@ const oktaApp = z.looseObject({
 
 export type OktaApp = z.infer<typeof oktaApp>;
 
+const oktaUser = z.object({
+  id: z.string().min(1),
+  status: z.string(),
+  profile: z.object({ login: z.string().min(1) }),
+});
+
+export type OktaUser = z.infer<typeof oktaUser>;
+
+/** An app user's profile, as much of it as the connector writes. */
+export type AppUserProfile = { samlRoles: string[]; managedByP0?: boolean };
+
+const appUser = z.object({
+  profile: z
+    .object({
+      // Okta returns no `samlRoles`, or `null`, for a user without roles.
+      samlRoles: z.array(z.string()).nullish().catch(undefined),
+      managedByP0: z.boolean().nullish().catch(undefined),
+    })
+    .catch({}),
+});
+
+/** Quotes `value` for an Okta search expression. */
+const searchString = (value: string) =>
+  `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+
 /** Okta, on one app, as the app's service app. The access token is got now. */
 export const connectOkta = async (app: App, logger: Logger) => {
   const token = await getAccessToken(app, logger);
@@ -267,6 +303,62 @@ export const connectOkta = async (app: App, logger: Logger) => {
           },
         }
       );
+    },
+
+    /** The users whose primary email is `email`. */
+    findUsersByEmail: async (email: string) => {
+      const search = new URLSearchParams({
+        search: `profile.email eq ${searchString(email)}`,
+      });
+      return parseAnswer(
+        OKTA_ROUTES.searchUsers,
+        await call(OKTA_ROUTES.searchUsers, `/api/v1/users?${search}`),
+        z.array(oktaUser)
+      );
+    },
+
+    /** The user's assignment to the app, or `null` if the user isn't assigned. */
+    getAppUser: async (userId: string): Promise<AppUserProfile | null> => {
+      const route = OKTA_ROUTES.getAppUser;
+      const text = await call(route, `${appPath}/users/${userId}`).catch(
+        (error: unknown) => {
+          if (
+            error instanceof OktaError &&
+            error.failure.kind === "status" &&
+            error.failure.status === 404
+          ) {
+            return null;
+          }
+          throw error;
+        }
+      );
+      if (text === null) return null;
+      const { profile } = parseAnswer(route, text, appUser);
+      return {
+        samlRoles: profile.samlRoles ?? [],
+        ...(profile.managedByP0 ? { managedByP0: true } : {}),
+      };
+    },
+
+    assignAppUser: async (user: OktaUser, profile: AppUserProfile) => {
+      await call(OKTA_ROUTES.assignAppUser, `${appPath}/users`, {
+        body: {
+          credentials: { userName: user.profile.login },
+          id: user.id,
+          profile,
+          scope: "USER",
+        },
+      });
+    },
+
+    updateAppUser: async (userId: string, profile: AppUserProfile) => {
+      await call(OKTA_ROUTES.updateAppUser, `${appPath}/users/${userId}`, {
+        body: { profile },
+      });
+    },
+
+    unassignAppUser: async (userId: string) => {
+      await call(OKTA_ROUTES.unassignAppUser, `${appPath}/users/${userId}`);
     },
   };
 };

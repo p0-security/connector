@@ -38,3 +38,21 @@ name in `payload.step`.
 `joinAllRoles` on the app. Both writes can run again, and neither is undone
 when the integration is removed. A failure reports `payload.step` as
 `configure`, or as one of the validation steps above.
+
+## Role access
+
+`accesses.role` is a resource-hierarchy perimeter. Each call's context names
+the app, as above.
+
+- The user is an Okta user, found by primary email. P0 creates no Okta user:
+  provisioning a user Okta doesn't have fails with `object_not_found`.
+- The resource is a `samlRoles` label, and its ID is the label itself.
+  Creating or deleting it, and its policies, do nothing.
+- Binding adds the label to the user's `samlRoles`, and first assigns the user
+  to the app, marked `managedByP0`, if needed.
+- Unbinding removes the label, and unassigns the user if P0 assigned them and
+  no label is left. A user or label that is already gone is not an error.
+- Listing returns nothing.
+
+Binding and unbinding read, change and write the user's `samlRoles`, so P0
+must not run two of them at once for the same user.
