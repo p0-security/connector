@@ -18,7 +18,7 @@ import type { SecretPointer } from "./account.ts";
 import { type FailureFacts, failureFacts, renderFailure } from "./failure.ts";
 
 // The reads and their error mapping are copies of the Cloudflare (AI)
-// connector's (its src/secrets.ts). The value is a client secret, not a clientSecret.
+// connector's (its src/secrets.ts). The value is a client secret, not a token.
 
 type Vault = {
   config: SecretManagerProviderConfig;

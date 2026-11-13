@@ -8,6 +8,12 @@ import { readClientSecret } from "../secrets.ts";
 /** How long PingOne has to answer a call, its body included. */
 export const PINGONE_TIMEOUT_MS = 10_000;
 
+/** How many times to send a call again after a 429 or 5xx answer. */
+const PINGONE_RETRIES = 2;
+
+/** The longest wait before a retry. Keep retries inside the app's user lock. */
+const PINGONE_MAX_RETRY_WAIT_MS = 5_000;
+
 type Method = "GET" | "POST";
 
 /** A call, by the path as PingOne's API reference writes it, so it carries no id. */
@@ -69,22 +75,25 @@ const parseJson = (text: string): unknown => {
   }
 };
 
-/** Sends one call, and returns the body of a 2xx answer as text. */
-const send = async (
-  call: PingOneCall,
-  url: string,
-  init: RequestInit
-): Promise<string> => {
-  let response: Response;
-  let text: string;
+const isRetryable = (status: number) => status === 429 || status >= 500;
+
+/** Gets the wait before retry `attempt` (0 for the first retry). PingOne
+ * gives it in `Retry-After`, in seconds. */
+const retryWaitMs = (response: Response, attempt: number) => {
+  const retryAfter = Number(response.headers.get("retry-after"));
+  const wait = retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt;
+  return Math.min(wait, PINGONE_MAX_RETRY_WAIT_MS);
+};
+
+const fetchOnce = async (call: PingOneCall, url: string, init: RequestInit) => {
   try {
-    response = await fetch(url, {
+    const response = await fetch(url, {
       ...init,
       method: call.method,
       redirect: "manual",
       signal: AbortSignal.timeout(PINGONE_TIMEOUT_MS),
     });
-    text = await response.text();
+    return { response, text: await response.text() };
   } catch (error: unknown) {
     const { code, name } = failureFacts(error);
     throw new PingOneError(call, {
@@ -92,6 +101,26 @@ const send = async (
       timedOut: name === "TimeoutError",
       ...(code === undefined ? {} : { code }),
     });
+  }
+};
+
+/** Sends one call, and returns the body of a 2xx answer as text. Sends it
+ * again after a 429 or 5xx answer, up to {@link PINGONE_RETRIES} times. */
+const send = async (
+  call: PingOneCall,
+  url: string,
+  init: RequestInit
+): Promise<string> => {
+  let { response, text } = await fetchOnce(call, url, init);
+  for (
+    let attempt = 0;
+    attempt < PINGONE_RETRIES && isRetryable(response.status);
+    attempt++
+  ) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, retryWaitMs(response, attempt))
+    );
+    ({ response, text } = await fetchOnce(call, url, init));
   }
   if (response.status < 200 || response.status >= 300) {
     const body = pingOneErrorBody.safeParse(parseJson(text));

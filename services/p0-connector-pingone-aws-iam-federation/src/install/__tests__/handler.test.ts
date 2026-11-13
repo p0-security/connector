@@ -126,6 +126,34 @@ describe("install validation", () => {
     ]);
   });
 
+  it("sends a call again after a 429", async () => {
+    vi.useFakeTimers();
+    let apps = 0;
+    stubPingOne({
+      [TOKEN]: token,
+      [GET_APP]: () =>
+        ++apps === 1
+          ? new Response(null, { status: 429, headers: { "Retry-After": "1" } })
+          : answer(200, SAML_APP),
+      [GET_MAPPINGS]: () =>
+        answer(200, { _embedded: { attributes: MAPPINGS } }),
+      [GET_SCHEMAS]: () =>
+        answer(200, {
+          _embedded: { schemas: [{ id: "user-schema", name: "User" }] },
+        }),
+      [GET_USER_ATTRIBUTES]: () =>
+        answer(200, { _embedded: { attributes: USER_ATTRIBUTES } }),
+      [GET_METADATA]: () => new Response(METADATA),
+    });
+
+    const result = validate();
+    await vi.runAllTimersAsync();
+
+    await expect(result).resolves.toMatchObject({ entityId: ENTITY_ID });
+    expect(apps).toBe(2);
+    vi.useRealTimers();
+  });
+
   it("asks for a token with the client ID and secret", async () => {
     const pingOne = pingOneWith();
 
