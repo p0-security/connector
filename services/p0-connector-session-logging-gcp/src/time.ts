@@ -15,7 +15,9 @@ export const preciseTime = (iso: string | undefined): bigint | undefined => {
   // next six are the nanoseconds within the millisecond.
   const fraction = /T[\d:]+\.(\d+)/.exec(iso)?.[1] ?? "";
   const subMs = fraction.slice(3, 9).padEnd(6, "0");
-  return BigInt(ms) * 1_000_000n + BigInt(subMs);
+  // `BigInt(…)` rather than a `1_000_000n` literal: app type-checks this
+  // source with an ES2017 target, which has no BigInt literals.
+  return BigInt(ms) * BigInt(1_000_000) + BigInt(subMs);
 };
 
 /** `[start, end)`, in nanoseconds since the epoch. */
