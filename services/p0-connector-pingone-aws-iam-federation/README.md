@@ -45,3 +45,19 @@ set of roles for the install check is not tested.
 
 It returns the app's `name` and `entityId`. A failed check is thrown with its
 name in `payload.step`.
+
+## Role access
+
+`accesses.role` is a resource-hierarchy perimeter. The user is a PingOne user,
+found by `email` (PingOne matches it without case). The resource is a value of
+the user's role attribute, `role ARN,provider ARN`, as P0 makes it.
+
+- Binding adds the value to the role attribute; unbinding removes it. Both
+  do nothing when there is nothing to change.
+- Provisioning a user PingOne doesn't have fails with `object_not_found`.
+  More than one user with the email fails with `validation_error`.
+- The resource, policy, user-delete and list primitives do nothing.
+
+`PATCH` replaces the whole list, so P0 must serialize binds and unbinds for
+one user. The worker app also needs a role that updates users, such as
+Identity Data Admin.
