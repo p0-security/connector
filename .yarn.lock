@@ -2904,6 +2904,24 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@p0security/p0-connector-pingone-aws-iam-federation@workspace:services/p0-connector-pingone-aws-iam-federation":
+  version: 0.0.0-use.local
+  resolution: "@p0security/p0-connector-pingone-aws-iam-federation@workspace:services/p0-connector-pingone-aws-iam-federation"
+  dependencies:
+    "@p0security/connector-core": "workspace:^"
+    "@p0security/connector-secret-manager-client": "workspace:^"
+    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
+    "@trpc/server": "npm:^11.10.0"
+    esbuild: "npm:^0.27.2"
+    prettier: "npm:^3.8.1"
+    typescript: "npm:^5.9.2"
+    vitest: "npm:^4.0.18"
+    zod: "npm:^4.3.6"
+  bin:
+    p0-connector-pingone-aws-iam-federation: ./dist/run.js
+  languageName: unknown
+  linkType: soft
+
 "@p0security/p0-connector-redshift-ai@workspace:services/p0-connector-redshift-ai":
   version: 0.0.0-use.local
   resolution: "@p0security/p0-connector-redshift-ai@workspace:services/p0-connector-redshift-ai"
