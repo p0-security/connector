@@ -14,7 +14,7 @@ const PINGONE_RETRIES = 2;
 /** The longest wait before a retry. Keep retries inside the app's user lock. */
 const PINGONE_MAX_RETRY_WAIT_MS = 5_000;
 
-type Method = "GET" | "POST";
+type Method = "GET" | "PATCH" | "POST";
 
 /** A call, by the path as PingOne's API reference writes it, so it carries no id. */
 export type PingOneCall = { method: Method; route: `/${string}` };
@@ -37,6 +37,11 @@ export const PINGONE_ROUTES = {
   listSchemaAttributes: {
     method: "GET",
     route: "/environments/{envID}/schemas/{schemaID}/attributes",
+  },
+  listUsers: { method: "GET", route: "/environments/{envID}/users" },
+  updateUser: {
+    method: "PATCH",
+    route: "/environments/{envID}/users/{userID}",
   },
 } as const satisfies Record<string, PingOneCall>;
 
@@ -185,6 +190,15 @@ const schemaAttribute = z.looseObject({
 
 export type SchemaAttribute = z.infer<typeof schemaAttribute>;
 
+/** A user, with every attribute PingOne returns. */
+const pingOneUser = z.looseObject({ id: z.string().min(1) });
+
+export type PingOneUser = z.infer<typeof pingOneUser>;
+
+/** Quotes `value` for a PingOne SCIM filter. */
+const filterString = (value: string) =>
+  `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`;
+
 /**
  * Gets an access token for the worker app with its client secret (client
  * credentials grant, `client_secret_basic`).
@@ -215,21 +229,20 @@ export const connectPingOne = async (app: App, logger: Logger) => {
   const tld = REGION_TLDS[app.region];
   const base = `https://api.pingone.${tld}/v1/environments/${app.environmentId}`;
   const appPath = `/applications/${app.appId}`;
+  const call = (route: PingOneCall, path: string, body?: unknown) =>
+    send(route, `${base}${path}`, {
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${token}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      },
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    });
   const get = async <T>(
     route: PingOneCall,
     path: string,
     schema: z.ZodType<T>
-  ) =>
-    parseAnswer(
-      route,
-      await send(route, `${base}${path}`, {
-        headers: {
-          Accept: "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      }),
-      schema
-    );
+  ) => parseAnswer(route, await call(route, path), schema);
 
   return {
     getApp: () => get(PINGONE_ROUTES.getApp, appPath, pingOneApp),
@@ -265,6 +278,31 @@ export const connectPingOne = async (app: App, logger: Logger) => {
           embedded("attributes", schemaAttribute)
         )
       )._embedded.attributes;
+    },
+
+    /** The users whose email is `email`, matched without case. */
+    findUsersByEmail: async (email: string) => {
+      const filter = new URLSearchParams({
+        filter: `email eq ${filterString(email)}`,
+      });
+      return (
+        await get(
+          PINGONE_ROUTES.listUsers,
+          `/users?${filter.toString()}`,
+          embedded("users", pingOneUser)
+        )
+      )._embedded.users;
+    },
+
+    /** Replaces the whole list in the multi-valued user attribute `attribute`. */
+    setUserAttribute: async (
+      userId: string,
+      attribute: string,
+      values: string[]
+    ) => {
+      await call(PINGONE_ROUTES.updateUser, `/users/${userId}`, {
+        [attribute]: values,
+      });
     },
 
     /** The app's public SAML metadata, as XML. It needs no token. */
