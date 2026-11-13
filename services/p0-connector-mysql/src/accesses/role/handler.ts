@@ -1,6 +1,7 @@
 import {
   type AnyConnectorTRPCInstance,
   type ConnectorContext,
+  ConnectorError,
   type Logger,
   newResourceHierarchyRouter,
   throwAssertNever,
@@ -58,6 +59,29 @@ const roleExists = async (
     role,
   ]);
   return res[0].length > 0;
+};
+
+/**
+ * Rejects deleting the connector's own user: `p0User`, or the session user it
+ * actually connected as (on Cloud SQL, the IAM principal). That user can pass
+ * the `p0` prefix check, and on Cloud SQL user names are not checked at all,
+ * so naming alone does not protect it.
+ */
+const assertNotConnectorUser = async (
+  client: Awaited<ReturnType<typeof newClient>>,
+  context: z.infer<(typeof schema)["requestContext"]>,
+  user: string
+): Promise<void> => {
+  const [rows] = await client.raw<[{ name: string }[]]>(
+    "SELECT SUBSTRING_INDEX(CURRENT_USER(), '@', 1) AS name"
+  );
+  if ([context.db.p0User, rows[0]?.name].includes(user)) {
+    throw new ConnectorError({
+      type: "validation_error",
+      message: "Invalid MySQL user: the connector's own identity",
+      payload: { user },
+    });
+  }
 };
 
 const withMethodContext = async <O>(
@@ -159,6 +183,7 @@ export const router = (t: AnyConnectorTRPCInstance) =>
         const { host, port } = context.db;
         const logger = ctx.logger.child({ host, port, user });
         return await withMethodContext(context, logger, async ({ client }) => {
+          await assertNotConnectorUser(client, context, user);
           await client.raw(`DROP USER IF EXISTS ??`, [user]);
           logger.info("dropped MySQL user");
         });

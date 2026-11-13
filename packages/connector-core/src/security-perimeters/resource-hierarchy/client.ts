@@ -7,9 +7,9 @@ import type { ResourceHierarchySchema } from "./schema.ts";
 import type { ResourceHierarchyRouter } from "./trpc.ts";
 
 /**
- * The security perimeter for a resource-hierarchy connector: provision users
- * and create, update policies on, bind, and delete access resources
- * beneath them.
+ * The security perimeter for a resource-hierarchy connector: provision and
+ * delete users, and create, update policies on, bind, and delete access
+ * resources beneath them.
  *
  * @summary The security perimeter for a resource-hierarchy connector.
  * @category High-Level
@@ -36,6 +36,16 @@ export type ResourceHierarchySecurityPerimeter<
     userBody: Schema["UserBody"];
     context: Schema["RequestContext"];
   }) => Promise<Schema["UserId"]>;
+
+  /**
+   * Deletes a user in the security perimeter.
+   * @param params The parameters for deleting the user.
+   */
+  deleteUser: (params: {
+    userId: Schema["UserId"];
+    userBody: Schema["UserBody"];
+    context: Schema["RequestContext"];
+  }) => Promise<null>;
 
   /**
    * Creates an access resource in the security perimeter.
@@ -132,6 +142,7 @@ export const newResourceHierarchyConnectorMethods = <
   return {
     identifyUser: action(scopedClient.identifyUser.mutate, (x: unknown) => x === null ? null : parsers.userId(x)),
     provisionUser: action(scopedClient.provisionUser.mutate, parsers.userId),
+    deleteUser: action(scopedClient.deleteUser.mutate, () => null),
     addPoliciesToResource: action(scopedClient.addPoliciesToResource.mutate, () => null),
     removePoliciesFromResource: action(scopedClient.removePoliciesFromResource.mutate, () => null),
     createAccessResource: action(scopedClient.createAccessResource.mutate, parsers.resourceId),

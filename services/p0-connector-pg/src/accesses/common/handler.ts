@@ -220,13 +220,18 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       }
     ),
 
-  /** Drops the user's role. */
+  /**
+   * Drops the user's role, unless it is the connector's own identity or a role
+   * the connector inherits: dropping either would strip the connector's own
+   * permissions.
+   */
   deleteUser: async (context: PgRequestContext, username: string) =>
     await withMethodContext(
       ctx,
       context,
       { username },
       async ({ client, logger }) => {
+        await assertNotConnectorRole(client, context, [username]);
         await client.raw(`DROP ROLE IF EXISTS ${ident(username)}`);
         logger.info("dropped Postgres user");
       }

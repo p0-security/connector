@@ -184,6 +184,25 @@ describe.skipIf("CI" in process.env)(
         ).toBe(false);
       });
 
+      it.each([
+        ["the connector's own user", CONNECTOR_USER],
+        ["a role the connector inherits", GROUP_ROLE],
+      ])("Refuses to delete %s", async (_label, role) => {
+        await expect(
+          newConnClient().deleteUser({
+            userId: role,
+            userBody: role,
+            context: connectorContext,
+          })
+        ).rejects.toThrow(/connector's own identity/);
+
+        const { rows } = await rootClient.raw<{ rows: unknown[] }>(
+          `SELECT 1 FROM pg_roles WHERE rolname = ?`,
+          [role]
+        );
+        expect(rows, `${role} should still exist`).toHaveLength(1);
+      });
+
       it("Refuses to grant a policy to the connector's own user", async () => {
         await expect(
           newConnClient().createAccessResource({

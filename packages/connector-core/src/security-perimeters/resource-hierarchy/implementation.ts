@@ -169,6 +169,24 @@ export type ResourceHierarchyAtomicMethods<
 > = ResourceHierarchyConnectorPrimitives<Schema>;
 
 /**
+ * Throws unless both the user's ID and body pass the connector's user
+ * namespace checks. A connector that returns no user validation skips them.
+ */
+const assertUserNamespaced = async <Schema extends ResourceHierarchySchema>(
+  validation: UserNamespaceValidation<Schema> | null,
+  userId: Schema["UserId"],
+  userBody: Schema["UserBody"]
+): Promise<void> => {
+  const { userIsNamespacedById, userIsNamespacedByBody } = validation ?? {};
+  if (userIsNamespacedById && !(await userIsNamespacedById(userId))) {
+    throw new Error(`Username ${userId} is not namespaced`);
+  }
+  if (userIsNamespacedByBody && !(await userIsNamespacedByBody(userBody))) {
+    throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
+  }
+};
+
+/**
  * Builds a {@link ResourceHierarchySecurityPerimeter} from a connector's
  * {@link ResourceHierarchyConnectorPrimitives}.
  *
@@ -197,6 +215,16 @@ export const buildResourceHierarchySecurityPerimeter = <
       throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
     }
     return await methods.getUser(context, userBody);
+  },
+
+  deleteUser: async ({ userId, userBody, context }) => {
+    await assertUserNamespaced(
+      methods.validation(context).user,
+      userId,
+      userBody
+    );
+    await methods.deleteUser(context, userId, userBody);
+    return null;
   },
 
   createAccessResource: async ({ resourceBody, context }) => {
@@ -249,16 +277,9 @@ export const buildResourceHierarchySecurityPerimeter = <
 
   bindAccessResource: async ({ userId, userBody, resourceId, context }) => {
     const validation = methods.validation(context);
-    const { userIsNamespacedById, userIsNamespacedByBody } =
-      validation.user ?? {};
     const { resourceIsNamespacedById } = validation.resource ?? {};
 
-    if (userIsNamespacedById && !(await userIsNamespacedById(userId))) {
-      throw new Error(`Username ${userId} is not namespaced`);
-    }
-    if (userIsNamespacedByBody && !(await userIsNamespacedByBody(userBody))) {
-      throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
-    }
+    await assertUserNamespaced(validation.user, userId, userBody);
     if (
       resourceIsNamespacedById &&
       !(await resourceIsNamespacedById(resourceId))
@@ -271,16 +292,9 @@ export const buildResourceHierarchySecurityPerimeter = <
 
   unbindAccessResource: async ({ userId, userBody, resourceId, context }) => {
     const validation = methods.validation(context);
-    const { userIsNamespacedById, userIsNamespacedByBody } =
-      validation.user ?? {};
     const { resourceIsNamespacedById } = validation.resource ?? {};
 
-    if (userIsNamespacedById && !(await userIsNamespacedById(userId))) {
-      throw new Error(`Username ${userId} is not namespaced`);
-    }
-    if (userIsNamespacedByBody && !(await userIsNamespacedByBody(userBody))) {
-      throw new Error(`Username ${JSON.stringify(userBody)} is not namespaced`);
-    }
+    await assertUserNamespaced(validation.user, userId, userBody);
     if (
       resourceIsNamespacedById &&
       !(await resourceIsNamespacedById(resourceId))
