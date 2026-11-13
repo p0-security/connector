@@ -9,6 +9,12 @@ import { readPrivateKey } from "../secrets.ts";
 /** How long Okta has to answer a call, its body included. */
 export const OKTA_TIMEOUT_MS = 10_000;
 
+/** How many times to send a call again after a 429 or 5xx answer. */
+const OKTA_RETRIES = 2;
+
+/** The longest wait before a retry. Keep retries inside the app's user lock. */
+const OKTA_MAX_RETRY_WAIT_MS = 5_000;
+
 /** The scopes the service app must be granted. The connector asks for all of them on every token. */
 export const OKTA_SCOPES = [
   "okta.apps.manage",
@@ -70,22 +76,29 @@ const parseJson = (text: string): unknown => {
   }
 };
 
-/** Sends one call, and returns the body of a 2xx answer as text. */
-const send = async (
+const isRetryable = (status: number) => status === 429 || status >= 500;
+
+/** Gets the wait before retry `attempt` (0 for the first retry). Okta gives
+ * the end of a rate limit window in `X-Rate-Limit-Reset`, in epoch seconds. */
+const retryWaitMs = (response: Response, attempt: number) => {
+  const reset = Number(response.headers.get("x-rate-limit-reset"));
+  const wait = reset > 0 ? reset * 1000 - Date.now() : 500 * 2 ** attempt;
+  return Math.min(Math.max(wait, 0), OKTA_MAX_RETRY_WAIT_MS);
+};
+
+const fetchOnce = async (
   call: OktaCall,
   url: string,
-  init: RequestInit
-): Promise<string> => {
-  let response: Response;
-  let text: string;
+  toInit: () => RequestInit
+) => {
   try {
-    response = await fetch(url, {
-      ...init,
+    const response = await fetch(url, {
+      ...toInit(),
       method: call.method,
       redirect: "manual",
       signal: AbortSignal.timeout(OKTA_TIMEOUT_MS),
     });
-    text = await response.text();
+    return { response, text: await response.text() };
   } catch (error: unknown) {
     const { code, name } = failureFacts(error);
     throw new OktaError(call, {
@@ -93,6 +106,29 @@ const send = async (
       timedOut: name === "TimeoutError",
       ...(code === undefined ? {} : { code }),
     });
+  }
+};
+
+/** Sends one call, and returns the body of a 2xx answer as text. Sends it
+ * again after a 429 or 5xx answer, up to {@link OKTA_RETRIES} times.
+ *
+ * @param toInit makes the request for each attempt
+ */
+const send = async (
+  call: OktaCall,
+  url: string,
+  toInit: () => RequestInit
+): Promise<string> => {
+  let { response, text } = await fetchOnce(call, url, toInit);
+  for (
+    let attempt = 0;
+    attempt < OKTA_RETRIES && isRetryable(response.status);
+    attempt++
+  ) {
+    await new Promise((resolve) =>
+      setTimeout(resolve, retryWaitMs(response, attempt))
+    );
+    ({ response, text } = await fetchOnce(call, url, toInit));
   }
   if (response.status < 200 || response.status >= 300) {
     const body = oktaErrorBody.safeParse(parseJson(text));
@@ -131,30 +167,34 @@ const getAccessToken = async (
   const { key, kid } = await readPrivateKey(privateKey, logger);
   const call = OKTA_ROUTES.token;
   const audience = `https://${domain}${call.route}`;
-  const now = Math.floor(Date.now() / 1000);
   const encode = (part: object) =>
     Buffer.from(JSON.stringify(part)).toString("base64url");
-  const signingInput = `${encode({ alg: "RS256", typ: "JWT", ...(kid === undefined ? {} : { kid }) })}.${encode(
-    {
-      aud: audience,
-      exp: now + 300,
-      iat: now,
-      iss: clientId,
-      jti: randomUUID(),
-      sub: clientId,
-    }
-  )}`;
-  const signature = sign("RSA-SHA256", Buffer.from(signingInput), key);
-  const text = await send(call, audience, {
+  // Okta refuses a client assertion that it saw before, so sign a new one for each attempt.
+  const toAssertion = () => {
+    const now = Math.floor(Date.now() / 1000);
+    const signingInput = `${encode({ alg: "RS256", typ: "JWT", ...(kid === undefined ? {} : { kid }) })}.${encode(
+      {
+        aud: audience,
+        exp: now + 300,
+        iat: now,
+        iss: clientId,
+        jti: randomUUID(),
+        sub: clientId,
+      }
+    )}`;
+    const signature = sign("RSA-SHA256", Buffer.from(signingInput), key);
+    return `${signingInput}.${signature.toString("base64url")}`;
+  };
+  const text = await send(call, audience, () => ({
     body: new URLSearchParams({
-      client_assertion: `${signingInput}.${signature.toString("base64url")}`,
+      client_assertion: toAssertion(),
       client_assertion_type:
         "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
       grant_type: "client_credentials",
       scope: OKTA_SCOPES.join(" "),
     }),
     headers: { Accept: "application/json" },
-  });
+  }));
   return parseAnswer(call, text, tokenAnswer).access_token;
 };
 
@@ -188,14 +228,14 @@ export const connectOkta = async (app: App, logger: Logger) => {
       body,
     }: { accept?: string; body?: unknown } = {}
   ) =>
-    send(route, `${base}${path}`, {
+    send(route, `${base}${path}`, () => ({
       headers: {
         Accept: accept,
         Authorization: `Bearer ${token}`,
         ...(body === undefined ? {} : { "Content-Type": "application/json" }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
+    }));
 
   return {
     getApp: async () =>

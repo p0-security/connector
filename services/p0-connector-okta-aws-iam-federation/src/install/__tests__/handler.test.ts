@@ -111,6 +111,29 @@ describe("install validation", () => {
     ).toBe(true);
   });
 
+  it("sends a call again after a 429, with a new client assertion", async () => {
+    vi.useFakeTimers();
+    let tokens = 0;
+    const okta = stubOkta({
+      "POST /oauth2/v1/token": () =>
+        ++tokens === 1 ? answer(429, {}) : token(),
+      [`GET ${APP_PATH}`]: () => answer(200, AWS_APP),
+      [`GET ${APP_PATH}/sso/saml/metadata`]: () => new Response(METADATA),
+    });
+
+    const result = validate();
+    await vi.runAllTimersAsync();
+
+    await expect(result).resolves.toMatchObject({ entityId: ENTITY_ID });
+    const assertions = okta.fetch.mock.calls
+      .slice(0, 2)
+      .map(([, init]) =>
+        new URLSearchParams(init?.body as string).get("client_assertion")
+      );
+    expect(assertions[0]).not.toBe(assertions[1]);
+    vi.useRealTimers();
+  });
+
   it.each([
     ["invalid_client", "insufficient_privileges"],
     ["invalid_scope", "insufficient_privileges"],
