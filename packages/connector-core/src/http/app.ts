@@ -7,6 +7,14 @@ import { errorHandler } from "./error-handler.ts";
 const logger = createLogger();
 
 /**
+ * The largest JSON body the app accepts. Express's default of 100 KB is too
+ * small for a `logs` read: a GCP role's permission list can run to
+ * thousands of entries, and the whole list travels in the body. Cloud Run
+ * accepts requests up to 32 MiB, so this stays well inside it.
+ */
+export const JSON_BODY_LIMIT = "5mb";
+
+/**
  * Builds the Express app without binding a port.
  *
  * `GET /health` is mounted ahead of `middlewares`, so a load balancer can probe
@@ -24,7 +32,7 @@ export const createExpressApp = (
     res.status(200).json({ module: moduleName });
   });
 
-  app.use(express.json());
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   for (const middleware of middlewares) {
     app.use(middleware);

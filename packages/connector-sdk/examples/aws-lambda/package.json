@@ -15,7 +15,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@p0security/connector-sdk": "^0.0.7"
+    "@p0security/connector-sdk": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",
