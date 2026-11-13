@@ -248,6 +248,14 @@ jobs:
             dockerfile: docker/connector/cloud-run/Dockerfile
             WORKSPACE: "@p0security/p0-connector-cloudflare-ai"
             context: .
+          - image: p0-connector-okta-aws-iam-federation-aws
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-okta-aws-iam-federation"
+            context: .
+          - image: p0-connector-okta-aws-iam-federation-gcloud
+            dockerfile: docker/connector/cloud-run/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-okta-aws-iam-federation"
+            context: .
 
     steps:
       - uses: actions/checkout@v5
