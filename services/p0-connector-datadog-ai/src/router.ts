@@ -13,10 +13,11 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({});
 
-export const connectorRouter = newConnectorRouter(
-  "datadog-ai" as const,
-  t,
-  { permission: permissionRouter(t) },
-  installRouter,
-  newMetadataRouter(t, datadogAiConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("datadog-ai" as const, t, {
+  accesses: { permission: permissionRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    datadogAiConnectorPackageJson.version ?? "unknown"
+  ),
+});

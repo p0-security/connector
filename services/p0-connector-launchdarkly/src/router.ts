@@ -12,12 +12,13 @@ const t = newConnectorTRPC();
 
 const installRouter = t.router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "launchdarkly" as const,
-  t,
-  {
+export const connectorRouter = newConnectorRouter("launchdarkly" as const, t, {
+  accesses: {
     "base-role": baseRoleRouter(t),
   },
-  installRouter,
-  newMetadataRouter(t, launchDarklyConnectorPackageJson.version ?? "unknown")
-);
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    launchDarklyConnectorPackageJson.version ?? "unknown"
+  ),
+});

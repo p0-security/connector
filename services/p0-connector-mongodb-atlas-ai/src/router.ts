@@ -16,7 +16,12 @@ const installRouter = router({});
 export const connectorRouter = newConnectorRouter(
   "mongodb-atlas-ai" as const,
   t,
-  { permission: permissionRouter(t) },
-  installRouter,
-  newMetadataRouter(t, mongodbAtlasAiConnectorPackageJson.version ?? "unknown")
+  {
+    accesses: { permission: permissionRouter(t) },
+    install: installRouter,
+    metadata: newMetadataRouter(
+      t,
+      mongodbAtlasAiConnectorPackageJson.version ?? "unknown"
+    ),
+  }
 );

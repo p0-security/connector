@@ -12,10 +12,11 @@ export const t = newConnectorTRPC();
 
 const installRouter = t.router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "docker" as const,
-  t,
-  { role: roleRouter(t) },
-  installRouter,
-  newMetadataRouter(t, dockerConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("docker" as const, t, {
+  accesses: { role: roleRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    dockerConnectorPackageJson.version ?? "unknown"
+  ),
+});

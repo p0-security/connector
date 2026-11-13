@@ -13,10 +13,11 @@ export const t = newConnectorTRPC();
 
 const installRouter = t.router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "clickhouse" as const,
-  t,
-  { sql: sqlRouter(t), console: consoleRouter(t) },
-  installRouter,
-  newMetadataRouter(t, clickhouseConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("clickhouse" as const, t, {
+  accesses: { sql: sqlRouter(t), console: consoleRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    clickhouseConnectorPackageJson.version ?? "unknown"
+  ),
+});

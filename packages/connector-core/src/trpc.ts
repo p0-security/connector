@@ -41,35 +41,52 @@ const singleEntryRecord = <Key extends string, Value>(
   value: Value
 ): Record<Key, Value> => ({ [key]: value }) as Record<Key, Value>;
 
-export const newConnectorRouter = <
-  Namespace extends string = string,
-  TRPCInstance extends AnyConnectorTRPCInstance = AnyConnectorTRPCInstance,
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  AccessRouters extends Record<string, AccessRouterTypes> = {},
-  InstallRouter extends AnyRouter = AnyRouter,
-  MetadataRouter extends AnyRouter = AnyRouter,
->(
-  namespace: Namespace,
-  t: TRPCInstance,
-  accesses: AccessRouters,
-  install: InstallRouter,
-  metadata: MetadataRouter
-) => {
-  const { router } = t;
-  const namespaced = router({
-    accesses: router(accesses),
-    install,
-    metadata,
-  });
-  return router(singleEntryRecord(namespace, namespaced));
+/** The routes every connector serves, whatever it connects P0 to. */
+type CommonRoutes<
+  InstallRouter extends AnyRouter,
+  MetadataRouter extends AnyRouter,
+> = {
+  install: InstallRouter;
+  metadata: MetadataRouter;
 };
 
 /**
- * Defines the complete type representation of the TRPC router on the connector
- * @summary Defines the complete type representation of the TRPC router on the connector
- *
+ * The routes of a connector that provisions access in a resource
+ * integration: one access router per access type, under `accesses`.
  */
-export type ConnectorRouter<
+export type ResourceIntegrationRoutes<
+  AccessRouters extends Record<string, AccessRouterTypes> = Record<
+    string,
+    AccessRouterTypes
+  >,
+  InstallRouter extends AnyRouter = AnyRouter,
+  MetadataRouter extends AnyRouter = AnyRouter,
+> = CommonRoutes<InstallRouter, MetadataRouter> & { accesses: AccessRouters };
+
+/** The routes a connector serves under its namespace. */
+export type ConnectorRoutes = ResourceIntegrationRoutes;
+
+/**
+ * Builds a connector's root router, which serves `routes` under `namespace`.
+ *
+ * `accesses` is a plain record of routers; tRPC mounts a nested record exactly
+ * as it would the router built from it.
+ */
+export const newConnectorRouter = <
+  Namespace extends string = string,
+  TRPCInstance extends AnyConnectorTRPCInstance = AnyConnectorTRPCInstance,
+  Routes extends ConnectorRoutes = ConnectorRoutes,
+>(
+  namespace: Namespace,
+  t: TRPCInstance,
+  routes: Routes
+) => t.router(singleEntryRecord(namespace, routes));
+
+/**
+ * Defines the complete type representation of a resource integration
+ * connector's TRPC router
+ */
+export type ResourceIntegrationConnectorRouter<
   Namespace extends string = string,
   TRPCInstance extends AnyConnectorTRPCInstance = AnyConnectorTRPCInstance,
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -80,10 +97,33 @@ export type ConnectorRouter<
   typeof newConnectorRouter<
     Namespace,
     TRPCInstance,
-    AccessLifecycleRouters,
-    InstallRouter,
-    MetadataRouter
+    ResourceIntegrationRoutes<
+      AccessLifecycleRouters,
+      InstallRouter,
+      MetadataRouter
+    >
   >
+>;
+
+/**
+ * Defines the complete type representation of the TRPC router on the
+ * connector, whichever kind of connector it is.
+ * @summary Defines the complete type representation of the TRPC router on the connector
+ *
+ */
+export type ConnectorRouter<
+  Namespace extends string = string,
+  TRPCInstance extends AnyConnectorTRPCInstance = AnyConnectorTRPCInstance,
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  AccessLifecycleRouters extends Record<string, AccessRouterTypes> = {},
+  InstallRouter extends AnyRouter = AnyRouter,
+  MetadataRouter extends AnyRouter = AnyRouter,
+> = ResourceIntegrationConnectorRouter<
+  Namespace,
+  TRPCInstance,
+  AccessLifecycleRouters,
+  InstallRouter,
+  MetadataRouter
 >;
 
 /**

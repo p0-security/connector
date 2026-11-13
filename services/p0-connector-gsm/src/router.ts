@@ -14,10 +14,8 @@ export const baseProcedure = t.procedure;
 // Currently no-op; should have it's IAM permissions set by P0 backend prior to running?
 const installRouter = router({});
 
-export const connectorRouter = newConnectorRouter(
-  "gsm" as const,
-  t,
-  { secrets: secretsRouter(t) },
-  installRouter,
-  newMetadataRouter(t, gsmConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("gsm" as const, t, {
+  accesses: { secrets: secretsRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(t, gsmConnectorPackageJson.version ?? "unknown"),
+});

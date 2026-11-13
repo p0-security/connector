@@ -15,10 +15,11 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "redshift-ai" as const,
-  t,
-  { role: roleRouter(t), objects: objectsRouter(t) },
-  installRouter,
-  newMetadataRouter(t, redshiftAiConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("redshift-ai" as const, t, {
+  accesses: { role: roleRouter(t), objects: objectsRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    redshiftAiConnectorPackageJson.version ?? "unknown"
+  ),
+});

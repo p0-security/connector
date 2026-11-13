@@ -13,10 +13,11 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({});
 
-export const connectorRouter = newConnectorRouter(
-  "gitlab-ai" as const,
-  t,
-  { permission: permissionRouter(t) },
-  installRouter,
-  newMetadataRouter(t, gitlabAiConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("gitlab-ai" as const, t, {
+  accesses: { permission: permissionRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    gitlabAiConnectorPackageJson.version ?? "unknown"
+  ),
+});

@@ -17,10 +17,11 @@ const installRouter = t.router({
   project: projectRouter(t),
 });
 
-export const connectorRouter = newConnectorRouter(
-  "jira-ai" as const,
-  t,
-  { role: roleRouter(t), token: tokenRouter(t) },
-  installRouter,
-  newMetadataRouter(t, jiraAiConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("jira-ai" as const, t, {
+  accesses: { role: roleRouter(t), token: tokenRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    jiraAiConnectorPackageJson.version ?? "unknown"
+  ),
+});

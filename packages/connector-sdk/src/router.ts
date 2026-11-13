@@ -65,19 +65,17 @@ export const newCustomAppConnectorRouter = (
 ) => {
   const t = newConnectorTRPC();
 
-  return newConnectorRouter(
-    CUSTOM_APP_NAMESPACE,
-    t,
-    {
+  return newConnectorRouter(CUSTOM_APP_NAMESPACE, t, {
+    accesses: {
       [CUSTOM_APP_ACCESS]: newResourceRootRouter(
         t,
         CustomAppConnectorSpec[CUSTOM_APP_ACCESS],
         (ctx) => toResourceRootPrimitives(params.actions(ctx))
       ),
     },
-    t.router({}),
-    newMetadataRouter(t, params.connectorVersion)
-  );
+    install: t.router({}),
+    metadata: newMetadataRouter(t, params.connectorVersion),
+  });
 };
 
 export type CustomAppConnectorRouter = ReturnType<

@@ -15,10 +15,8 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "databricks" as const,
-  t,
-  { privilege: privilegeRouter(t), admin: adminRouter(t) },
-  installRouter,
-  newMetadataRouter(t, CONNECTOR_VERSION)
-);
+export const connectorRouter = newConnectorRouter("databricks" as const, t, {
+  accesses: { privilege: privilegeRouter(t), admin: adminRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(t, CONNECTOR_VERSION),
+});

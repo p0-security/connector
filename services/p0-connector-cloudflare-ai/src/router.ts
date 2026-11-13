@@ -14,10 +14,11 @@ export const baseProcedure = t.procedure;
 
 const installRouter = router({ validation: validationRouter(t) });
 
-export const connectorRouter = newConnectorRouter(
-  "cloudflare-ai" as const,
-  t,
-  { permission: permissionRouter(t) },
-  installRouter,
-  newMetadataRouter(t, cloudflareAiConnectorPackageJson.version ?? "unknown")
-);
+export const connectorRouter = newConnectorRouter("cloudflare-ai" as const, t, {
+  accesses: { permission: permissionRouter(t) },
+  install: installRouter,
+  metadata: newMetadataRouter(
+    t,
+    cloudflareAiConnectorPackageJson.version ?? "unknown"
+  ),
+});
