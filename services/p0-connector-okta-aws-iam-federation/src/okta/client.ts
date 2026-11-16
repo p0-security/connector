@@ -53,8 +53,9 @@ export const OKTA_ROUTES = {
 } as const satisfies Record<string, OktaCall>;
 
 export type OktaFailure =
-  /** An answer outside 2xx. `code` is Okta's `errorCode`, or the OAuth `error`. */
-  | { kind: "status"; status: number; code?: string }
+  /** An answer outside 2xx. `code` is Okta's `errorCode`, or the OAuth
+   * `error`. `summary` is Okta's `errorCauses`, or else its `errorSummary`. */
+  | { kind: "status"; status: number; code?: string; summary?: string }
   /** A 2xx with a body Okta wouldn't send. */
   | { kind: "unexpected" }
   /** No answer. */
@@ -77,7 +78,20 @@ export class OktaError extends Error {
 const oktaErrorBody = z.object({
   errorCode: z.string().optional().catch(undefined),
   error: z.string().optional().catch(undefined),
+  errorSummary: z.string().optional().catch(undefined),
+  errorCauses: z
+    .array(z.object({ errorSummary: z.string() }))
+    .optional()
+    .catch(undefined),
 });
+
+const toSummary = ({
+  errorCauses,
+  errorSummary,
+}: z.infer<typeof oktaErrorBody>) =>
+  errorCauses?.length
+    ? errorCauses.map((cause) => cause.errorSummary).join("; ")
+    : errorSummary;
 
 const parseJson = (text: string): unknown => {
   try {
@@ -146,10 +160,12 @@ const send = async (
     const code = body.success
       ? (body.data.errorCode ?? body.data.error)
       : undefined;
+    const summary = body.success ? toSummary(body.data) : undefined;
     throw new OktaError(call, {
       kind: "status",
       status: response.status,
       ...(code === undefined ? {} : { code }),
+      ...(summary === undefined ? {} : { summary }),
     });
   }
   return text;
@@ -220,7 +236,12 @@ const oktaApp = z.looseObject({
   status: z.string(),
   signOnMode: z.string(),
   settings: z.looseObject({
-    app: z.looseObject({ joinAllRoles: z.boolean().optional() }).optional(),
+    app: z
+      .looseObject({
+        identityProviderArn: z.string().nullish(),
+        joinAllRoles: z.boolean().optional(),
+      })
+      .optional(),
   }),
 });
 

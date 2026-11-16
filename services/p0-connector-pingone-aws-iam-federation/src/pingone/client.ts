@@ -46,8 +46,9 @@ export const PINGONE_ROUTES = {
 } as const satisfies Record<string, PingOneCall>;
 
 export type PingOneFailure =
-  /** An answer outside 2xx. `code` is PingOne's `code`, or the OAuth `error`. */
-  | { kind: "status"; status: number; code?: string }
+  /** An answer outside 2xx. `code` is PingOne's `code`, or the OAuth `error`.
+   * `summary` is PingOne's `details`, or else its `message`. */
+  | { kind: "status"; status: number; code?: string; summary?: string }
   /** A 2xx with a body PingOne wouldn't send. */
   | { kind: "unexpected" }
   /** No answer. */
@@ -70,7 +71,23 @@ export class PingOneError extends Error {
 const pingOneErrorBody = z.object({
   code: z.string().optional().catch(undefined),
   error: z.string().optional().catch(undefined),
+  message: z.string().optional().catch(undefined),
+  details: z
+    .array(z.object({ message: z.string(), target: z.string().optional() }))
+    .optional()
+    .catch(undefined),
 });
+
+const toSummary = ({ details, message }: z.infer<typeof pingOneErrorBody>) =>
+  details?.length
+    ? details
+        .map((detail) =>
+          detail.target === undefined
+            ? detail.message
+            : `${detail.target} ${detail.message}`
+        )
+        .join("; ")
+    : message;
 
 const parseJson = (text: string): unknown => {
   try {
@@ -130,10 +147,12 @@ const send = async (
   if (response.status < 200 || response.status >= 300) {
     const body = pingOneErrorBody.safeParse(parseJson(text));
     const code = body.success ? (body.data.code ?? body.data.error) : undefined;
+    const summary = body.success ? toSummary(body.data) : undefined;
     throw new PingOneError(call, {
       kind: "status",
       status: response.status,
       ...(code === undefined ? {} : { code }),
+      ...(summary === undefined ? {} : { summary }),
     });
   }
   return text;
@@ -301,7 +320,8 @@ export const connectPingOne = async (app: App, logger: Logger) => {
       values: string[]
     ) => {
       await call(PINGONE_ROUTES.updateUser, `/users/${userId}`, {
-        [attribute]: values,
+        // PingOne refuses an empty list; null clears the attribute.
+        [attribute]: values.length > 0 ? values : null,
       });
     },
 

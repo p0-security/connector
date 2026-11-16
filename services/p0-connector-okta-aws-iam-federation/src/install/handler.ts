@@ -91,9 +91,14 @@ export const getInstallValidation = async (
   logger: Logger
 ): Promise<InstallValidation> => {
   const okta = await connect(input, logger);
-  const { label } = await getAwsApp(okta);
+  const { label, settings } = await getAwsApp(okta);
   const entityId = await getEntityId(okta);
-  return { entityId, label };
+  const identityProviderArn = settings.app?.identityProviderArn || undefined;
+  return {
+    entityId,
+    label,
+    ...(identityProviderArn === undefined ? {} : { identityProviderArn }),
+  };
 };
 
 /**

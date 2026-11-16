@@ -145,6 +145,36 @@ describe("addRole", () => {
       type: "insufficient_privileges",
     });
   });
+
+  it("names PingOne's reason for refusing the update", async () => {
+    stubPingOne({
+      [`POST auth.pingone.com/${ENVIRONMENT_ID}/as/token`]: () =>
+        answer(200, { access_token: "at", token_type: "Bearer" }),
+      [LIST_USERS]: () => answer(200, { _embedded: { users: [userWith()] } }),
+      [PATCH_USER]: () =>
+        answer(400, {
+          code: "INVALID_DATA",
+          message: "Validation Error",
+          details: [
+            {
+              code: "INVALID_VALUE",
+              target: "awsRoles",
+              message: "must have at least one element provided",
+            },
+          ],
+        }),
+    });
+
+    const error = await connectorError(() => addRole(ASSIGNMENT, logger));
+
+    expect(error.data).toMatchObject({
+      payload: { code: "INVALID_DATA", status: 400 },
+      type: "validation_error",
+    });
+    expect(error.message).toContain(
+      "awsRoles must have at least one element provided"
+    );
+  });
 });
 
 describe("removeRole", () => {
@@ -156,12 +186,12 @@ describe("removeRole", () => {
     expect(patchBody(stub)).toEqual({ awsRoles: [OTHER] });
   });
 
-  it("writes an empty list when the last role goes", async () => {
+  it("clears the attribute when the last role goes", async () => {
     const stub = pingOne([userWith([ROLE])]);
 
     await removeRole(ASSIGNMENT, logger);
 
-    expect(patchBody(stub)).toEqual({ awsRoles: [] });
+    expect(patchBody(stub)).toEqual({ awsRoles: null });
   });
 
   it.each([

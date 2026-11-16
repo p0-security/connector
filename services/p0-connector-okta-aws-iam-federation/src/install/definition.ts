@@ -17,6 +17,9 @@ export const installValidation = z.object({
   label: z.string(),
   /** The entity ID in the app's SAML metadata. The AWS SAML provider must have the same one. */
   entityId: z.string().min(1),
+  /** The SAML provider ARN that the app sends with each role. Absent when the
+   * app has none. */
+  identityProviderArn: z.string().min(1).optional(),
 });
 
 export type InstallValidation = z.infer<typeof installValidation>;

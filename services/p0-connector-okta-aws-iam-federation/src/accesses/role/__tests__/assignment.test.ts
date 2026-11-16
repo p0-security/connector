@@ -202,4 +202,30 @@ describe("removeRole", () => {
       type: "insufficient_privileges",
     });
   });
+
+  it("names a role that the app doesn't list", async () => {
+    const cause = "samlRoles: 'AdminRole' is not a valid value";
+    stubOkta({
+      "POST /oauth2/v1/token": () =>
+        answer(200, { access_token: "at", token_type: "Bearer" }),
+      "GET /api/v1/users": () => answer(200, [USER]),
+      [`GET ${APP_USER}`]: () =>
+        answer(200, { profile: { samlRoles: [OTHER] } }),
+      [`POST ${APP_USER}`]: () =>
+        answer(400, {
+          errorCode: "E0000001",
+          errorSummary: "Api validation failed: samlRoles",
+          errorCauses: [{ errorSummary: cause }],
+        }),
+    });
+
+    const error = await connectorError(() => addRole(INPUT, logger));
+
+    expect(error.data).toMatchObject({
+      payload: { code: "E0000001", status: 400 },
+      type: "validation_error",
+    });
+    expect(error.message).toContain(cause);
+    expect(error.message).toContain("refresh the app's data");
+  });
 });

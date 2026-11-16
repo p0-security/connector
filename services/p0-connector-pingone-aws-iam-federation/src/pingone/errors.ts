@@ -43,7 +43,7 @@ const fromPingOneError = ({ call, failure }: PingOneError): ConnectorError => {
         type: "unknown",
       });
     case "status": {
-      const { status, code } = failure;
+      const { status, code, summary } = failure;
       const payload = { status, ...(code === undefined ? {} : { code }) };
       const tokenError =
         call === PINGONE_ROUTES.token && code !== undefined
@@ -86,7 +86,7 @@ const fromPingOneError = ({ call, failure }: PingOneError): ConnectorError => {
       }
       return failed(
         "validation_error",
-        `PingOne refused ${method} ${route} with ${status}.`
+        `PingOne refused ${method} ${route} with ${status}${summary === undefined ? "" : `: ${summary}`}.`
       );
     }
     default:
