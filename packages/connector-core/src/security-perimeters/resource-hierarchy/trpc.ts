@@ -41,6 +41,7 @@ export const newResourceHierarchyRouter = <
   return router({
     provisionUser: procedure.input(p.provisionUser).mutation(({ input, ctx }) => ctx.perimeter.provisionUser(input)),
     identifyUser: procedure.input( p.identifyUser).mutation(({ input, ctx }) => ctx.perimeter.identifyUser(input)),
+    deleteUser: procedure.input(p.deleteUser).mutation(({ input, ctx }) => ctx.perimeter.deleteUser(input)),
     createAccessResource: procedure.input(p.createAccessResource).mutation(({ input, ctx }) => ctx.perimeter.createAccessResource(input)),
     deleteAccessResource: procedure.input(p.deleteAccessResource).mutation(({ input, ctx }) => ctx.perimeter.deleteAccessResource(input)),
     addPoliciesToResource: procedure.input(p.addPoliciesToResource).mutation(({ input, ctx }) => ctx.perimeter.addPoliciesToResource(input)),

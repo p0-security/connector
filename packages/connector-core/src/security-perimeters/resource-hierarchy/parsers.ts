@@ -120,6 +120,7 @@ export const newZodResourceHierarchyParsers = <
     requestContext: requestContext.parse,
     identifyUser: zodParser({ userBody, context: requestContext }),
     provisionUser: zodParser({ userBody, context: requestContext }),
+    deleteUser: zodParser({ userId, userBody, context: requestContext }),
     addPoliciesToResource: zodParser({ resourceId, policies: z.array(policy), context: requestContext }),
     removePoliciesFromResource: zodParser({ resourceId, policies: z.array(policy), context: requestContext }),
     createAccessResource: zodParser({ resourceBody, context: requestContext }),

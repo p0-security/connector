@@ -53,3 +53,42 @@ describe.each(["bindAccessResource", "unbindAccessResource"] as const)(
     });
   }
 );
+
+describe("deleteUser user namespace check", () => {
+  it("rejects a userBody without the p0 prefix", async () => {
+    vi.mocked(newClient).mockClear();
+    await expect(
+      client.deleteUser({ userId: "p0_user", userBody: "other_user", context })
+    ).rejects.toThrow('Username "other_user" is not namespaced');
+    expect(newClient).not.toHaveBeenCalled();
+  });
+
+  it("rejects a userId without the p0 prefix", async () => {
+    vi.mocked(newClient).mockClear();
+    await expect(
+      client.deleteUser({ userId: "other_user", userBody: "p0_user", context })
+    ).rejects.toThrow("Username other_user is not namespaced");
+    expect(newClient).not.toHaveBeenCalled();
+  });
+
+  it("lets a p0-prefixed user through to the database", async () => {
+    await expect(
+      client.deleteUser({ userId: "p0_user", userBody: "p0_user", context })
+    ).rejects.toThrow("db reached");
+  });
+
+  // CloudSQL usernames are IAM emails, so the user namespace check is off.
+  it("skips the namespace check on CloudSQL", async () => {
+    const cloudSqlContext = {
+      ...context,
+      db: { ...context.db, cloud: "cloudsql" as const },
+    };
+    await expect(
+      client.deleteUser({
+        userId: "alice@example.com",
+        userBody: "alice@example.com",
+        context: cloudSqlContext,
+      })
+    ).rejects.toThrow("db reached");
+  });
+});
