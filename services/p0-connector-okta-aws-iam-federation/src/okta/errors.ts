@@ -54,7 +54,7 @@ const fromOktaError = ({ call, failure }: OktaError): ConnectorError => {
         type: "unknown",
       });
     case "status": {
-      const { status, code } = failure;
+      const { status, code, summary } = failure;
       const payload = { status, ...(code === undefined ? {} : { code }) };
       const tokenError =
         call === OKTA_ROUTES.token && code !== undefined
@@ -95,9 +95,13 @@ const fromOktaError = ({ call, failure }: OktaError): ConnectorError => {
           `Okta answered ${method} ${route} with ${status}. Try again later.`
         );
       }
+      const reason = summary === undefined ? "" : `: ${summary}`;
+      const hint = summary?.includes("samlRoles")
+        ? " Each of the user's SAML roles must be one that the app lists. In Okta, refresh the app's data, and remove from the user the roles that the app doesn't list."
+        : "";
       return failed(
         "validation_error",
-        `Okta refused ${method} ${route} with ${status}.`
+        `Okta refused ${method} ${route} with ${status}${reason}.${hint}`
       );
     }
     default:

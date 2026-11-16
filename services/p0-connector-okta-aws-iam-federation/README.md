@@ -29,7 +29,8 @@ DPoP off, and these scopes:
 3. `app`: the app is an active AWS Account Federation app with SAML 2.0.
 4. `metadata`: the app's SAML metadata has an entity ID.
 
-It returns the app's `label` and `entityId`. A failed check is thrown with its
+It returns the app's `label`, `entityId` and, when the app has one, its
+`identityProviderArn`. A failed check is thrown with its
 name in `payload.step`.
 
 ## Install configuration

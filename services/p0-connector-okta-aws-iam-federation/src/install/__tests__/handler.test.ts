@@ -78,6 +78,22 @@ describe("install validation", () => {
     ]);
   });
 
+  it("returns the app's Identity Provider ARN when it has one", async () => {
+    const arn = "arn:aws:iam::123456789012:saml-provider/okta";
+    oktaWith({
+      app: {
+        ...AWS_APP,
+        settings: {
+          app: { ...AWS_APP.settings.app, identityProviderArn: arn },
+        },
+      },
+    });
+
+    await expect(validate()).resolves.toMatchObject({
+      identityProviderArn: arn,
+    });
+  });
+
   it("asks for a token with a client assertion signed by the private key", async () => {
     const okta = oktaWith();
 
