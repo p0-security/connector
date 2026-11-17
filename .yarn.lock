@@ -2904,6 +2904,25 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@p0security/p0-connector-pingfederate-aws-iam-federation@workspace:services/p0-connector-pingfederate-aws-iam-federation":
+  version: 0.0.0-use.local
+  resolution: "@p0security/p0-connector-pingfederate-aws-iam-federation@workspace:services/p0-connector-pingfederate-aws-iam-federation"
+  dependencies:
+    "@p0security/connector-core": "workspace:^"
+    "@p0security/connector-secret-manager-client": "workspace:^"
+    "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
+    "@trpc/server": "npm:^11.10.0"
+    esbuild: "npm:^0.27.2"
+    ldapts: "npm:^9.2.0"
+    prettier: "npm:^3.8.1"
+    typescript: "npm:^5.9.2"
+    vitest: "npm:^4.0.18"
+    zod: "npm:^4.3.6"
+  bin:
+    p0-connector-pingfederate-aws-iam-federation: ./dist/run.js
+  languageName: unknown
+  linkType: soft
+
 "@p0security/p0-connector-pingone-aws-iam-federation@workspace:services/p0-connector-pingone-aws-iam-federation":
   version: 0.0.0-use.local
   resolution: "@p0security/p0-connector-pingone-aws-iam-federation@workspace:services/p0-connector-pingone-aws-iam-federation"
@@ -6241,6 +6260,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"ldapts@npm:^9.2.0":
+  version: 9.2.0
+  resolution: "ldapts@npm:9.2.0"
+  dependencies:
+    strict-event-emitter-types: "npm:2.0.0"
+  checksum: 10c0/113c206e6cb2b17988d516118f0708b476f8afefbb35170f1f1fe34c740993941f5831fcd5bacb710321eb7e544ec4e9fd99e06dcdc8c4e161d5b107ab2e3e85
+  languageName: node
+  linkType: hard
+
 "levn@npm:^0.4.1":
   version: 0.4.1
   resolution: "levn@npm:0.4.1"
@@ -7801,6 +7829,13 @@ __metadata:
   version: 4.3.0
   resolution: "std-env@npm:4.3.0"
   checksum: 10c0/1e90dc69f32f853375c6de45dbe7219c8399e2a3ab3a972fdcd1cf3c20fe0e3c13bf58d57d6193b551d37a81c50dfb3f51e07774e9e48a7dc5a22dabcad7acbd
+  languageName: node
+  linkType: hard
+
+"strict-event-emitter-types@npm:2.0.0":
+  version: 2.0.0
+  resolution: "strict-event-emitter-types@npm:2.0.0"
+  checksum: 10c0/7a2985b81908c2a7d1de10afe3be1de3423b8ce6188dc32aeb3dbaf66d4ac3f11029d6931c67d972a3bb976bbd04d27ee090eeed1cbd089c5ba3e899a04ed1b7
   languageName: node
   linkType: hard
 
