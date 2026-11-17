@@ -31,7 +31,7 @@ const DELIVERY_TIMEOUT_SECONDS = 30;
 // script holds the instance's P0 lock, which P0's SSH integration takes
 // too, and the document's own default is an hour. It is past the deadline,
 // so SSM never stops a run this client still waits for.
-const EXECUTION_TIMEOUT_SECONDS = 30;
+export const EXECUTION_TIMEOUT_SECONDS = 30;
 
 const POLL_INTERVALS_MS = [500, 500, 1000];
 
