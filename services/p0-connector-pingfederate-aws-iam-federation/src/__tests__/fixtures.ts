@@ -1,4 +1,7 @@
 import { ConnectorError, createLogger } from "@p0security/connector-core";
+import { vi } from "vitest";
+
+import type { Scim } from "../pingfederate/scim.ts";
 
 export const AWS_SECRET = {
   manager: "aws" as const,
@@ -27,4 +30,12 @@ export const connectorError = async (run: () => Promise<unknown>) => {
     throw error;
   }
   throw new Error("expected the call to throw");
+};
+
+/** A SCIM client whose calls a test sets. */
+export const scim = {
+  findUsers: vi.fn<Scim["findUsers"]>(),
+  getExtensionAttributes: vi.fn<Scim["getExtensionAttributes"]>(),
+  addValue: vi.fn<Scim["addValue"]>(),
+  removeValue: vi.fn<Scim["removeValue"]>(),
 };

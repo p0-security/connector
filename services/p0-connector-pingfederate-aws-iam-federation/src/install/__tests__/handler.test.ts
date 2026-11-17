@@ -6,6 +6,7 @@ import {
   SCIM_PASSWORD,
   connectorError,
   logger,
+  scim,
 } from "../../__tests__/fixtures.ts";
 import type * as metadataModule from "../../pingfederate/metadata.ts";
 import {
@@ -26,11 +27,6 @@ vi.mock("../../pingfederate/scim.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof scimModule>()),
   scimClient: vi.fn(),
 }));
-
-const scim = {
-  findUsers: vi.fn<scimModule.Scim["findUsers"]>(),
-  getExtensionAttributes: vi.fn<scimModule.Scim["getExtensionAttributes"]>(),
-};
 
 const AWS_ROLE = {
   name: "awsRole",

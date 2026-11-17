@@ -48,7 +48,13 @@ export type Scim = {
   getExtensionAttributes(): Promise<SchemaAttribute[] | undefined>;
   /** The SCIM IDs of the users whose work email is `email`, `null` for a user PingFederate gave no ID. */
   findUsers(email: string): Promise<(string | null)[]>;
+  /** Adds one value to a custom attribute. Does nothing if the user has it. */
+  addValue(id: string, attribute: string, value: string): Promise<void>;
+  /** Removes one value from a custom attribute. Does nothing if the user doesn't have it. */
+  removeValue(id: string, attribute: string, value: string): Promise<void>;
 };
+
+const PATCH_OP = "urn:ietf:params:scim:api:messages:2.0:PatchOp";
 
 /**
  * A client for PingFederate's SCIM 2.0 inbound provisioning endpoint. The
@@ -77,6 +83,16 @@ export const scimClient = (
     return json;
   };
 
+  // PingFederate reads the user, changes the list, and writes all of it back:
+  // two PATCHes for one user at the same time can lose one of them.
+  const patch = async (id: string, operation: object) => {
+    await send({
+      method: "PATCH",
+      path: `/Users/${encodeURIComponent(id)}`,
+      body: JSON.stringify({ schemas: [PATCH_OP], Operations: [operation] }),
+    });
+  };
+
   return {
     getExtensionAttributes: async () => {
       try {
@@ -101,5 +117,16 @@ export const scimClient = (
       });
       return userList.parse(found).Resources.map(({ id }) => id ?? null);
     },
+    addValue: (id, attribute, value) =>
+      patch(id, {
+        op: "add",
+        path: `${SCIM_EXTENSION}:${attribute}`,
+        value: [value],
+      }),
+    removeValue: (id, attribute, value) =>
+      patch(id, {
+        op: "remove",
+        path: `${SCIM_EXTENSION}:${attribute}[value eq ${JSON.stringify(value)}]`,
+      }),
   };
 };
