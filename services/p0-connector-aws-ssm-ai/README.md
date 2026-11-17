@@ -27,7 +27,12 @@ the secret's name. P0 chooses both. The user id is the secret's ARN.
   runs `set-sudo on` when any policy has `sudo: true`, and `set-sudo off` otherwise.
 - `deleteUser` runs `remove-key`, and deletes the secret only after that succeeds. The Linux
   user stays. It refuses an ARN that doesn't name `secretName` in the request's region.
-- `list` is not there yet.
+- `list` takes `{ type: "instance", context: { region } }`. It returns one item for each Linux
+  EC2 instance that SSM manages in the region and can reach now
+  (`ssm:DescribeInstanceInformation`, every page). It leaves out Windows and macOS instances,
+  because a grant on one fails. The key is the instance id. The label is the instance's `Name`
+  tag (`ec2:DescribeTags`, one call for each page of instances), or the id when the instance
+  has no `Name` tag or EC2 refuses the call.
 
 A revoke fails when it can't remove access from the instance. `setPoliciesForUser` fails when
 `set-sudo off` fails, and `deleteUser` fails when `remove-key` fails, so a stopped instance or
@@ -324,7 +329,8 @@ The execution role needs `ssm:DescribeInstanceInformation`, `ssm:SendCommand` on
 `AWS-RunShellScript` document and on the instances, `ssm:GetCommandInvocation`, and
 `ssm:ListCommands`. It never cancels a command, so it doesn't need `ssm:CancelCommand`. To end
 open sessions it needs `ssm:DescribeSessions` and
-`ssm:TerminateSession`.
+`ssm:TerminateSession`. To label the instances it lists with their `Name` tags, it needs
+`ec2:DescribeTags`.
 
 On the secrets P0 names, in the vault's region, it needs `secretsmanager:CreateSecret`,
 `secretsmanager:DescribeSecret`, `secretsmanager:PutSecretValue` and

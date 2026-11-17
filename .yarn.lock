@@ -88,6 +88,23 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@aws-sdk/client-ec2@npm:^3.981.0":
+  version: 3.1171.0
+  resolution: "@aws-sdk/client-ec2@npm:3.1171.0"
+  dependencies:
+    "@aws-sdk/core": "npm:^3.981.0"
+    "@aws-sdk/credential-provider-node": "npm:^3.972.97"
+    "@aws-sdk/middleware-sdk-ec2": "npm:^3.972.72"
+    "@aws-sdk/types": "npm:^3.975.1"
+    "@smithy/core": "npm:^3.40.0"
+    "@smithy/fetch-http-handler": "npm:^5.8.1"
+    "@smithy/node-http-handler": "npm:^4.14.2"
+    "@smithy/types": "npm:^4.20.0"
+    tslib: "npm:^2.6.2"
+  checksum: 10c0/d6295f5b35c27996e4c259649a1514a3eae2d831ab2bf0f48b279669d3c4c79adaf852f3600c6002885c8303f6d6d90a8a35b6573ed81e3b41b389581a55c9f3
+  languageName: node
+  linkType: hard
+
 "@aws-sdk/client-lambda@npm:^3.975.0":
   version: 3.1119.0
   resolution: "@aws-sdk/client-lambda@npm:3.1119.0"
@@ -1124,6 +1141,20 @@ __metadata:
     "@smithy/types": "npm:^4.19.0"
     tslib: "npm:^2.6.2"
   checksum: 10c0/06ef8bed9122f33669ee9821c8d207e409405465b476550f4abca8206b497000ca599ddc9b44c4da7ff4217d4af614b516243f1e2313f6ca668c55f9d86daa93
+  languageName: node
+  linkType: hard
+
+"@aws-sdk/middleware-sdk-ec2@npm:^3.972.72":
+  version: 3.972.72
+  resolution: "@aws-sdk/middleware-sdk-ec2@npm:3.972.72"
+  dependencies:
+    "@aws-sdk/core": "npm:^3.981.0"
+    "@aws-sdk/types": "npm:^3.975.1"
+    "@smithy/core": "npm:^3.40.0"
+    "@smithy/signature-v4": "npm:^5.7.5"
+    "@smithy/types": "npm:^4.20.0"
+    tslib: "npm:^2.6.2"
+  checksum: 10c0/d2900e7fba0d291a543dd8ae123349c4a7ba92e02a77aa9cbb6366072168e7042b5d20905b79f0e71b0f905e8d2d9eec89fc08bcf7823f19fc8496924ae59f93
   languageName: node
   linkType: hard
 
@@ -2632,6 +2663,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@p0security/p0-connector-aws-ssm-ai@workspace:services/p0-connector-aws-ssm-ai"
   dependencies:
+    "@aws-sdk/client-ec2": "npm:^3.981.0"
     "@aws-sdk/client-secrets-manager": "npm:^3.975.0"
     "@aws-sdk/client-ssm": "npm:^3.981.0"
     "@p0security/connector-core": "workspace:^"

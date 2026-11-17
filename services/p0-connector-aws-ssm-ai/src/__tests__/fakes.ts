@@ -1,6 +1,12 @@
+import {
+  DescribeTagsCommand,
+  type DescribeTagsCommandInput,
+} from "@aws-sdk/client-ec2";
 import { DescribeSecretCommand } from "@aws-sdk/client-secrets-manager";
 import {
+  DescribeInstanceInformationCommand,
   GetCommandInvocationCommand,
+  type InstanceInformation,
   SendCommandCommand,
 } from "@aws-sdk/client-ssm";
 import { ConnectorError, type Logger } from "@p0security/connector-core";
@@ -89,6 +95,8 @@ type FakeInstanceState = {
   unreachable: boolean;
   /** The host keys `ensure-key` prints. */
   hostKeys: string[];
+  /** What SSM answers when asked for its managed instances. */
+  managed: InstanceInformation[];
 };
 
 /**
@@ -103,7 +111,11 @@ export const fakeInstance = () => {
   const sudo = new Map<string, string>();
   /** The arguments of every script that ran, in order. */
   const actions: string[][] = [];
-  const state: FakeInstanceState = { unreachable: false, hostKeys: HOST_KEYS };
+  const state: FakeInstanceState = {
+    unreachable: false,
+    hostKeys: HOST_KEYS,
+    managed: [],
+  };
   let invocation: Record<string, unknown> = {};
 
   const ok = (lines: string[]) => ({
@@ -157,6 +169,9 @@ export const fakeInstance = () => {
       return { Command: { CommandId: `command-${actions.length}` } };
     }
     if (command instanceof GetCommandInvocationCommand) return invocation;
+    if (command instanceof DescribeInstanceInformationCommand) {
+      return { InstanceInformationList: state.managed };
+    }
     return {};
   };
 
@@ -165,6 +180,41 @@ export const fakeInstance = () => {
     wait: async () => {},
   };
   return { ssm, keys, sudo, actions, state };
+};
+
+type FakeEc2State = {
+  /** Every call throws this. */
+  fail?: Error;
+  /** The most tags one answer holds. */
+  pageSize?: number;
+};
+
+/**
+ * EC2 with these `Name` tags, by instance id. It answers `DescribeTags` for
+ * the instances the call names, and keeps each call's input.
+ */
+export const fakeEc2 = (names: Record<string, string> = {}) => {
+  const calls: DescribeTagsCommandInput[] = [];
+  const state: FakeEc2State = {};
+  const send = async (command: Command) => {
+    if (!(command instanceof DescribeTagsCommand)) {
+      throw new Error(`unexpected AWS call ${command.constructor.name}`);
+    }
+    calls.push(command.input);
+    if (state.fail) throw state.fail;
+    const filters = command.input.Filters ?? [];
+    const ids = filters.find(({ Name }) => Name === "resource-id")?.Values;
+    const tags = (ids ?? [])
+      .filter((id) => id in names)
+      .map((id) => ({ ResourceId: id, Key: "Name", Value: names[id] }));
+    const start = Number(command.input.NextToken ?? 0);
+    const end = start + (state.pageSize ?? tags.length);
+    return {
+      Tags: tags.slice(start, end),
+      NextToken: end < tags.length ? String(end) : undefined,
+    };
+  };
+  return { client: { send }, calls, state };
 };
 
 type FakeSecret = {

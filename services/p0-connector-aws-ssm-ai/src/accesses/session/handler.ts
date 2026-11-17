@@ -9,6 +9,7 @@ import {
 } from "@p0security/connector-core";
 
 import { newKeyPair } from "../../keys.ts";
+import { type ListerDependencies, listFor } from "../../listing/lister.ts";
 import { markerFor } from "../../marker.ts";
 import {
   INSTANCE_STATE_EXIT_CODE,
@@ -36,6 +37,7 @@ type RequestContext = ResourceSchema["RequestContext"];
 export type SessionDependencies = {
   ssm?: RunScriptDependencies;
   secrets?: SecretStoreDependencies;
+  ec2?: ListerDependencies["ec2"];
 };
 
 /**
@@ -263,12 +265,17 @@ export const router = (
         logger.info("removed the key line and deleted the secret");
       },
 
-      list: async () => {
-        throw new ConnectorError({
-          type: "unknown",
-          message: "The aws-ssm-ai connector can't list instances yet",
-          payload: {},
+      list: async (query) => {
+        const logger = ctx.logger.child({ region: query.context.region });
+        const items = await listFor(query, logger, {
+          ssm: dependencies.ssm?.client,
+          ec2: dependencies.ec2,
         });
+        logger.info(
+          { type: query.type, count: items.length },
+          "listed the instances"
+        );
+        return items;
       },
     };
   });

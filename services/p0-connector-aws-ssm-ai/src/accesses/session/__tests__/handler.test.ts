@@ -7,6 +7,7 @@ import {
   connectorErrorOf,
   dataOf,
   errorOf,
+  fakeEc2,
   fakeInstance,
   fakeSecretsManager,
   recordingLogger,
@@ -36,11 +37,13 @@ const userBody = { user: "alice-ai", secretName: SECRET };
 
 let instance = fakeInstance();
 let vault = fakeSecretsManager();
+let tags = fakeEc2();
 let log = recordingLogger();
 
 beforeEach(() => {
   instance = fakeInstance();
   vault = fakeSecretsManager();
+  tags = fakeEc2();
   log = recordingLogger();
 });
 
@@ -48,6 +51,7 @@ const session = () =>
   router(t, {
     ssm: instance.ssm,
     secrets: vault.dependencies,
+    ec2: tags.client,
   }).createCaller({ logger: log.logger });
 
 const grant = (body = userBody) =>
@@ -644,12 +648,36 @@ describe("the private key", () => {
 });
 
 describe("list", () => {
-  it("is not there yet", async () => {
-    const data = await dataOf(
+  it("lists the instances a request can name, by their Name tags", async () => {
+    const online = {
+      PingStatus: "Online",
+      ResourceType: "EC2Instance",
+      PlatformType: "Linux",
+    } as const;
+    instance.state.managed = [
+      { ...online, InstanceId: "i-0aaaaaaaaaaaaaaaa" },
+      { ...online, InstanceId: "i-0bbbbbbbbbbbbbbbb" },
+    ];
+    tags = fakeEc2({ "i-0aaaaaaaaaaaaaaaa": "web-1" });
+    await expect(
       session().list({
         query: { type: "instance", context: { region: "us-west-2" } },
       })
-    );
-    expect(data.type).toBe("unknown");
+    ).resolves.toEqual([
+      { key: "i-0aaaaaaaaaaaaaaaa", value: "web-1" },
+      { key: "i-0bbbbbbbbbbbbbbbb", value: "i-0bbbbbbbbbbbbbbbb" },
+    ]);
+    expect(log.lines).toContainEqual([
+      { type: "instance", count: 2 },
+      "listed the instances",
+    ]);
+  });
+
+  it("refuses a query type it doesn't know", async () => {
+    await expect(
+      session().list({
+        query: { type: "user" as "instance", context: { region: "us-west-2" } },
+      })
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 });
