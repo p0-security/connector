@@ -13,7 +13,9 @@ import {
   USER_PATTERN,
   buildProvisionScript,
   commandTagFor,
+  hostKeysOf,
   quoteShellWord,
+  reasonOf,
 } from "../provision.ts";
 
 // A real ed25519 public key, made for this test. Its private half was
@@ -373,5 +375,69 @@ describe("PROVISION_SCRIPT", () => {
 
   it("calls no cloud API", () => {
     expect(PROVISION_SCRIPT).not.toMatch(/\b(aws|gcloud|az|curl|wget)\b/);
+  });
+});
+
+describe("hostKeysOf", () => {
+  const ED25519 =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBrInlG8MGQVPGDUEs0M1VlSZIBMD9w9yaNkIicdN2WV";
+  const ECDSA =
+    "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBKOLAhgfQ+0gET2PeSQg74w=";
+
+  it("reads the host keys out of what ensure-key printed", () => {
+    const stdout = [
+      "a line some tool printed",
+      `${HOST_KEY_PREFIX}${ECDSA}`,
+      `${HOST_KEY_PREFIX}${ED25519}`,
+      RESULT_LINES.ok,
+      "",
+    ].join("\n");
+    expect(hostKeysOf(stdout, "r1")).toEqual([ECDSA, ED25519]);
+  });
+
+  it.each([
+    ["no host key", `${RESULT_LINES.ok}\n`, 0],
+    ["nothing at all", "", 0],
+    [
+      "a host key line that isn't a key",
+      `${HOST_KEY_PREFIX}not a key at all\n`,
+      1,
+    ],
+    [
+      "a host key with a comment",
+      `${HOST_KEY_PREFIX}${ED25519} root@host\n`,
+      1,
+    ],
+  ])(
+    "refuses output with %s, and says where to look",
+    (_name, stdout, nHostKeys) => {
+      expect(errorOf(() => hostKeysOf(stdout, "r1"))).toEqual({
+        type: "dependency_violation",
+        message:
+          "The instance returned no SSH host keys P0 can read. Check the host keys in /etc/ssh/ssh_host_*_key.pub on the instance.",
+        payload: { nHostKeys, requestId: "r1" },
+      });
+    }
+  );
+});
+
+describe("reasonOf", () => {
+  it("reads the reason off the line before the result line", () => {
+    const stdout = [
+      `${HOST_KEY_PREFIX}ssh-ed25519 AAAA`,
+      `${REASON_PREFIX}a reason a subshell gave first`,
+      `${REASON_PREFIX}sudo is not installed`,
+      RESULT_LINES.failed,
+      "",
+    ].join("\n");
+    expect(reasonOf(stdout)).toBe("sudo is not installed");
+  });
+
+  it.each([
+    ["no reason line", `${RESULT_LINES.failed}\n`],
+    ["nothing at all", ""],
+    ["an empty reason", `${REASON_PREFIX}\n${RESULT_LINES.failed}\n`],
+  ])("gives nothing for output with %s", (_name, stdout) => {
+    expect(reasonOf(stdout)).toBeUndefined();
   });
 });

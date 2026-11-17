@@ -20,3 +20,16 @@ export const RUN_SCRIPT_FAILURES = [
 ] as const;
 
 export type RunScriptFailure = (typeof RUN_SCRIPT_FAILURES)[number];
+
+/**
+ * The calls the connector makes to Secrets Manager, by the name a failure
+ * reports in `payload.step`.
+ */
+export const SECRET_STEPS = [
+  "describe_secret",
+  "create_secret",
+  "write_secret",
+  "delete_secret",
+] as const;
+
+export type SecretStep = (typeof SECRET_STEPS)[number];

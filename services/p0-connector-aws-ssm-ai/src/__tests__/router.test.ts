@@ -3,8 +3,13 @@ import { describe, expect, it } from "vitest";
 import { connectorRouter } from "../router.ts";
 
 describe("connectorRouter", () => {
-  it("serves install validation and metadata under aws-ssm-ai, and no access yet", () => {
+  it("serves the session access, install validation and metadata under aws-ssm-ai", () => {
     expect(Object.keys(connectorRouter._def.procedures).sort()).toEqual([
+      "aws-ssm-ai.accesses.session.deleteUser",
+      "aws-ssm-ai.accesses.session.identifyUser",
+      "aws-ssm-ai.accesses.session.list",
+      "aws-ssm-ai.accesses.session.provisionUser",
+      "aws-ssm-ai.accesses.session.setPoliciesForUser",
       "aws-ssm-ai.install.validation.get",
       "aws-ssm-ai.metadata.get",
     ]);

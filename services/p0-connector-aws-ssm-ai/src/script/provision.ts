@@ -37,6 +37,31 @@ export const PUBLIC_KEY_PATTERN = new RegExp(PUBLIC_KEY_SOURCE);
 /** The script prints each of the instance's SSH host public keys after this. */
 export const HOST_KEY_PREFIX = "p0-ssh-ai-host-key: ";
 
+/** A host key as the script prints it: its type, then its base64. */
+const HOST_KEY_PATTERN = /^[a-z0-9@.-]+ [A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * The instance's SSH host public keys, each as `<type> <key>`, from what
+ * `ensure-key` printed. Its error names the request the run belongs to.
+ */
+export const hostKeysOf = (stdout: string, requestId: string) => {
+  const keys = stdout
+    .split("\n")
+    .filter((line) => line.startsWith(HOST_KEY_PREFIX))
+    .map((line) => line.slice(HOST_KEY_PREFIX.length));
+  if (keys.length === 0 || !keys.every((key) => HOST_KEY_PATTERN.test(key))) {
+    throw new ConnectorError({
+      // The host key files are the instance's, not P0's, so the requester
+      // reads this message as it is, and P0 records no bug of its own.
+      type: "dependency_violation",
+      message:
+        "The instance returned no SSH host keys P0 can read. Check the host keys in /etc/ssh/ssh_host_*_key.pub on the instance.",
+      payload: { nHostKeys: keys.length, requestId },
+    });
+  }
+  return keys;
+};
+
 /**
  * The script prints its reason for a failure after this, on stdout, just
  * before the failed result line. Only root can write to the script's
@@ -44,6 +69,21 @@ export const HOST_KEY_PREFIX = "p0-ssh-ai-host-key: ";
  * P0 shows the requester comes from this line, never from stderr.
  */
 export const REASON_PREFIX = "p0-ssh-ai-reason: ";
+
+/**
+ * The reason a failed run gave on its reason line, or `undefined` when it
+ * gave none. The last such line counts, because the script prints its
+ * reason just before the result line.
+ */
+export const reasonOf = (stdout: string) => {
+  const reason = stdout
+    .split("\n")
+    .filter((line) => line.startsWith(REASON_PREFIX))
+    .at(-1)
+    ?.slice(REASON_PREFIX.length)
+    .trim();
+  return reason || undefined;
+};
 
 /**
  * The last line the script prints, whatever happens. A caller that can't
