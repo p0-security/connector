@@ -33,3 +33,8 @@ export {
   type InstallValidation as AwsSsmAiInstallValidation,
   type AwsSsmAiInstallStep,
 } from "./install/definition.ts";
+export {
+  endSessionsInput,
+  type EndSessionsInput as AwsSsmAiEndSessionsInput,
+  type EndSessionsResult as AwsSsmAiEndSessionsResult,
+} from "./sessions/definition.ts";

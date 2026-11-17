@@ -97,6 +97,24 @@ the spec, the router's type, the schemas, and the closed sets `AWS_SSM_AI_RUN_SC
 That entry loads no Lambda handler, no router, and neither the SSM client nor the secret manager
 client.
 
+## Ending open sessions
+
+`aws-ssm-ai.install.sessions.end` is a mutation that takes
+`{ instance: { id, region }, sessionId, requestId? }`, where `sessionId` is the gateway
+session's id. It ends the SSM sessions that gateway session still has open on the instance, so
+a revoke also closes what is already connected. `requestId` is optional and only goes into the
+log lines, next to the instance id and the two counts. Despite its path, it is not an install
+step.
+
+The gateway assumes the agent's role with the gateway session's id as the role session name, so
+the id is the last part of each session's owner. The connector lists the instance's active
+sessions (`ssm:DescribeSessions`, every page) and ends each one whose owner ends with
+`/<sessionId>` (`ssm:TerminateSession`), five at a time. `sessionId` must match
+`^[\w+=,.@-]{2,64}$`, which is what STS allows in a role session name.
+
+It returns `{ matched, failed }`: how many sessions it found, and how many SSM refused to end.
+One refusal doesn't stop the others. It fails outright only when it can't list the sessions.
+
 ## Install validation
 
 `aws-ssm-ai.install.validation.get` takes `{ region }`. It checks that the execution role can
@@ -304,7 +322,9 @@ has no container tests.
 
 The execution role needs `ssm:DescribeInstanceInformation`, `ssm:SendCommand` on the
 `AWS-RunShellScript` document and on the instances, `ssm:GetCommandInvocation`, and
-`ssm:ListCommands`. It never cancels a command, so it doesn't need `ssm:CancelCommand`.
+`ssm:ListCommands`. It never cancels a command, so it doesn't need `ssm:CancelCommand`. To end
+open sessions it needs `ssm:DescribeSessions` and
+`ssm:TerminateSession`.
 
 On the secrets P0 names, in the vault's region, it needs `secretsmanager:CreateSecret`,
 `secretsmanager:DescribeSecret`, `secretsmanager:PutSecretValue` and
