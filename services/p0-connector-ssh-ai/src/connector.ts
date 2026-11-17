@@ -33,3 +33,8 @@ export {
   type InstallValidation as SshAiInstallValidation,
   type SshAiInstallStep,
 } from "./install/definition.ts";
+export {
+  endSessionsInput,
+  type EndSessionsInput as SshAiEndSessionsInput,
+  type EndSessionsResult as SshAiEndSessionsResult,
+} from "./sessions/definition.ts";

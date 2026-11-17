@@ -34,6 +34,12 @@ describe("the contract the control plane reads", () => {
     expect(
       contract.installContext.safeParse({ region: "us-west-2" }).success
     ).toBe(true);
+    expect(
+      contract.endSessionsInput.safeParse({
+        instance: { id: "i-0123456789abcdef0", region: "us-west-2" },
+        sessionId: "0b0e1c1a-6f0e-4f43-9d1e-2f6b1f0a9c11",
+      }).success
+    ).toBe(true);
   });
 
   it("does not hold the Lambda handler", () => {
