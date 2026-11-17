@@ -27,6 +27,8 @@ const listerQuery = z.object({
   context: installContext,
 });
 
+export type ListerQuery = z.infer<typeof listerQuery>;
+
 const listerResponse = z
   .object({
     key: z.string(),
@@ -34,6 +36,8 @@ const listerResponse = z
     group: z.string().optional(),
   })
   .array();
+
+export type ListerResponse = z.infer<typeof listerResponse>;
 
 export const schema = {
   userBody,
