@@ -5,8 +5,95 @@ the instance only through SSM Run Command, with the AWS-owned `AWS-RunShellScrip
 
 It ships as an AWS Lambda container image, `p0-connector-ssh-ai`, once `docker.yaml` builds it.
 
-This is the skeleton. It serves install validation, and holds the SSM command client and the
-provisioning script. It has no grant or revoke routes yet.
+## The session access
+
+`ssh-ai.accesses.session` is a resource-root access. It gives a holder group a key to one
+instance. A holder group is the set of grants that share one secret, and so one key and one
+Linux user. The "user" of the access is that secret, as it is for `p0-connector-github-ai`.
+
+Every call carries the request context `{ requestId, secrets: { manager: "aws", region },
+instance: { id, region } }` and the user body `{ user, secretName }`. `user` is the agent's
+Linux user and must match `^[a-z][a-z0-9_-]*-ai$` with at most 32 characters. `secretName` is
+the secret's name. P0 chooses both. The user id is the secret's ARN.
+
+- `provisionUser` returns the ARN when the secret exists and holds a value. Otherwise it
+  creates the secret when it is missing, with no value, mints an ed25519 key pair, runs
+  `ensure-key` on the instance, and writes the secret's value. The secret comes first, so the
+  instance is untouched when Secrets Manager refuses it. A grant that stopped halfway finishes
+  on the next call: the new key replaces the old one on the instance.
+- `setPoliciesForUser` takes the group's full set of policies, each `{ sudo: boolean }`. It
+  runs `set-sudo on` when any policy has `sudo: true`, and `set-sudo off` otherwise.
+- `deleteUser` runs `remove-key`, and deletes the secret only after that succeeds. The Linux
+  user stays. It refuses an ARN that doesn't name `secretName` in the request's region.
+- `list` is not there yet.
+
+A revoke fails when it can't remove access from the instance. `setPoliciesForUser` fails when
+`set-sudo off` fails, and `deleteUser` fails when `remove-key` fails, so a stopped instance or
+an agent that breaks its own key removal fails the revoke. `deleteUser` then keeps the secret.
+P0 marks the request errored, and a person cleans up by hand, in this order:
+
+1. On the instance, remove the key line that ends with `p0-ssh-ai:<marker>` from the user's
+   `~/.ssh/authorized_keys`, and the marker's two lines from `/etc/sudoers-p0`.
+2. Delete the secret.
+
+P0 finds the group by its secret, so a secret deleted first hides what is left on the instance.
+A terminated instance takes its key line and sudoers entry with it, and leaves only step 2.
+
+When the script fails on the instance, its exit code sets the error's type, and so what the
+requester reads:
+
+| Exit code | Error type             | The requester reads                                                      |
+| --------- | ---------------------- | ------------------------------------------------------------------------ |
+| 69        | `dependency_violation` | The message word for word. It holds the script's reason and no stderr.   |
+| 75        | `upstream_unavailable` | That SSH (AI) is unavailable for now, and to try again in a few minutes. |
+| any other | `unknown`              | An error id, and P0 records the failure as its own bug.                  |
+
+69 is the instance's own state, such as a missing tool or a sudoers file that visudo refuses,
+which a person with access to the instance can fix. 75 is a run that a retry can fix: another
+P0 change held the instance's lock, or a command ran out of time. Host keys that P0 can't read
+are `dependency_violation` too. P0 retries every failed call the same way, whatever its type.
+
+The agent can write to the script's stderr, so a 69's message holds nothing from it. The
+message is `P0's script couldn't change <instance>: <reason>.`, with the reason the script
+printed on stdout, and then names the SSM command whose output has the details. With no reason
+line, it names only the command. The connector logs the end of stderr in a warning instead. A
+75 or an `unknown` keeps the message `runScript` built, which ends with that stderr, because P0
+never shows either one's message.
+
+Sudo belongs to the Linux user, not to a holder group. When two groups share one Linux user and
+one of them has sudo, sessions of both can use it on the instance. The marker only records which
+group asked for the entry, so that each can take its own away.
+
+Secrets Manager deletes a secret in the background, and describes it with a `DeletedDate` until
+the deletion finishes. `provisionUser` counts that secret as gone and goes on to create a new
+one, which Secrets Manager refuses while the name is still taken. The grant then fails with
+`upstream_unavailable` and a message that says to try again, before it touches the instance.
+
+The secret's value is this JSON, written as the secret's binary value:
+
+```json
+{
+  "privateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\n...",
+  "user": "alice-ai",
+  "hostKeys": ["ssh-ed25519 AAAA...", "ecdsa-sha2-nistp256 AAAA..."]
+}
+```
+
+`privateKey` is in OpenSSH's own format, which `ssh -i` reads. The connector doesn't use Node's
+PKCS8, because OpenSSH reads it only from 9.9 on. The private key exists in the connector's
+memory and in the secret. The connector never reads a secret's value, and never puts a key in a
+log line or an error. A Secrets Manager failure reports its name, the step in `payload.step` and
+the request id, not its message. The one exception is a refusal, which keeps AWS's message: it
+names the action and the secret, never a value. A refusal is `insufficient_privileges`, a
+throttle is `rate_limited`, and every other failure is `upstream_unavailable`.
+
+The marker the script gets is the first 32 hex digits of the SHA-256 of `secretName`.
+
+The control plane imports the contract from `@p0security/p0-connector-ssh-ai/connector`: the
+spec, the router's type, the schemas, and the closed sets `SSH_AI_RUN_SCRIPT_FAILURES`
+(`payload.reason`), `SSH_AI_SECRET_STEPS` and `SSH_AI_INSTALL_STEPS` (`payload.step`). That
+entry loads no Lambda handler, no router, and neither the SSM client nor the secret manager
+client.
 
 ## Install validation
 
@@ -29,6 +116,9 @@ When a run fails, `runScript` throws an error with one of these in `payload.reas
 | `command_failed`       | `unknown`              | The script exited non-zero. The error holds the exit code and the end of stderr.      |
 | `instance_unreachable` | `object_not_found`     | SSM doesn't manage the instance, or the instance never picked the command up in time. |
 
+The session access then gives a `command_failed` error the type of the script's exit code, as
+[The session access](#the-session-access) says.
+
 Every other failed call to SSM carries the AWS error's name in `payload.awsError`, and no
 reason. A refusal is `insufficient_privileges`, and a throttle is `rate_limited`.
 `UnsupportedPlatformType`, SSM's answer for a Windows or macOS instance, is `validation_error`.
@@ -46,12 +136,13 @@ own limit.
 The client retries a poll that SSM throttles. Every error carries the instance id, and the
 request id when the caller gave one.
 
-The connector's own code logs no script and none of its output, because a script's arguments
-are part of its text. A failed script's error, which connector-core logs, ends with up to 500
-characters of its stderr (`STDERR_TAIL_CHARS`). Whatever runs on the instance with that stderr
-open can write into it too, so that message suits an `unknown` error, which P0 never shows. The
-error is a `CommandFailedError`, which keeps the run's output out of its data. A caller that
-gives the error a type P0 shows builds its own message from that output.
+The connector's own code logs no script, since a script's arguments are part of its text. It
+logs none of a script's stdout either. A failed script's error, which connector-core logs, ends
+with up to 500 characters of its stderr (`STDERR_TAIL_CHARS`). Whatever runs on the instance
+with that stderr open can write into it too, so that message suits an `unknown` error, which P0
+never shows. The error is a `CommandFailedError`, which keeps the run's output out of its data.
+A caller that gives the error a type P0 shows builds its own message from that output. The
+session access does so for exit code 69, and logs the 500 characters in a warning instead.
 
 ## The provisioning script
 
@@ -174,3 +265,18 @@ The execution role needs `ssm:DescribeInstanceInformation`, `ssm:SendCommand` on
 `AWS-RunShellScript` document and on the instances, `ssm:GetCommandInvocation`, and
 `ssm:CancelCommand`. Without `ssm:CancelCommand`, a script that times out keeps running on the
 instance until its execution timeout.
+
+On the secrets P0 names, in the vault's region, it needs `secretsmanager:CreateSecret`,
+`secretsmanager:DescribeSecret`, `secretsmanager:PutSecretValue` and
+`secretsmanager:DeleteSecret`. It does not need `secretsmanager:GetSecretValue`.
+
+### A known trade-off: `AWS-RunShellScript`
+
+`ssm:SendCommand` with `AWS-RunShellScript` lets this role run any command as root on every
+instance in its scope. Nothing in AWS holds it to the provisioning script. Only this service's
+code does: it sends one script, with one of three actions, and arguments it has checked.
+Whoever can change the Lambda's code or use its role has root on those instances.
+
+P0 chose `AWS-RunShellScript` on 2026-11-16 so that a customer creates no SSM document of their
+own. A document that fixes the script and takes only the action and its arguments as parameters
+would move that limit into AWS.

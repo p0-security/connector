@@ -4,8 +4,14 @@
   "description": "P0 SSH (AI) connector (AWS Lambda)",
   "type": "module",
   "exports": {
-    "@p0security/development": "./src/index.ts",
-    "default": "./dist/index.js"
+    ".": {
+      "@p0security/development": "./src/index.ts",
+      "default": "./dist/index.js"
+    },
+    "./connector": {
+      "@p0security/development": "./src/connector.ts",
+      "default": "./dist/connector.js"
+    }
   },
   "scripts": {
     "format": "prettier --write '**/*.{html,js,ts,json,less,md}'",
@@ -18,8 +24,10 @@
     "build": "tsc --build"
   },
   "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.975.0",
     "@aws-sdk/client-ssm": "^3.981.0",
     "@p0security/connector-core": "workspace:^",
+    "@p0security/connector-secret-manager-client": "workspace:^",
     "@trpc/server": "^11.10.0",
     "zod": "^4.3.6"
   },
