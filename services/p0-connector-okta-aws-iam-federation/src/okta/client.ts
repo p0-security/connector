@@ -40,6 +40,7 @@ export const OKTA_ROUTES = {
     route: "/api/v1/meta/schemas/apps/{appId}/default",
   },
   searchUsers: { method: "GET", route: "/api/v1/users" },
+  getUser: { method: "GET", route: "/api/v1/users/{userId}" },
   getAppUser: { method: "GET", route: "/api/v1/apps/{appId}/users/{userId}" },
   assignAppUser: { method: "POST", route: "/api/v1/apps/{appId}/users" },
   updateAppUser: {
@@ -326,12 +327,12 @@ export const connectOkta = async (app: App, logger: Logger) => {
       );
     },
 
-    /** The users whose primary email is `email`. */
+    /** The users whose primary email is `email`, except deactivated users. */
     findUsersByEmail: async (email: string) => {
       const search = new URLSearchParams({
         search: `profile.email eq ${searchString(email)}`,
       });
-      return parseAnswer(
+      const users = parseAnswer(
         OKTA_ROUTES.searchUsers,
         await call(
           OKTA_ROUTES.searchUsers,
@@ -339,7 +340,16 @@ export const connectOkta = async (app: App, logger: Logger) => {
         ),
         z.array(oktaUser)
       );
+      // A search returns deactivated users too.
+      return users.filter(({ status }) => status !== "DEPROVISIONED");
     },
+
+    getUser: async (userId: string) =>
+      parseAnswer(
+        OKTA_ROUTES.getUser,
+        await call(OKTA_ROUTES.getUser, `/api/v1/users/${userId}`),
+        oktaUser
+      ),
 
     /** The user's assignment to the app, or `null` if the user isn't assigned. */
     getAppUser: async (userId: string): Promise<AppUserProfile | null> => {

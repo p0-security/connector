@@ -9,8 +9,8 @@ import {
 } from "../../pingone/client.ts";
 import { toConnectorError } from "../../pingone/errors.ts";
 
-/** One role label for one user, by the user's email, on the app. */
-export type RoleAssignment = App & { email: string; role: string };
+/** One role label for one user, by PingOne's ID for the user, on the app. */
+export type RoleAssignment = App & { userId: string; role: string };
 
 /** The one PingOne user with `email`, or `null` if there is none. */
 const findUser = async (
@@ -63,14 +63,14 @@ export const findUserId = async (
 
 /** Adds the role to the user's role attribute. Does nothing if the user has it. */
 export const addRole = async (
-  { email, role, ...target }: RoleAssignment,
+  { userId, role, ...target }: RoleAssignment,
   logger: Logger
 ): Promise<null> => {
   const pingOne = await connectPingOne(target, logger).catch(rethrowMapped);
-  const user = await findUser(pingOne, email).catch(rethrowMapped);
+  const user = await pingOne.getUser(userId).catch(rethrowMapped);
   if (user === null) {
     throw new ConnectorError({
-      message: `PingOne has no user with the email ${email}.`,
+      message: `PingOne has no user with the ID ${userId}.`,
       payload: {},
       type: "object_not_found",
     });
@@ -89,13 +89,16 @@ export const addRole = async (
  * or their role, is already gone.
  */
 export const removeRole = async (
-  { email, role, ...target }: RoleAssignment,
+  { userId, role, ...target }: RoleAssignment,
   logger: Logger
 ): Promise<null> => {
   const pingOne = await connectPingOne(target, logger).catch(rethrowMapped);
-  const user = await findUser(pingOne, email).catch(rethrowMapped);
+  const user = await pingOne.getUser(userId).catch(rethrowMapped);
   if (user === null) {
-    logger.warn("PingOne has no user with the email; nothing to remove");
+    logger.warn(
+      { userId },
+      "PingOne has no user with the ID; nothing to remove"
+    );
     return null;
   }
   const current = rolesOf(user, target.roleAttribute);

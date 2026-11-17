@@ -48,12 +48,12 @@ export const router = (t: AnyConnectorTRPCInstance) =>
       removePolicyFromResource: noop,
       deleteResource: noop,
 
-      bindResourceToUser: async (context, role, _userId, email) => {
-        await addRole({ ...context, email, role }, log(context));
+      bindResourceToUser: async (context, role, userId) => {
+        await addRole({ ...context, userId, role }, log(context));
       },
 
-      unbindResourceFromUser: async (context, role, _userId, email) => {
-        await removeRole({ ...context, email, role }, log(context));
+      unbindResourceFromUser: async (context, role, userId) => {
+        await removeRole({ ...context, userId, role }, log(context));
       },
 
       list: async () => [],

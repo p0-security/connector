@@ -8,8 +8,8 @@ import {
 } from "../../okta/client.ts";
 import { toConnectorError } from "../../okta/errors.ts";
 
-/** One role label for one user, by the user's primary email, on the app. */
-export type RoleAssignment = App & { email: string; role: string };
+/** One role label for one user, by Okta's ID for the user, on the app. */
+export type RoleAssignment = App & { userId: string; role: string };
 
 /** The one Okta user with `email`, or `null` if there is none. */
 const findUser = async (
@@ -50,31 +50,24 @@ export const findUserId = async (
  * needed, marked `managedByP0`. Does nothing if the user has the role.
  */
 export const addRole = async (
-  { email, role, ...target }: RoleAssignment,
+  { userId, role, ...target }: RoleAssignment,
   logger: Logger
 ): Promise<null> => {
   const okta = await connectOkta(target, logger).catch(rethrowMapped);
-  const user = await findUser(okta, email).catch(rethrowMapped);
-  if (user === null) {
-    throw new ConnectorError({
-      message: `Okta has no user with the email ${email}.`,
-      payload: {},
-      type: "object_not_found",
-    });
-  }
-  const current = await okta.getAppUser(user.id).catch(rethrowMapped);
+  const current = await okta.getAppUser(userId).catch(rethrowMapped);
   if (current === null) {
+    const user = await okta.getUser(userId).catch(rethrowMapped);
     await okta
       .assignAppUser(user, { managedByP0: true, samlRoles: [role] })
       .catch(rethrowMapped);
-    logger.info({ userId: user.id }, "assigned the user to the Okta app");
+    logger.info({ userId }, "assigned the user to the Okta app");
     return null;
   }
   if (current.samlRoles.includes(role)) return null;
   await okta
-    .updateAppUser(user.id, { samlRoles: [...current.samlRoles, role] })
+    .updateAppUser(userId, { samlRoles: [...current.samlRoles, role] })
     .catch(rethrowMapped);
-  logger.info({ userId: user.id }, "added the role to the Okta app user");
+  logger.info({ userId }, "added the role to the Okta app user");
   return null;
 };
 
@@ -84,33 +77,28 @@ export const addRole = async (
  * their role, is already gone.
  */
 export const removeRole = async (
-  { email, role, ...target }: RoleAssignment,
+  { userId, role, ...target }: RoleAssignment,
   logger: Logger
 ): Promise<null> => {
   const okta = await connectOkta(target, logger).catch(rethrowMapped);
-  const user = await findUser(okta, email).catch(rethrowMapped);
-  if (user === null) {
-    logger.warn("Okta has no user with the email; nothing to remove");
-    return null;
-  }
-  const current = await okta.getAppUser(user.id).catch(rethrowMapped);
+  const current = await okta.getAppUser(userId).catch(rethrowMapped);
   if (current === null) {
-    logger.warn({ userId: user.id }, "the user isn't assigned to the Okta app");
+    logger.warn({ userId }, "the user isn't assigned to the Okta app");
     return null;
   }
   const remaining = current.samlRoles.filter((label) => label !== role);
   if (current.managedByP0 && remaining.length === 0) {
-    await okta.unassignAppUser(user.id).catch(rethrowMapped);
-    logger.info({ userId: user.id }, "unassigned the user from the Okta app");
+    await okta.unassignAppUser(userId).catch(rethrowMapped);
+    logger.info({ userId }, "unassigned the user from the Okta app");
     return null;
   }
   if (remaining.length === current.samlRoles.length) {
-    logger.warn({ userId: user.id }, "the Okta app user doesn't have the role");
+    logger.warn({ userId }, "the Okta app user doesn't have the role");
     return null;
   }
   await okta
-    .updateAppUser(user.id, { samlRoles: remaining })
+    .updateAppUser(userId, { samlRoles: remaining })
     .catch(rethrowMapped);
-  logger.info({ userId: user.id }, "removed the role from the Okta app user");
+  logger.info({ userId }, "removed the role from the Okta app user");
   return null;
 };

@@ -73,7 +73,7 @@ describe("role access", () => {
     });
 
     expect(addRole).toHaveBeenCalledWith(
-      expect.objectContaining({ ...APP_INPUT, email: EMAIL, role: ROLE }),
+      expect.objectContaining({ ...APP_INPUT, userId: USER_ID, role: ROLE }),
       expect.anything()
     );
   });
@@ -87,7 +87,7 @@ describe("role access", () => {
     });
 
     expect(removeRole).toHaveBeenCalledWith(
-      expect.objectContaining({ ...APP_INPUT, email: EMAIL, role: ROLE }),
+      expect.objectContaining({ ...APP_INPUT, userId: USER_ID, role: ROLE }),
       expect.anything()
     );
   });
