@@ -10,7 +10,7 @@ import {
   stubOkta,
 } from "../../../__tests__/fixtures.ts";
 import { readPrivateKey } from "../../../secrets.ts";
-import { addRole, removeRole } from "../assignment.ts";
+import { addRole, findUserId, removeRole } from "../assignment.ts";
 
 vi.mock("../../../secrets.ts");
 
@@ -18,7 +18,7 @@ const EMAIL = "ada@example.com";
 const USER = { id: "00u1ada", status: "ACTIVE", profile: { login: EMAIL } };
 const ROLE = "p0-pool-1";
 const OTHER = "AdminRole";
-const INPUT = { ...APP_INPUT, email: EMAIL, role: ROLE };
+const INPUT = { ...APP_INPUT, userId: USER.id, role: ROLE };
 const APP_USER = `/api/v1/apps/${APP_ID}/users/${USER.id}`;
 
 const oktaWith = ({
@@ -32,6 +32,7 @@ const oktaWith = ({
     "POST /oauth2/v1/token": () =>
       answer(200, { access_token: "at", token_type: "Bearer" }),
     "GET /api/v1/users": () => answer(200, users),
+    [`GET /api/v1/users/${USER.id}`]: () => answer(200, USER),
     [`GET ${APP_USER}`]: () =>
       appUser === undefined
         ? answer(404, { errorCode: "E0000007" })
@@ -62,14 +63,49 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("addRole", () => {
+describe("findUserId", () => {
   it("finds the user by email", async () => {
-    const okta = oktaWith({ appUser: { samlRoles: [ROLE] } });
+    const okta = oktaWith({});
 
-    await addRole(INPUT, logger);
+    await expect(findUserId(APP_INPUT, EMAIL, logger)).resolves.toBe(USER.id);
 
     const url = new URL(okta.fetch.mock.calls[1][0]);
     expect(url.searchParams.get("search")).toBe(`profile.email eq "${EMAIL}"`);
+  });
+
+  it("skips deactivated users", async () => {
+    oktaWith({
+      users: [{ ...USER, id: "00u0old", status: "DEPROVISIONED" }, USER],
+    });
+
+    await expect(findUserId(APP_INPUT, EMAIL, logger)).resolves.toBe(USER.id);
+  });
+
+  it("finds no user when the only one is deactivated", async () => {
+    oktaWith({ users: [{ ...USER, status: "DEPROVISIONED" }] });
+
+    await expect(findUserId(APP_INPUT, EMAIL, logger)).resolves.toBeNull();
+  });
+
+  it("fails when more than one user has the email", async () => {
+    oktaWith({ users: [USER, { ...USER, id: "00u2ada" }] });
+
+    const error = await connectorError(() =>
+      findUserId(APP_INPUT, EMAIL, logger)
+    );
+
+    expect(error.data.type).toBe("validation_error");
+  });
+});
+
+describe("addRole", () => {
+  it("doesn't search for the user", async () => {
+    const okta = oktaWith({ appUser: { samlRoles: [OTHER] } });
+
+    await addRole(INPUT, logger);
+
+    const paths = okta.fetch.mock.calls.map(([url]) => new URL(url).pathname);
+    expect(paths).not.toContain("/api/v1/users");
   });
 
   it("assigns an unassigned user, marked managedByP0", async () => {
@@ -120,22 +156,6 @@ describe("addRole", () => {
 
     expect(writes(okta)).toEqual([]);
   });
-
-  it("fails when Okta has no user with the email", async () => {
-    oktaWith({ users: [] });
-
-    const error = await connectorError(() => addRole(INPUT, logger));
-
-    expect(error.data.type).toBe("object_not_found");
-  });
-
-  it("fails when more than one user has the email", async () => {
-    oktaWith({ users: [USER, { ...USER, id: "00u2ada" }] });
-
-    const error = await connectorError(() => addRole(INPUT, logger));
-
-    expect(error.data.type).toBe("validation_error");
-  });
 });
 
 describe("removeRole", () => {
@@ -174,7 +194,6 @@ describe("removeRole", () => {
   });
 
   it.each([
-    ["the user is gone", { users: [] }],
     ["the user isn't assigned", {}],
     ["the user doesn't have the role", { appUser: { samlRoles: [OTHER] } }],
   ])("writes nothing when %s", async (_, state) => {

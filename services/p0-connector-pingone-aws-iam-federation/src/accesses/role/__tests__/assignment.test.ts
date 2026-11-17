@@ -18,18 +18,23 @@ const API = `api.pingone.com/v1/environments/${ENVIRONMENT_ID}`;
 const LIST_USERS = `GET ${API}/users`;
 const EMAIL = "ada@example.com";
 const USER_ID = "7898a07d-7fb9-4a89-b78c-1ada520cc8bc";
+const GET_USER = `GET ${API}/users/${USER_ID}`;
 const PATCH_USER = `PATCH ${API}/users/${USER_ID}`;
 const ROLE =
   "arn:aws:iam::123456789012:role/p0-pool-1,arn:aws:iam::123456789012:saml-provider/pingone";
 const OTHER =
   "arn:aws:iam::123456789012:role/admin,arn:aws:iam::123456789012:saml-provider/pingone";
-const ASSIGNMENT = { ...APP_INPUT, email: EMAIL, role: ROLE };
+const ASSIGNMENT = { ...APP_INPUT, userId: USER_ID, role: ROLE };
 
 const pingOne = (users: object[]) =>
   stubPingOne({
     [`POST auth.pingone.com/${ENVIRONMENT_ID}/as/token`]: () =>
       answer(200, { access_token: "at", token_type: "Bearer" }),
     [LIST_USERS]: () => answer(200, { _embedded: { users } }),
+    [GET_USER]: () =>
+      users[0] === undefined
+        ? answer(404, { code: "NOT_FOUND" })
+        : answer(200, users[0]),
     [PATCH_USER]: () => answer(200, {}),
   });
 
@@ -89,6 +94,15 @@ describe("findUserId", () => {
 });
 
 describe("addRole", () => {
+  it("gets the user by ID, with no search", async () => {
+    const stub = pingOne([userWith()]);
+
+    await addRole(ASSIGNMENT, logger);
+
+    expect(stub.calls()).toContain(GET_USER);
+    expect(stub.calls()).not.toContain(LIST_USERS);
+  });
+
   it("adds the role beside the user's other roles", async () => {
     const stub = pingOne([userWith([OTHER])]);
 
@@ -134,7 +148,7 @@ describe("addRole", () => {
     stubPingOne({
       [`POST auth.pingone.com/${ENVIRONMENT_ID}/as/token`]: () =>
         answer(200, { access_token: "at", token_type: "Bearer" }),
-      [LIST_USERS]: () => answer(200, { _embedded: { users: [userWith()] } }),
+      [GET_USER]: () => answer(200, userWith()),
       [PATCH_USER]: () => answer(403, { code: "ACCESS_FAILED" }),
     });
 
@@ -150,7 +164,7 @@ describe("addRole", () => {
     stubPingOne({
       [`POST auth.pingone.com/${ENVIRONMENT_ID}/as/token`]: () =>
         answer(200, { access_token: "at", token_type: "Bearer" }),
-      [LIST_USERS]: () => answer(200, { _embedded: { users: [userWith()] } }),
+      [GET_USER]: () => answer(200, userWith()),
       [PATCH_USER]: () =>
         answer(400, {
           code: "INVALID_DATA",

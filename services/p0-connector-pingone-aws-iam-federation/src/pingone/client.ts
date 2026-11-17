@@ -39,6 +39,7 @@ export const PINGONE_ROUTES = {
     route: "/environments/{envID}/schemas/{schemaID}/attributes",
   },
   listUsers: { method: "GET", route: "/environments/{envID}/users" },
+  getUser: { method: "GET", route: "/environments/{envID}/users/{userID}" },
   updateUser: {
     method: "PATCH",
     route: "/environments/{envID}/users/{userID}",
@@ -312,6 +313,21 @@ export const connectPingOne = async (app: App, logger: Logger) => {
         )
       )._embedded.users;
     },
+
+    /** The user, or `null` if PingOne has no user with the ID. */
+    getUser: (userId: string): Promise<PingOneUser | null> =>
+      get(PINGONE_ROUTES.getUser, `/users/${userId}`, pingOneUser).catch(
+        (error: unknown) => {
+          if (
+            error instanceof PingOneError &&
+            error.failure.kind === "status" &&
+            error.failure.status === 404
+          ) {
+            return null;
+          }
+          throw error;
+        }
+      ),
 
     /** Replaces the whole list in the multi-valued user attribute `attribute`. */
     setUserAttribute: async (
