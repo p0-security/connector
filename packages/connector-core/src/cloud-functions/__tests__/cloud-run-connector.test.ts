@@ -119,3 +119,41 @@ describe("GET /health served by runCloudRunConnector", () => {
     });
   });
 });
+
+describe("runCloudRunConnector and CONNECTOR_AUTH", () => {
+  it.each(["gateway", "google-id-token", "", "unknown"])(
+    "keeps the Google check on every interface when CONNECTOR_AUTH is %j",
+    async (mode) => {
+      vi.stubEnv("CONNECTOR_AUTH", mode);
+      vi.stubEnv("CONNECTOR_BIND_ADDRESS", "127.0.0.1");
+
+      runCloudRunConnector("test", emptyRouter);
+      const [, , middlewares, host] = vi.mocked(runExpressApp).mock.calls[0]!;
+
+      expect(host).toBeUndefined();
+      expect(middlewares).toHaveLength(1);
+      await expect(
+        authorize(
+          middlewares![0]!,
+          mintToken({ aud: AUDIENCE, email: INVOKER })
+        )
+      ).resolves.toBeUndefined();
+      await expect(
+        authorize(
+          middlewares![0]!,
+          mintToken({ aud: AUDIENCE, email: "someone-else@example.com" })
+        )
+      ).resolves.toBeInstanceOf(AuthError);
+    }
+  );
+
+  it("throws without serving when INVOKER_SA_EMAIL is unset, even with CONNECTOR_AUTH=gateway", () => {
+    vi.stubEnv("CONNECTOR_AUTH", "gateway");
+    vi.stubEnv("INVOKER_SA_EMAIL", undefined);
+
+    expect(() => runCloudRunConnector("test", emptyRouter)).toThrow(
+      /Invoker service account email is not set or present/
+    );
+    expect(runExpressApp).not.toHaveBeenCalled();
+  });
+});

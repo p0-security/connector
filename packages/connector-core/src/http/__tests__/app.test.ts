@@ -1,9 +1,17 @@
 import { Router } from "express";
 import type { Server } from "node:http";
-import type { AddressInfo } from "node:net";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { type AddressInfo, Server as NetServer } from "node:net";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
-import { JSON_BODY_LIMIT, createExpressApp } from "../app.ts";
+import { JSON_BODY_LIMIT, createExpressApp, runExpressApp } from "../app.ts";
 import { bearerAuthzMiddleware } from "../middlewares/bearer.ts";
 
 const TOKEN = "good-token";
@@ -107,5 +115,48 @@ describe("JSON bodies", () => {
     );
 
     expect(response.status).toBe(413);
+  });
+});
+
+describe("runExpressApp", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  /** Runs the app and returns the arguments it would pass to `listen`. */
+  const listenArgs = (host?: string) => {
+    const listen = vi
+      .spyOn(NetServer.prototype, "listen")
+      .mockImplementation(function (this: NetServer) {
+        return this;
+      });
+    runExpressApp("test-module", {}, [], host);
+    return listen.mock.calls[0];
+  };
+
+  it.each([
+    [undefined, 8080],
+    ["9090", "9090"],
+  ])(
+    "listens on every interface without a host, with PORT=%j",
+    (port, expected) => {
+      vi.stubEnv("PORT", port);
+
+      expect(listenArgs()).toEqual([expected, expect.any(Function)]);
+    }
+  );
+
+  it.each([
+    [undefined, 8080],
+    ["9090", 9090],
+  ])("listens only on the host given, with PORT=%j", (port, expected) => {
+    vi.stubEnv("PORT", port);
+
+    expect(listenArgs("127.0.0.1")).toEqual([
+      expected,
+      "127.0.0.1",
+      expect.any(Function),
+    ]);
   });
 });

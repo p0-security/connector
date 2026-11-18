@@ -109,7 +109,7 @@ run();
 ```
 
 **Any other host**: use `newCustomAppHttpServer` the same way. It serves the same routes as
-the Cloud Run server, and always checks the token's audience:
+the Cloud Run server, and by default also checks the token's audience:
 
 ```ts
 import { newCustomAppHttpServer } from "@p0security/connector-sdk";
@@ -143,6 +143,15 @@ run();
   to the exact string P0 shows when you register the connector. It names both your connector and
   your P0 organization, so copy it rather than building it. `run()` throws before binding a port if
   it's unset, empty, or has leading or trailing whitespace.
+- **Behind an authenticating proxy**: set `CONNECTOR_AUTH=gateway` for the server
+  `newCustomAppHttpServer` starts. The connector then checks no token and serves every `/trpc`
+  request, with or without an `Authorization` header. It relies entirely on the proxy in front of
+  it to authenticate P0, so nothing else may be able to reach its port. It listens on `127.0.0.1`
+  by default, for a proxy in the same network namespace; set `CONNECTOR_BIND_ADDRESS` to listen
+  elsewhere. `INVOKER_SA_EMAIL` and `CONNECTOR_AUDIENCE` are not required and are ignored. The
+  server logs a warning at startup naming the mode and address. `CONNECTOR_AUTH` defaults to
+  `google-id-token`, the check above, and `run()` throws before binding a port on any other value.
+  `newCustomAppCloudRunServer` ignores `CONNECTOR_AUTH`.
 - **AWS (Lambda)**: `newCustomAppLambdaHandler` returns your handler directly. There is no
   bearer-token check here — a Lambda invoke payload carries no caller identity to check, so the
   boundary is purely `lambda:InvokeFunction` IAM on the role P0 assumes to call you. Grant that role

@@ -40,7 +40,8 @@ at it.
 The same image runs on any host that terminates HTTPS in front of it. In `src/index.ts`, replace
 `newCustomAppCloudRunServer` with `newCustomAppHttpServer`, and set `CONNECTOR_AUDIENCE` to the
 exact string P0 shows when you register the connector. The HTTP server refuses to start without it,
-since no IAM check sits in front of the service.
+since no IAM check sits in front of the service. To run behind a proxy on the same host that
+authenticates P0 instead, see `CONNECTOR_AUTH=gateway` in the SDK README.
 
 ## What the actions do
 
