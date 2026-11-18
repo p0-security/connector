@@ -4,8 +4,8 @@
 prepares an instance for an agent in a P0 agentic session. It reaches the instance only through
 SSM Run Command, with the AWS-owned `AWS-RunShellScript` document.
 
-It ships only as the AWS Lambda container image `p0security/p0-connector-aws-ssm-ai-aws`, once
-`docker.yaml` builds it.
+It ships only as the AWS Lambda container image `p0security/p0-connector-aws-ssm-ai`, which
+`.github/workflows/docker.yaml` publishes on every push to main.
 
 ## The session access
 
