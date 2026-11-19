@@ -74,20 +74,11 @@ export const newCustomAppCloudRunServer = (
  * run();
  * ```
  *
- * The server speaks plain HTTP on `$PORT`. `CONNECTOR_AUTH` picks how it
- * authenticates requests:
- *
- * - `google-id-token` (the default when unset): the server requires
- *   `INVOKER_SA_EMAIL` and `CONNECTOR_AUDIENCE`, and rejects a token whose
- *   `aud` differs. It listens on every interface, so put it behind something
- *   that terminates TLS.
- * - `gateway`: the server checks no token. It trusts a proxy on the same host
- *   to authenticate every request, and listens on `127.0.0.1` unless
- *   `CONNECTOR_BIND_ADDRESS` says otherwise. Anything that can reach its port
- *   can call your actions.
- *
- * `run()` throws before binding a port if `CONNECTOR_AUTH` has any other
- * value.
+ * The server requires `CONNECTOR_AUDIENCE` and rejects a token whose `aud`
+ * differs. It speaks plain HTTP on `$PORT`, so put it behind something that
+ * terminates TLS.
+ * With `CONNECTOR_AUTH=gateway` it checks no token, requires neither variable,
+ * and listens on `127.0.0.1`; see the README.
  * @category Deployment
  */
 export const newCustomAppHttpServer = (

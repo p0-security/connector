@@ -3,36 +3,11 @@ import type { CreateExpressContextOptions } from "@trpc/server/adapters/express"
 
 import { createLogger } from "../logger.ts";
 import {
-  type TokenVerifier,
   newGoogleIdTokenVerifier,
-  serveTrpcConnector,
+  serveGoogleIdTokenConnector,
 } from "./google-id-token-connector.ts";
 
 const logger = createLogger();
-
-const AUTH_MODES = ["google-id-token", "gateway"] as const;
-
-type ConnectorAuthMode = (typeof AUTH_MODES)[number];
-
-const isConnectorAuthMode = (value: string): value is ConnectorAuthMode =>
-  (AUTH_MODES as readonly string[]).includes(value);
-
-/**
- * Reads `CONNECTOR_AUTH`, defaulting to `google-id-token` when it's unset.
- * Throws on any other value, including an empty or whitespace-padded one.
- */
-const connectorAuthModeFromEnv = (): ConnectorAuthMode => {
-  const mode = process.env.CONNECTOR_AUTH;
-  if (mode === undefined) {
-    return "google-id-token";
-  }
-  if (!isConnectorAuthMode(mode)) {
-    throw new Error(
-      `CONNECTOR_AUTH must be one of ${AUTH_MODES.map((m) => `"${m}"`).join(", ")}, with no surrounding whitespace`
-    );
-  }
-  return mode;
-};
 
 /**
  * Reads `CONNECTOR_AUDIENCE`, throwing when it's unset or set to a value that
@@ -56,90 +31,30 @@ const connectorAudienceFromEnv = (): string => {
   return audience;
 };
 
-/** Gateway mode's default bind address, so only the same host can connect. */
-const GATEWAY_DEFAULT_BIND_ADDRESS = "127.0.0.1";
-
-/**
- * Reads `CONNECTOR_BIND_ADDRESS`, defaulting to the loopback address when it's
- * unset. Throws when it's set but empty or whitespace-padded.
- */
-const gatewayBindAddressFromEnv = (): string => {
-  const address = process.env.CONNECTOR_BIND_ADDRESS;
-  if (address === undefined) {
-    return GATEWAY_DEFAULT_BIND_ADDRESS;
-  }
-  if (!address) {
-    throw new Error("Connector bind address is set but empty");
-  }
-  if (address !== address.trim()) {
-    throw new Error(
-      "Connector bind address has leading or trailing whitespace"
-    );
-  }
-  return address;
-};
-
-/** How a mode authenticates `/trpc` requests, and where it listens. */
-type HttpConnectorAuth = {
-  /**
-   * Checks the bearer token on every `/trpc` request. `null` serves `/trpc`
-   * without a check, for a mode that trusts a proxy in front of the server.
-   */
-  verify: TokenVerifier | null;
-  /** Address to listen on. `undefined` listens on every interface. */
-  host: string | undefined;
-};
-
-/**
- * Builds each mode's auth from the environment, throwing if it's
- * misconfigured. A mode that checks a token of its own supplies its `verify`
- * here; the runner doesn't change.
- */
-const newHttpConnectorAuth: Record<ConnectorAuthMode, () => HttpConnectorAuth> =
-  {
-    "google-id-token": () => ({
-      verify: newGoogleIdTokenVerifier(connectorAudienceFromEnv()),
-      host: undefined,
-    }),
-    gateway: () => {
-      const host = gatewayBindAddressFromEnv();
-      logger.warn(
-        { authMode: "gateway", bindAddress: host },
-        `Auth mode is gateway: this connector does not authenticate requests and relies on the proxy in front of it. Listening on ${host}.`
-      );
-      return { verify: null, host };
-    },
-  };
-
 /**
  * Creates a service, on any host, that exposes a tRPC router over Express at
- * `/trpc`.
+ * `/trpc`, gated by bearer-token auth.
  *
- * The server speaks plain HTTP on `$PORT` (default `8080`). `$CONNECTOR_AUTH`
- * picks how it authenticates requests:
+ * The server speaks plain HTTP on `$PORT` (default `8080`). Put it behind a
+ * load balancer, ingress or proxy that terminates TLS, so the bearer token is
+ * never sent unencrypted.
  *
- * - `google-id-token` (the default when unset): requests must carry a
- *   Google-signed ID token whose `email` claim is `$INVOKER_SA_EMAIL` and whose
- *   `aud` claim is exactly `$CONNECTOR_AUDIENCE`. Nothing in front of the
- *   service checks the audience, so the runner always does. The server listens
- *   on every interface. Put it behind a load balancer, ingress or proxy that
- *   terminates TLS, so the bearer token is never sent unencrypted.
- * - `gateway`: the server checks no token and serves every `/trpc` request,
- *   with or without an `Authorization` header. It trusts a proxy on the same
- *   host to have authenticated each request, so nothing else may be able to
- *   reach its port. It listens on `127.0.0.1` unless `$CONNECTOR_BIND_ADDRESS`
- *   names another address. `INVOKER_SA_EMAIL` and `CONNECTOR_AUDIENCE` are
- *   ignored. It logs a warning at startup naming the mode and the address.
+ * Requests must carry a Google-signed ID token whose `email` claim is
+ * `$INVOKER_SA_EMAIL` and whose `aud` claim is exactly `$CONNECTOR_AUDIENCE`.
+ * Nothing in front of the service checks the audience, so the runner always
+ * does.
  *
- * Throws before binding a port if `CONNECTOR_AUTH` is set to anything else,
- * including an empty or whitespace-padded value. In `google-id-token` mode,
- * also throws if `INVOKER_SA_EMAIL` is unset or empty, or if
+ * Throws before binding a port if `INVOKER_SA_EMAIL` is unset or empty, or if
  * `CONNECTOR_AUDIENCE` is unset, empty, or has leading or trailing whitespace.
- * In `gateway` mode, also throws if `CONNECTOR_BIND_ADDRESS` is set but empty
- * or has leading or trailing whitespace.
  *
- * `GET /health` is served without a token in both modes, for load balancer
+ * `GET /health` is the one route served without a token, for load balancer
  * health checks. It returns `{ module: moduleName }`.
+ *
+ * With `CONNECTOR_AUTH=gateway`, the server checks no token and trusts a proxy
+ * in front of it to authenticate every request. It listens on `127.0.0.1`
+ * unless `CONNECTOR_BIND_ADDRESS` names another address, so `GET /health` is
+ * reachable only there too, and it logs a warning at startup. Any value other
+ * than `google-id-token` (the default) or `gateway` throws before binding a port.
  * @summary Creates a service that exposes a tRPC router over Express.
  * @category Cloud Functions
  *
@@ -154,6 +69,24 @@ export const runHttpConnector = <T>(
 ) => {
   // Read the environment before serving, so a misconfigured connector fails to
   // start rather than answering every request with a 403.
-  const { verify, host } = newHttpConnectorAuth[connectorAuthModeFromEnv()]();
-  return serveTrpcConnector(moduleName, router, createContext, verify, host);
+  const mode = process.env.CONNECTOR_AUTH ?? "google-id-token";
+  if (mode === "gateway") {
+    const host = process.env.CONNECTOR_BIND_ADDRESS || "127.0.0.1";
+    logger.warn(
+      { authMode: mode, bindAddress: host },
+      `Auth mode is gateway: this connector does not authenticate requests and relies on the proxy in front of it. Listening on ${host}.`
+    );
+    return serveGoogleIdTokenConnector(
+      moduleName,
+      router,
+      createContext,
+      null,
+      host
+    );
+  }
+  if (mode !== "google-id-token") {
+    throw new Error('CONNECTOR_AUTH must be "google-id-token" or "gateway"');
+  }
+  const verify = newGoogleIdTokenVerifier(connectorAudienceFromEnv());
+  return serveGoogleIdTokenConnector(moduleName, router, createContext, verify);
 };

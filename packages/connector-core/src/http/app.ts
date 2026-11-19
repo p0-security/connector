@@ -47,12 +47,7 @@ export const createExpressApp = (
   return app;
 };
 
-/**
- * Builds the Express app and listens on `$PORT` (default `8080`).
- *
- * Without a `host`, the server listens on every interface, as Node does by
- * default. With one, it listens only on that address.
- */
+/** Listens on `$PORT`, on every interface unless `host` is given. */
 export const runExpressApp = (
   moduleName: string,
   routes: Record<string, Router>,

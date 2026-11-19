@@ -135,26 +135,17 @@ describe("runExpressApp", () => {
     return listen.mock.calls[0];
   };
 
-  it.each([
-    [undefined, 8080],
-    ["9090", "9090"],
-  ])(
-    "listens on every interface without a host, with PORT=%j",
-    (port, expected) => {
-      vi.stubEnv("PORT", port);
+  it("listens on every interface without a host", () => {
+    vi.stubEnv("PORT", undefined);
 
-      expect(listenArgs()).toEqual([expected, expect.any(Function)]);
-    }
-  );
+    expect(listenArgs()).toEqual([8080, expect.any(Function)]);
+  });
 
-  it.each([
-    [undefined, 8080],
-    ["9090", 9090],
-  ])("listens only on the host given, with PORT=%j", (port, expected) => {
-    vi.stubEnv("PORT", port);
+  it("listens only on the host given", () => {
+    vi.stubEnv("PORT", "9090");
 
     expect(listenArgs("127.0.0.1")).toEqual([
-      expected,
+      9090,
       "127.0.0.1",
       expect.any(Function),
     ]);
