@@ -6,6 +6,7 @@ import {
   newGoogleIdTokenVerifier,
   serveGoogleIdTokenConnector,
 } from "./google-id-token-connector.ts";
+import { serveTrpcConnector } from "./trpc-server.ts";
 
 const logger = createLogger();
 
@@ -76,13 +77,7 @@ export const runHttpConnector = <T>(
       { authMode: mode, bindAddress: host },
       `Auth mode is gateway: this connector does not authenticate requests and relies on the proxy in front of it. Listening on ${host}.`
     );
-    return serveGoogleIdTokenConnector(
-      moduleName,
-      router,
-      createContext,
-      null,
-      host
-    );
+    return serveTrpcConnector(moduleName, router, createContext, null, host);
   }
   if (mode !== "google-id-token") {
     throw new Error('CONNECTOR_AUTH must be "google-id-token" or "gateway"');

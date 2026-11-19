@@ -1,16 +1,13 @@
 import type { AnyRouter } from "@trpc/server";
-import {
-  type CreateExpressContextOptions,
-  createExpressMiddleware,
-} from "@trpc/server/adapters/express";
-import { type RequestHandler, Router } from "express";
+import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import { OAuth2Client } from "google-auth-library";
 
-import { bearerAuthzMiddleware, runExpressApp } from "../http/index.ts";
+import { type TokenVerifier, serveTrpcConnector } from "./trpc-server.ts";
 
 /**
- * Shared by `runCloudRunConnector` and `runHttpConnector`. Not exported from
- * the package index.
+ * The Google ID token verifier, and the tRPC server wrapper that takes one.
+ * Used by `runCloudRunConnector` and `runHttpConnector`. Not exported from the
+ * package index.
  */
 
 /**
@@ -41,23 +38,12 @@ export const newGoogleIdTokenVerifier = (audience?: string) => {
 
 /**
  * Serves `router` at `/trpc` behind `verify`, plus `GET /health` without a
- * token. With `verify` null, `/trpc` has no check, so something in front of the
- * server must authenticate requests.
+ * token. Listens on every interface.
  */
 export const serveGoogleIdTokenConnector = <T>(
   moduleName: string,
   router: AnyRouter,
   createContext:
     ((opts: CreateExpressContextOptions) => Promise<T>) | undefined,
-  verify: ((token: string) => Promise<boolean>) | null,
-  host?: string
-) => {
-  const trpcRouter = Router();
-  trpcRouter.use(createExpressMiddleware({ router, createContext }));
-
-  const middlewares: RequestHandler[] = verify
-    ? [bearerAuthzMiddleware(verify)]
-    : [];
-
-  return runExpressApp(moduleName, { "/trpc": trpcRouter }, middlewares, host);
-};
+  verify: TokenVerifier
+) => serveTrpcConnector(moduleName, router, createContext, verify);
