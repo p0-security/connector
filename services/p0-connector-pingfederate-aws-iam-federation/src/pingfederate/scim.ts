@@ -19,6 +19,19 @@ export class ScimStatusError extends Error {
   }
 }
 
+/** PingFederate answered with a 2xx reply that isn't the SCIM reply asked for. */
+export class ScimReplyError extends Error {
+  constructor() {
+    super("PingFederate's SCIM endpoint answered with an unexpected reply");
+  }
+}
+
+const parseReply = <T>(shape: z.ZodType<T>, json: unknown): T => {
+  const parsed = shape.safeParse(json);
+  if (!parsed.success) throw new ScimReplyError();
+  return parsed.data;
+};
+
 const scimError = z.object({ detail: z.string() });
 
 const schemaAttribute = z.object({
@@ -100,7 +113,7 @@ export const scimClient = (
           method: "GET",
           path: `/Schemas/${SCIM_EXTENSION}`,
         });
-        return schema.parse(found).attributes;
+        return parseReply(schema, found).attributes;
       } catch (error) {
         if (error instanceof ScimStatusError && error.status === 404) {
           return undefined;
@@ -115,7 +128,7 @@ export const scimClient = (
         method: "GET",
         path: `/Users?filter=${encodeURIComponent(filter)}&attributes=id`,
       });
-      return userList.parse(found).Resources.map(({ id }) => id ?? null);
+      return parseReply(userList, found).Resources.map(({ id }) => id ?? null);
     },
     addValue: (id, attribute, value) =>
       patch(id, {

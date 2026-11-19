@@ -4,7 +4,7 @@ import {
 } from "@p0security/connector-core";
 
 import { failureFacts } from "./failure.ts";
-import { ScimStatusError } from "./pingfederate/scim.ts";
+import { ScimReplyError, ScimStatusError } from "./pingfederate/scim.ts";
 
 const UNREACHABLE: ReadonlySet<unknown> = new Set([
   "EAI_AGAIN",
@@ -91,5 +91,13 @@ const fromStatus = ({ status, detail }: ScimStatusError): ConnectorError => {
 export const toConnectorError = (error: unknown): unknown => {
   if (error instanceof ConnectorError) return error;
   if (error instanceof ScimStatusError) return fromStatus(error);
+  if (error instanceof ScimReplyError) {
+    return new ConnectorError({
+      message:
+        "PingFederate's SCIM endpoint answered with something that isn't a SCIM reply. Check the PingFederate URL on the app in P0, and that nothing in front of PingFederate answers for /pf-scim.",
+      payload: {},
+      type: "validation_error",
+    });
+  }
   return fromNetwork(error) ?? error;
 };

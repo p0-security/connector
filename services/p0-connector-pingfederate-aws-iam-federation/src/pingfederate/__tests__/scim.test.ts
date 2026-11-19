@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { APP_INPUT } from "../../__tests__/fixtures.ts";
 import { callPingFederate } from "../http.ts";
-import { SCIM_EXTENSION, ScimStatusError, scimClient } from "../scim.ts";
+import {
+  SCIM_EXTENSION,
+  ScimReplyError,
+  ScimStatusError,
+  scimClient,
+} from "../scim.ts";
 
 vi.mock("../http.ts");
 
@@ -63,6 +68,17 @@ describe("findUsers", () => {
       detail: undefined,
     });
   });
+});
+
+it("throws a reply error for a 2xx that isn't a SCIM reply", async () => {
+  vi.mocked(callPingFederate).mockResolvedValue({
+    status: 200,
+    body: "<html>Sign on</html>",
+  });
+
+  await expect(scim().findUsers("ada@example.com")).rejects.toBeInstanceOf(
+    ScimReplyError
+  );
 });
 
 describe("getExtensionAttributes", () => {

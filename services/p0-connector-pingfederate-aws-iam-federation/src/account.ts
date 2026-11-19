@@ -48,7 +48,10 @@ export const app = z.object({
    */
   roleAttribute: z
     .string()
-    .regex(/^[A-Za-z][A-Za-z0-9_-]{0,99}$/, "must be a SCIM attribute name"),
+    .regex(
+      /^[A-Za-z][A-Za-z0-9-]{0,99}$/,
+      "must be a letter, then letters, digits and hyphens, as Active Directory allows"
+    ),
   /**
    * PEM certificates that the connector trusts for PingFederate, in addition
    * to the public CAs.

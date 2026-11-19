@@ -16,7 +16,7 @@ export type Reply = { status: number; body: string };
 
 /**
  * Sends one call to PingFederate's runtime and gets the reply, whatever its
- * status. Uses `node:https`, because `fetch` takes no CA certificate.
+ * status.
  */
 export const callPingFederate = (
   {
@@ -26,6 +26,7 @@ export const callPingFederate = (
   { method, path, headers = {}, body }: Call
 ): Promise<Reply> =>
   new Promise((resolve, reject) => {
+    // `fetch` takes no CA certificate.
     const outgoing = request(
       `${pingFederateUrl}${path}`,
       {
