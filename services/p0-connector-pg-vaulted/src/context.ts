@@ -15,9 +15,9 @@ export const grantLogin = z.string().regex(GRANT_LOGIN_PATTERN);
  * One target: a PostgreSQL instance or cluster P0 manages, and the database
  * the manager connects to.
  *
- * The manager's secret is deliberately absent. The connector looks it up by
- * `host` in its own environment, in a mapping Terraform sets, so the P0
- * control plane cannot point the connector at another secret or host.
+ * The manager's secret is absent: the connector is to look it up by `host`
+ * in its own environment, in a mapping Terraform sets, so the P0 control
+ * plane cannot point the connector at another secret or host.
  */
 export const target = z.object({
   host: z.string().min(1),
@@ -29,7 +29,6 @@ export const target = z.object({
 
 export type Target = z.infer<typeof target>;
 
-/** What install validation is asked about: one target. */
 export const installContext = z.object({ target });
 
 export type InstallContext = z.infer<typeof installContext>;
@@ -39,26 +38,19 @@ export type InstallContext = z.infer<typeof installContext>;
 // endpoint outside AWS's regional ones.
 const region = z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d{1,2}$/);
 
-// shape copied from the `secrets` union in services/p0-connector-snowflake-ai/src/context.ts,
-// with its AWS member only
-/** Where grant secrets are written: AWS Secrets Manager, in `region`. */
-const secrets = z.discriminatedUnion("manager", [
-  z.object({ manager: z.literal("aws"), region }),
-]);
+/** Where grant secrets are written: AWS Secrets Manager, in `region`.
+ * `manager` is the secret manager, not the manager login. */
+const secrets = z.object({ manager: z.literal("aws"), region });
 
-/**
- * A grant secret's name: `p0/postgres-ai/<vpc id>/<target id>/<grant login>`.
- * The connector's IAM is scoped to `p0/postgres-ai/<its vpc>/`, and the last
- * segment is the grant login, so one grant's secret can never be another's.
- */
+/** A grant secret's name: `p0/postgres-ai/<vpc id>/<target id>/<grant login>`. */
 export const GRANT_SECRET_NAME_PATTERN =
   /^p0\/postgres-ai\/vpc-[0-9a-f]{8,17}\/[A-Za-z0-9][A-Za-z0-9-]{0,62}\/p0v_[0-9a-f]{32}$/;
 
 /**
  * Whether `secretName` is the grant secret of `login`: its last segment is
  * the login. The request-context schema cannot check this, because the grant
- * login arrives as the user, outside the context. A handler must, before it
- * touches the secret.
+ * login arrives as the user, outside the context, so the user namespace check
+ * does. It is what keeps one grant's secret from being another's.
  */
 export const isGrantSecretOfLogin = (secretName: string, login: string) =>
   secretName.endsWith(`/${login}`);
@@ -87,9 +79,9 @@ export const requestContext = z.object({
    * Truncated, never refused, for the same reason as the deadline. */
   comment: z.string().transform((text) => text.slice(0, MAX_COMMENT_LENGTH)),
   /** The role that takes over what the grant login owns before the login is
-   * dropped: the approved role. A login that still owns a table can't be
-   * dropped, and an agent whose approved role may create objects owns what
-   * it creates. */
+   * dropped. P0 sends exactly one policy, and this is its `rolename`,
+   * repeated here because `deleteUser` receives no policies. A login that
+   * still owns a table can't be dropped. */
   objectOwner: rolename,
 });
 

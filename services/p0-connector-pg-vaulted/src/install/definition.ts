@@ -2,22 +2,17 @@
 import { z } from "zod";
 
 /**
- * The checks install validation runs, in the order it runs them, by the name
- * a failure reports in `payload.step`. P0 reads these, so the set is closed
- * and the order is fixed: a change to either is a change to the contract.
- *
- * - `manager_mapping`: the target's host is in the connector's manager
- *   mapping.
- * - `sign_in`: the manager authenticates to the target.
- * - `create_role`: the manager can create roles (`CREATEROLE`).
- * - `signal_backend`: the manager can end other logins' sessions
- *   (`pg_signal_backend`).
+ * The checks install validation is to run, in the order it runs them, by the
+ * name a failure reports in `payload.step`. P0 is to read these, so the set is
+ * closed and the order is fixed: a change to either is a change to the
+ * contract. The README says what each one checks.
  */
 export const PG_VAULTED_INSTALL_STEPS = [
   "manager_mapping",
   "sign_in",
   "create_role",
   "signal_backend",
+  "reassign_owned",
 ] as const;
 
 export const pgVaultedInstallStep = z.enum(PG_VAULTED_INSTALL_STEPS);

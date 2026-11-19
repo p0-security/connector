@@ -6,11 +6,14 @@ import { describe, expect, it } from "vitest";
 
 import { LOGIN, context, target } from "../../__tests__/fixtures.ts";
 import { t } from "../../router.ts";
+import { spec } from "../role/definition.ts";
 import { newRolePrimitives, router } from "../role/handler.ts";
 
 const role = () => router(t).createCaller({ logger: createLogger() });
 
 const approved = [{ type: "role" as const, rolename: "analyst" }];
+
+const OTHER_LOGIN = `p0v_${"f".repeat(32)}`;
 
 describe("request parsing", () => {
   it.each(["postgres", "p0v_", `${LOGIN}0`, `${LOGIN}"; DROP ROLE x; --`])(
@@ -43,16 +46,11 @@ describe("request parsing", () => {
   });
 
   it.each(["analyst", "Reporting.read-only", "x@example.com", "a".repeat(63)])(
-    "lets the role name %j through to the primitive",
-    async (rolename) => {
-      await expect(
-        role().setPoliciesForUser({
-          userId: LOGIN,
-          userBody: LOGIN,
-          policies: [{ type: "role", rolename }],
-          context,
-        })
-      ).rejects.toThrow("pg-vaulted setPoliciesForUser is not implemented");
+    "accepts the role name %j",
+    (rolename) => {
+      const policy = { type: "role", rolename };
+
+      expect(spec.policy(policy)).toEqual(policy);
     }
   );
 
@@ -112,6 +110,19 @@ describe("user namespace", () => {
     }
   );
 
+  it("refuses a login whose grant secret is another login's", async () => {
+    await expect(
+      perimeter.provisionUser({ userBody: OTHER_LOGIN, context })
+    ).rejects.toThrow(`Username "${OTHER_LOGIN}" is not namespaced`);
+    await expect(
+      perimeter.deleteUser({
+        userId: OTHER_LOGIN,
+        userBody: OTHER_LOGIN,
+        context,
+      })
+    ).rejects.toThrow(`Resource ${OTHER_LOGIN} is not namespaced`);
+  });
+
   it("lets a grant login through to the primitive", async () => {
     await expect(
       perimeter.provisionUser({ userBody: LOGIN, context })
@@ -120,46 +131,24 @@ describe("user namespace", () => {
 });
 
 describe("stubbed primitives", () => {
-  it("provisionUser and identifyUser reject at getUser", async () => {
-    await expect(
-      role().provisionUser({ userBody: LOGIN, context })
-    ).rejects.toThrow("pg-vaulted getUser is not implemented");
-    await expect(
-      role().identifyUser({ userBody: LOGIN, context })
-    ).rejects.toThrow("pg-vaulted getUser is not implemented");
-  });
+  const user = { userId: LOGIN, userBody: LOGIN, context };
 
-  it("setPoliciesForUser rejects, with policies and with none", async () => {
-    await expect(
-      role().setPoliciesForUser({
-        userId: LOGIN,
-        userBody: LOGIN,
-        policies: approved,
-        context,
-      })
-    ).rejects.toThrow("pg-vaulted setPoliciesForUser is not implemented");
-    await expect(
-      role().setPoliciesForUser({
-        userId: LOGIN,
-        userBody: LOGIN,
-        policies: [],
-        context,
-      })
-    ).rejects.toThrow("pg-vaulted setPoliciesForUser is not implemented");
+  it.each([
+    ["getUser", () => role().provisionUser({ userBody: LOGIN, context })],
+    ["getUser", () => role().identifyUser({ userBody: LOGIN, context })],
+    [
+      "setPoliciesForUser",
+      () => role().setPoliciesForUser({ ...user, policies: approved }),
+    ],
+    [
+      "setPoliciesForUser",
+      () => role().setPoliciesForUser({ ...user, policies: [] }),
+    ],
+    ["deleteUser", () => role().deleteUser(user)],
+    ["list", () => role().list({ query: { type: "role", context: target } })],
+  ])("rejects at %s", async (operation, call) => {
+    await expect(call()).rejects.toThrow(
+      `pg-vaulted ${operation} is not implemented`
+    );
   });
-
-  it("deleteUser rejects", async () => {
-    await expect(
-      role().deleteUser({ userId: LOGIN, userBody: LOGIN, context })
-    ).rejects.toThrow("pg-vaulted deleteUser is not implemented");
-  });
-
-  it.each(["role", "database"] as const)(
-    "list rejects for %s",
-    async (type) => {
-      await expect(
-        role().list({ query: { type, context: target } })
-      ).rejects.toThrow("pg-vaulted list is not implemented");
-    }
-  );
 });

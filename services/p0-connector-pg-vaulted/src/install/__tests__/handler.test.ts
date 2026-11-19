@@ -14,13 +14,13 @@ describe("install validation", () => {
     await expect(validation().get({})).rejects.toThrow("target");
   });
 
-  it("rejects, not implemented", async () => {
+  it("rejects as not implemented", async () => {
     await expect(validation().get({ target })).rejects.toThrow(
       "pg-vaulted install.validation.get is not implemented"
     );
   });
 
-  it("its result names the roles the manager can hand out", () => {
+  it("the result schema accepts grantable roles", () => {
     const validated = { grantableRoles: ["analyst", "reporting"] };
 
     expect(installValidation.parse(validated)).toEqual(validated);

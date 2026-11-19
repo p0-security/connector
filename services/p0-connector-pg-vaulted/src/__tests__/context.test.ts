@@ -150,7 +150,7 @@ describe("request context", () => {
     { target: { ...context.target, database: "" } },
     { secrets: { manager: "aws", region: "" } },
     { secrets: { manager: "aws", region: "us-east-1.attacker.example" } },
-    { secrets: { manager: "gcp", projectId: "proj" } },
+    { secrets: { manager: "gcp", region: "us-east-1" } },
     { objectOwner: undefined },
     { objectOwner: "" },
     { objectOwner: 'analyst"; DROP ROLE postgres; --' },
