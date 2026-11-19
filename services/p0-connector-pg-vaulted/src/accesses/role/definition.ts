@@ -9,10 +9,8 @@ import {
   listerQuery,
   listerResponse,
   requestContext,
+  rolename,
 } from "../../context.ts";
-import { isIdentifier } from "../../identifier.ts";
-
-const rolename = z.string().min(1).refine(isIdentifier, "Invalid role name");
 
 // shape copied from `policy` in services/p0-connector-pg/src/accesses/role/definition.ts
 /** One approved role, granted to the grant login. */

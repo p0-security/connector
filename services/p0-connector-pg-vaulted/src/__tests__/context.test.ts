@@ -151,6 +151,10 @@ describe("request context", () => {
     { secrets: { manager: "aws", region: "" } },
     { secrets: { manager: "aws", region: "us-east-1.attacker.example" } },
     { secrets: { manager: "gcp", projectId: "proj" } },
+    { objectOwner: undefined },
+    { objectOwner: "" },
+    { objectOwner: 'analyst"; DROP ROLE postgres; --' },
+    { objectOwner: "a".repeat(64) },
   ])("refuses the request context %j", (override) => {
     expect(requestContext.safeParse({ ...context, ...override }).success).toBe(
       false

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isIdentifier } from "./identifier.ts";
+
 /**
  * A grant login's name: `p0v_<grant key>`, where the grant key is 32
  * lowercase hex digits that P0 picks at random. P0 chooses the name; the
@@ -61,6 +63,11 @@ export const GRANT_SECRET_NAME_PATTERN =
 export const isGrantSecretOfLogin = (secretName: string, login: string) =>
   secretName.endsWith(`/${login}`);
 
+export const rolename = z
+  .string()
+  .min(1)
+  .refine(isIdentifier, "Invalid role name");
+
 /** The longest comment the connector writes with `COMMENT ON ROLE`. */
 const MAX_COMMENT_LENGTH = 1000;
 
@@ -79,6 +86,11 @@ export const requestContext = z.object({
    * customer's own database audit resolves the grant login without P0.
    * Truncated, never refused, for the same reason as the deadline. */
   comment: z.string().transform((text) => text.slice(0, MAX_COMMENT_LENGTH)),
+  /** The role that takes over what the grant login owns before the login is
+   * dropped: the approved role. A login that still owns a table can't be
+   * dropped, and an agent whose approved role may create objects owns what
+   * it creates. */
+  objectOwner: rolename,
 });
 
 export type RequestContext = z.infer<typeof requestContext>;

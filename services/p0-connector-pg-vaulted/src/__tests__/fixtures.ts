@@ -16,4 +16,5 @@ export const context: RequestContext = {
   secretName: `p0/postgres-ai/vpc-0a1b2c3d4e5f67890/orders-prod/${LOGIN}`,
   deadline: "2026-12-01T00:00:00Z",
   comment: "request r123, requestor x@example.com",
+  objectOwner: "analyst",
 };

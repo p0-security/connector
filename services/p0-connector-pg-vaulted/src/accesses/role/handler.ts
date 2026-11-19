@@ -31,8 +31,10 @@ import { type RoleSchema, spec } from "./definition.ts";
  *   sessions and verifies that none remain. It throws when the cutoff cannot
  *   be confirmed, so that P0 keeps retrying.
  * - `deleteUser` cleans up after the database cutoff: it deletes the grant
- *   secret and leaves the retired login in place for audit. A retired login
- *   is never reactivated.
+ *   secret, hands what the login owns to the context's object owner in every
+ *   database of the target, and drops the login. It refuses a login that has
+ *   not been cut off, and a login that is already gone is a success. Between
+ *   the cutoff and this, the login is retired: it is never reactivated.
  * - `list` returns, for a target, the roles a grant can be approved for, or
  *   its databases.
  *

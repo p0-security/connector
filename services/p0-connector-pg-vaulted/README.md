@@ -27,8 +27,8 @@ to one VPC, whose id scopes the secrets it can write.
 - **Activation**: turning a prepared grant login from unable to log in to able to log in.
 - **Database cutoff**: the confirmed state in which a grant login is disabled, its password is
   cleared, and every session it opened is verified gone.
-- **Retired login**: a grant login after database cutoff. It is kept for audit and never
-  reactivated.
+- **Retired login**: a grant login after database cutoff and before cleanup drops it. It is
+  never reactivated.
 
 ## Contract
 
@@ -49,14 +49,15 @@ A role name is 1 to 63 bytes of ASCII letters, digits and `. _ @ + -`, the same 
 
 Every access call carries this context (`src/context.ts`):
 
-| Field        | Value                                                                                                                                      |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `requestId`  | The P0 request, a non-empty string.                                                                                                        |
-| `target`     | `{ host, port, database }`: the target, and the database the manager connects to.                                                          |
-| `secrets`    | `{ manager: "aws", region }`: where the grant secret is written.                                                                           |
-| `secretName` | The grant secret's name. See [Names](#names).                                                                                              |
-| `deadline`   | An ISO 8601 date and time with `Z` or an offset. It becomes the grant login's `VALID UNTIL`. A deadline in the past is accepted.           |
-| `comment`    | Who asked and for which request. Written with `COMMENT ON ROLE`, so the customer's own database audit resolves the grant login without P0. |
+| Field         | Value                                                                                                                                      |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `requestId`   | The P0 request, a non-empty string.                                                                                                        |
+| `target`      | `{ host, port, database }`: the target, and the database the manager connects to.                                                          |
+| `secrets`     | `{ manager: "aws", region }`: where the grant secret is written.                                                                           |
+| `secretName`  | The grant secret's name. See [Names](#names).                                                                                              |
+| `deadline`    | An ISO 8601 date and time with `Z` or an offset. It becomes the grant login's `VALID UNTIL`. A deadline in the past is accepted.           |
+| `comment`     | Who asked and for which request. Written with `COMMENT ON ROLE`, so the customer's own database audit resolves the grant login without P0. |
+| `objectOwner` | The role that takes over what the grant login owns before the login is dropped: the approved role.                                         |
 
 The context does not name the manager's secret. The connector looks it up by `target.host` in
 its own environment, in a mapping that Terraform sets, so the P0 control plane cannot point the
@@ -97,8 +98,9 @@ The resource-root primitives map to a grant's lifecycle like this:
 - `setPoliciesForUser` with no policies is the revoke path. It performs the database cutoff: it
   disables the login, clears its password, ends its sessions and verifies that none remain. It
   throws when the cutoff cannot be confirmed, so that P0 keeps retrying.
-- `deleteUser` cleans up after the database cutoff. It deletes the grant secret and leaves the
-  retired login in place.
+- `deleteUser` cleans up after the database cutoff. It deletes the grant secret, hands what the
+  login owns to `objectOwner` in every database of the target, and drops the login. It refuses a
+  login that has not been cut off, and a login that is already gone is a success.
 - `list` returns, for a target, the roles a grant can be approved for (`type: "role"`) or its
   databases (`type: "database"`).
 
@@ -143,4 +145,5 @@ grant login's password and cannot read it back.
 - Nothing calls `isGrantSecretOfLogin` yet.
 - The package depends on no PostgreSQL driver and no Secrets Manager client.
 - No image is built: the service is not in `.github/workflows/docker.yaml`.
-- Dropping retired logins, which needs their owned objects reassigned first, is later work.
+- Install validation does not yet check that the manager can reassign a grant login's objects
+  to an approved role.
