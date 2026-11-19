@@ -37,6 +37,8 @@ jobs:
         uses: ./.github/actions/yarn-setup
       - name: Verify eslint
         run: yarn :lint:code
+        env:
+          NODE_OPTIONS: --max-old-space-size=12288
 
   typecheck:
     name: Type-check packages
