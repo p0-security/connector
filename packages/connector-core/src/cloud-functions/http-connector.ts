@@ -2,11 +2,8 @@ import type { AnyRouter } from "@trpc/server";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 
 import { createLogger } from "../logger.ts";
-import {
-  type TokenVerifier,
-  newGoogleIdTokenVerifier,
-  serveTrpcConnector,
-} from "./google-id-token-connector.ts";
+import { newGoogleIdTokenVerifier } from "./google-id-token-connector.ts";
+import { type TokenVerifier, serveTrpcConnector } from "./trpc-server.ts";
 
 const logger = createLogger();
 
