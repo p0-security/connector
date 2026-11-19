@@ -1,37 +1,45 @@
 import { ConnectorError } from "@p0security/connector-core";
-import { InsufficientAccessError, InvalidCredentialsError } from "ldapts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   APP_INPUT,
-  BIND_PASSWORD,
+  SCIM_PASSWORD,
   connectorError,
   logger,
 } from "../../__tests__/fixtures.ts";
-import { type Directory, connectDirectory } from "../../ldap/client.ts";
 import type * as metadataModule from "../../pingfederate/metadata.ts";
 import {
   MetadataStatusError,
   getMetadata,
 } from "../../pingfederate/metadata.ts";
+import type * as scimModule from "../../pingfederate/scim.ts";
+import { ScimStatusError, scimClient } from "../../pingfederate/scim.ts";
 import { connectorRouter } from "../../router.ts";
-import { readBindPassword } from "../../secrets.ts";
+import { readScimPassword } from "../../secrets.ts";
 
 vi.mock("../../secrets.ts");
-vi.mock("../../ldap/client.ts");
 vi.mock("../../pingfederate/metadata.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof metadataModule>()),
   getMetadata: vi.fn(),
 }));
+vi.mock("../../pingfederate/scim.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof scimModule>()),
+  scimClient: vi.fn(),
+}));
+
+const scim = {
+  findUsers: vi.fn<scimModule.Scim["findUsers"]>(),
+  getExtensionAttributes: vi.fn<scimModule.Scim["getExtensionAttributes"]>(),
+};
+
+const AWS_ROLE = {
+  name: "awsRole",
+  multiValued: true,
+  mutability: "readWrite",
+};
 
 const ENTITY_ID = "https://sso.example.com";
 const METADATA = `<?xml version="1.0" encoding="UTF-8"?><md:EntityDescriptor entityID="${ENTITY_ID}" xmlns:md="urn:oasis:names:tc:SAML:2.0:metadata"></md:EntityDescriptor>`;
-
-const directory = {
-  entryExists: vi.fn<Directory["entryExists"]>(),
-  findAttributeType: vi.fn<Directory["findAttributeType"]>(),
-  close: vi.fn<Directory["close"]>(),
-};
 
 const validate = () =>
   connectorRouter
@@ -42,14 +50,10 @@ const failure = async () => (await connectorError(validate)).data;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(readBindPassword).mockResolvedValue(BIND_PASSWORD);
-  vi.mocked(connectDirectory).mockResolvedValue(directory);
-  directory.entryExists.mockResolvedValue(true);
-  directory.findAttributeType.mockResolvedValue({
-    definition: "( 1.2.3 NAME 'awsRole' )",
-    singleValued: false,
-  });
-  directory.close.mockResolvedValue();
+  vi.mocked(readScimPassword).mockResolvedValue(SCIM_PASSWORD);
+  vi.mocked(scimClient).mockReturnValue(scim);
+  scim.findUsers.mockResolvedValue([]);
+  scim.getExtensionAttributes.mockResolvedValue([AWS_ROLE]);
   vi.mocked(getMetadata).mockResolvedValue(METADATA);
 });
 
@@ -57,18 +61,17 @@ describe("install validation", () => {
   it("returns the entity ID, reading only", async () => {
     await expect(validate()).resolves.toEqual({ entityId: ENTITY_ID });
 
-    expect(connectDirectory).toHaveBeenCalledWith(
-      expect.objectContaining({ directoryUrl: APP_INPUT.directoryUrl }),
-      BIND_PASSWORD
+    expect(scimClient).toHaveBeenCalledWith(
+      expect.objectContaining({ scimUsername: APP_INPUT.scimUsername }),
+      SCIM_PASSWORD
     );
-    expect(directory.entryExists).toHaveBeenCalledWith(APP_INPUT.baseDn);
-    expect(directory.findAttributeType).toHaveBeenCalledWith("awsRole");
-    expect(directory.close).toHaveBeenCalled();
+    expect(scim.findUsers).toHaveBeenCalled();
+    expect(scim.getExtensionAttributes).toHaveBeenCalled();
   });
 
   it.each([
-    ["an ldap:// directory URL", { directoryUrl: "ldap://ldap.example.com" }],
     ["an http PingFederate URL", { pingFederateUrl: "http://sso.example.com" }],
+    ["a role attribute with a dot", { roleAttribute: "aws.role" }],
     ["a CA certificate that isn't PEM", { caCertificate: "MIIB" }],
   ])("refuses %s", async (_, change) => {
     await expect(
@@ -79,11 +82,11 @@ describe("install validation", () => {
           ...change,
         })
     ).rejects.toThrow();
-    expect(readBindPassword).not.toHaveBeenCalled();
+    expect(readScimPassword).not.toHaveBeenCalled();
   });
 
   it("fails at `secret` when the password can't be read", async () => {
-    vi.mocked(readBindPassword).mockRejectedValue(
+    vi.mocked(readScimPassword).mockRejectedValue(
       new ConnectorError({
         message: "no secret",
         payload: { manager: "aws" },
@@ -97,19 +100,36 @@ describe("install validation", () => {
     });
   });
 
-  it("fails at `bind` when the user store refuses the bind account", async () => {
-    vi.mocked(connectDirectory).mockRejectedValue(
-      new InvalidCredentialsError()
+  it("fails at `scim` when PingFederate refuses the credentials", async () => {
+    scim.findUsers.mockRejectedValue(
+      new ScimStatusError(401, "Basic auth failed")
     );
 
     expect(await failure()).toMatchObject({
       type: "insufficient_privileges",
-      payload: { ldapResult: 49, step: "bind" },
+      payload: { status: 401, step: "scim" },
     });
   });
 
-  it("fails at `bind` when the connector doesn't trust the certificate", async () => {
-    vi.mocked(connectDirectory).mockRejectedValue(
+  it("fails at `scim` and names the mapping when the email filter is undefined", async () => {
+    scim.findUsers.mockRejectedValue(
+      new ScimStatusError(
+        400,
+        "Invalid filter value. 'emails.work.value' is not a defined attribute"
+      )
+    );
+
+    const error = await failure();
+
+    expect(error).toMatchObject({
+      type: "validation_error",
+      payload: { step: "scim" },
+    });
+    expect(error.message).toContain("Read Users mapping");
+  });
+
+  it("fails at `scim` when the connector doesn't trust the certificate", async () => {
+    scim.findUsers.mockRejectedValue(
       Object.assign(new Error("self-signed"), {
         code: "SELF_SIGNED_CERT_IN_CHAIN",
       })
@@ -119,52 +139,35 @@ describe("install validation", () => {
 
     expect(error).toMatchObject({
       type: "validation_error",
-      payload: { step: "bind" },
+      payload: { step: "scim" },
     });
     expect(error.message).toContain("CA's certificate");
   });
 
-  it("fails at `bind` when the user store doesn't answer", async () => {
-    vi.mocked(connectDirectory).mockRejectedValue(
-      new Error("Connection timeout")
+  it("fails at `scim` when PingFederate doesn't answer", async () => {
+    scim.findUsers.mockRejectedValue(
+      Object.assign(new Error("timeout"), { code: "ETIMEDOUT" })
     );
 
     expect(await failure()).toMatchObject({
       type: "upstream_unavailable",
-      payload: { step: "bind" },
-    });
-  });
-
-  it("fails at `baseDn` when the base DN isn't an entry, and closes the connection", async () => {
-    directory.entryExists.mockResolvedValue(false);
-
-    expect(await failure()).toMatchObject({
-      type: "validation_error",
-      payload: { step: "baseDn" },
-    });
-    expect(directory.close).toHaveBeenCalled();
-  });
-
-  it("fails at `baseDn` when the bind account can't read it", async () => {
-    directory.entryExists.mockRejectedValue(new InsufficientAccessError());
-
-    expect(await failure()).toMatchObject({
-      type: "insufficient_privileges",
-      payload: { ldapResult: 50, step: "baseDn" },
+      payload: { code: "ETIMEDOUT", step: "scim" },
     });
   });
 
   it.each([
-    ["isn't in the schema", undefined],
+    ["PingFederate has no custom schema", undefined],
+    ["the schema has no role attribute", [{ ...AWS_ROLE, name: "other" }]],
     [
-      "takes only one value",
-      {
-        definition: "( 1.2.3 NAME 'awsRole' SINGLE-VALUE )",
-        singleValued: true,
-      },
+      "the role attribute takes one value",
+      [{ ...AWS_ROLE, multiValued: false }],
     ],
-  ])("fails at `attribute` when the role attribute %s", async (_, found) => {
-    directory.findAttributeType.mockResolvedValue(found);
+    [
+      "the role attribute is read-only",
+      [{ ...AWS_ROLE, mutability: "readOnly" }],
+    ],
+  ])("fails at `attribute` when %s", async (_, attributes) => {
+    scim.getExtensionAttributes.mockResolvedValue(attributes);
 
     expect(await failure()).toMatchObject({
       type: "validation_error",

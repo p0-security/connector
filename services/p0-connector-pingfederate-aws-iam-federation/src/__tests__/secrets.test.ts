@@ -8,10 +8,10 @@ import {
 import type * as secretManagerClient from "@p0security/connector-secret-manager-client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { readBindPassword } from "../secrets.ts";
+import { readScimPassword } from "../secrets.ts";
 import {
   AWS_SECRET,
-  BIND_PASSWORD,
+  SCIM_PASSWORD,
   connectorError,
   logger,
 } from "./fixtures.ts";
@@ -34,19 +34,19 @@ vi.mock(
 const holding = (value: Buffer | string) =>
   ({ value }) as unknown as SecretValue;
 
-const read = () => readBindPassword(AWS_SECRET, logger);
+const read = () => readScimPassword(AWS_SECRET, logger);
 
 beforeEach(() => {
   vi.clearAllMocks();
   vault.createSecretManagerClient.mockResolvedValue({
     getSecretValue: vault.getSecretValue,
   } as unknown as SecretManagerClient);
-  vault.getSecretValue.mockResolvedValue(holding(BIND_PASSWORD));
+  vault.getSecretValue.mockResolvedValue(holding(SCIM_PASSWORD));
 });
 
-describe("readBindPassword", () => {
+describe("readScimPassword", () => {
   it("reads the password, with its spaces, from the secret the pointer names", async () => {
-    await expect(read()).resolves.toBe(BIND_PASSWORD);
+    await expect(read()).resolves.toBe(SCIM_PASSWORD);
 
     expect(vault.createSecretManagerClient).toHaveBeenCalledWith({
       provider: "aws",
@@ -59,10 +59,10 @@ describe("readBindPassword", () => {
 
   it("reads a password given as bytes, without a line break at its end", async () => {
     vault.getSecretValue.mockResolvedValue(
-      holding(Buffer.from(`${BIND_PASSWORD}\n`))
+      holding(Buffer.from(`${SCIM_PASSWORD}\n`))
     );
 
-    await expect(read()).resolves.toBe(BIND_PASSWORD);
+    await expect(read()).resolves.toBe(SCIM_PASSWORD);
   });
 
   it("refuses an empty secret", async () => {

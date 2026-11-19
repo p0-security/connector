@@ -85,7 +85,7 @@ const typeOfUnmapped = ({
 };
 
 /**
- * Reads the bind account's password from the customer's own secret manager,
+ * Reads the SCIM password from the customer's own secret manager,
  * with the connector's own cloud identity. It is read on every call and never
  * kept, so a rotated password takes effect on the next one. The secret holds
  * the password itself; one line break at its end is dropped.
@@ -94,7 +94,7 @@ const typeOfUnmapped = ({
  * and not into an error. Nothing of the pointer but its manager goes into
  * either.
  */
-export const readBindPassword = async (
+export const readScimPassword = async (
   pointer: SecretPointer,
   logger: Logger
 ): Promise<string> => {
@@ -119,37 +119,37 @@ export const readBindPassword = async (
       );
       // What P0 gets is a sentence. This line is what's left for whoever has
       // to find out why.
-      logger.warn({ manager, ...facts }, "reading the bind password failed");
+      logger.warn({ manager, ...facts }, "reading the SCIM password failed");
 
       if (error instanceof SecretNotFoundError) {
         throw failed(
           "object_not_found",
-          `The connector couldn't find the PingFederate bind account's password, or a value in it, in ${managerName}. Check the secret's name and ${locationLabel} on the PingFederate app in P0, and that the secret exists and holds the password.`
+          `The connector couldn't find the PingFederate SCIM password, or a value in it, in ${managerName}. Check the secret's name and ${locationLabel} on the PingFederate app in P0, and that the secret exists and holds the password.`
         );
       }
       if (error instanceof UnauthorizedError) {
         throw failed(
           "insufficient_privileges",
-          `The connector isn't allowed to read the PingFederate bind account's password in ${managerName}. Grant the connector's identity ${readGrant}. If it has that, check the secret's name and ${locationLabel} on the PingFederate app in P0: a secret that doesn't exist can be refused the same way.`
+          `The connector isn't allowed to read the PingFederate SCIM password in ${managerName}. Grant the connector's identity ${readGrant}. If it has that, check the secret's name and ${locationLabel} on the PingFederate app in P0: a secret that doesn't exist can be refused the same way.`
         );
       }
       const description = renderFailure(error);
       throw failed(
         typeOfUnmapped(facts),
-        `The connector couldn't read the PingFederate bind account's password in ${managerName}${description === undefined ? "" : `: ${description}`}. Check the secret's ${locationLabel} on the PingFederate app in P0, and try again.`
+        `The connector couldn't read the PingFederate SCIM password in ${managerName}${description === undefined ? "" : `: ${description}`}. Check the secret's ${locationLabel} on the PingFederate app in P0, and try again.`
       );
     });
 
   // AWS returns a text secret as a string. Google returns bytes. A password
   // can start or end with a space, so only a line break is dropped.
-  const bindPassword = toText(value).replace(/\r?\n$/, "");
-  if (bindPassword === "") {
+  const password = toText(value).replace(/\r?\n$/, "");
+  if (password === "") {
     throw failed(
       "validation_error",
-      `The secret for the PingFederate bind account's password in ${managerName} is empty. Store the bind account's password itself as its value.`
+      `The secret for the PingFederate SCIM password in ${managerName} is empty. Store the SCIM password itself as its value.`
     );
   }
-  return bindPassword;
+  return password;
 };
 
 const toText = (value: SecretPayload): string =>
