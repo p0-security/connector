@@ -2,7 +2,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { APP_INPUT } from "../../__tests__/fixtures.ts";
 import { callPingFederate } from "../http.ts";
-import { SCIM_EXTENSION, ScimStatusError, scimClient } from "../scim.ts";
+import {
+  SCIM_EXTENSION,
+  ScimReplyError,
+  ScimStatusError,
+  scimClient,
+} from "../scim.ts";
 
 vi.mock("../http.ts");
 
@@ -65,6 +70,17 @@ describe("findUsers", () => {
   });
 });
 
+it("throws a reply error for a 2xx that isn't a SCIM reply", async () => {
+  vi.mocked(callPingFederate).mockResolvedValue({
+    status: 200,
+    body: "<html>Sign on</html>",
+  });
+
+  await expect(scim().findUsers("ada@example.com")).rejects.toBeInstanceOf(
+    ScimReplyError
+  );
+});
+
 describe("getExtensionAttributes", () => {
   it("reads the custom schema's attributes", async () => {
     const awsRole = {
@@ -87,5 +103,54 @@ describe("getExtensionAttributes", () => {
     replying(404, { status: "404", detail: "Schema not found." });
 
     await expect(scim().getExtensionAttributes()).resolves.toBeUndefined();
+  });
+});
+
+describe("addValue and removeValue", () => {
+  const ID = "9b87b8dc-67ce-4729-9ecd-d324a1905819";
+  const ROLE = "arn:aws:iam::1:role/r,arn:aws:iam::1:saml-provider/p";
+
+  beforeEach(() => {
+    replying(200, { id: ID });
+  });
+
+  const sentBody = () =>
+    JSON.parse(vi.mocked(callPingFederate).mock.calls[0]?.[1].body ?? "");
+
+  it("adds one value with a PATCH", async () => {
+    await scim().addValue(ID, "awsRole", ROLE);
+
+    expect(callPingFederate).toHaveBeenCalledWith(
+      APP_INPUT,
+      expect.objectContaining({
+        method: "PATCH",
+        path: `/pf-scim/v2/Users/${ID}`,
+        headers: expect.objectContaining({
+          "content-type": "application/scim+json",
+        }),
+      })
+    );
+    expect(sentBody()).toEqual({
+      schemas: ["urn:ietf:params:scim:api:messages:2.0:PatchOp"],
+      Operations: [
+        { op: "add", path: `${SCIM_EXTENSION}:awsRole`, value: [ROLE] },
+      ],
+    });
+  });
+
+  it("removes one value by a value filter", async () => {
+    await scim().removeValue(ID, "awsRole", ROLE);
+
+    expect(sentBody().Operations).toEqual([
+      { op: "remove", path: `${SCIM_EXTENSION}:awsRole[value eq "${ROLE}"]` },
+    ]);
+  });
+
+  it("throws a 404 for a user PingFederate doesn't have", async () => {
+    replying(404, { status: "404", detail: `ID ${ID} was not found.` });
+
+    await expect(scim().addValue(ID, "awsRole", ROLE)).rejects.toMatchObject({
+      status: 404,
+    });
   });
 });

@@ -49,3 +49,23 @@ The SCIM IdP connection needs:
 It returns the `entityId`. A failed check is thrown with its name in
 `payload.step`. Every check only reads; the install doesn't check that
 PingFederate's data store account can write the role attribute.
+
+## Role access
+
+`accesses.role` is a resource-hierarchy perimeter. The user is a SCIM user in
+PingFederate, found by `emails.work.value`; its ID is the user's SCIM `id`
+(Active Directory's `objectGUID`). The resource is a value of the user's role
+attribute, `role ARN,provider ARN`, as P0 makes it.
+
+- Binding adds the value to the role attribute; unbinding removes it, with a
+  `[value eq "…"]` path. Each sends one SCIM `PATCH`, and a repeat succeeds.
+- PingFederate applies a `PATCH` by reading the user's values and writing all
+  of them back, so two changes for one user at the same time can lose one. P0
+  must send one change per user at a time.
+- Provisioning a user PingFederate doesn't have fails with `object_not_found`.
+  More than one user with the email fails with `validation_error`.
+- The resource, policy, user-delete and list primitives do nothing.
+
+PingFederate's data store account needs write access to the role attribute.
+Without it, PingFederate fails the `PATCH`, and the connector passes on
+PingFederate's detail.

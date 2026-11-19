@@ -48,10 +48,14 @@ const PROBE_EMAIL = "install-check@p0.dev";
 /** `scim`: the credentials work, and PingFederate can find users by work email. */
 const checkScim = async (scim: Scim) => {
   await scim.findUsers(PROBE_EMAIL).catch((error: unknown) => {
-    if (error instanceof ScimStatusError && error.status === 400) {
+    if (
+      error instanceof ScimStatusError &&
+      error.status === 400 &&
+      error.detail?.includes("emails.work.value")
+    ) {
       throw refusal(
         "scim",
-        `PingFederate can't find users by "emails.work.value"${error.detail === undefined ? "" : ` (${error.detail})`}. Map the user's email to "emails.work.value" in the SCIM IdP connection's Read Users mapping.`
+        `PingFederate can't find users by "emails.work.value" (${error.detail}). Map the user's email to "emails.work.value" in the SCIM IdP connection's Read Users mapping.`
       );
     }
     return failedAt("scim")(error);
@@ -66,7 +70,9 @@ const checkRoleAttribute = async (scim: Scim, roleAttribute: string) => {
   const attributes = await scim
     .getExtensionAttributes()
     .catch(failedAt("attribute"));
-  const found = attributes?.find(({ name }) => name === roleAttribute);
+  // SCIM attribute names ignore case (RFC 7643).
+  const wanted = roleAttribute.toLowerCase();
+  const found = attributes?.find(({ name }) => name.toLowerCase() === wanted);
   if (found === undefined) {
     throw refusal(
       "attribute",

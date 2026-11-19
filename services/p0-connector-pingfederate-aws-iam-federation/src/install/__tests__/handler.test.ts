@@ -6,6 +6,7 @@ import {
   SCIM_PASSWORD,
   connectorError,
   logger,
+  scim,
 } from "../../__tests__/fixtures.ts";
 import type * as metadataModule from "../../pingfederate/metadata.ts";
 import {
@@ -13,7 +14,11 @@ import {
   getMetadata,
 } from "../../pingfederate/metadata.ts";
 import type * as scimModule from "../../pingfederate/scim.ts";
-import { ScimStatusError, scimClient } from "../../pingfederate/scim.ts";
+import {
+  ScimReplyError,
+  ScimStatusError,
+  scimClient,
+} from "../../pingfederate/scim.ts";
 import { connectorRouter } from "../../router.ts";
 import { readScimPassword } from "../../secrets.ts";
 
@@ -26,11 +31,6 @@ vi.mock("../../pingfederate/scim.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof scimModule>()),
   scimClient: vi.fn(),
 }));
-
-const scim = {
-  findUsers: vi.fn<scimModule.Scim["findUsers"]>(),
-  getExtensionAttributes: vi.fn<scimModule.Scim["getExtensionAttributes"]>(),
-};
 
 const AWS_ROLE = {
   name: "awsRole",
@@ -72,6 +72,7 @@ describe("install validation", () => {
   it.each([
     ["an http PingFederate URL", { pingFederateUrl: "http://sso.example.com" }],
     ["a role attribute with a dot", { roleAttribute: "aws.role" }],
+    ["a role attribute with an underscore", { roleAttribute: "aws_role" }],
     ["a CA certificate that isn't PEM", { caCertificate: "MIIB" }],
   ])("refuses %s", async (_, change) => {
     await expect(
@@ -126,6 +127,41 @@ describe("install validation", () => {
       payload: { step: "scim" },
     });
     expect(error.message).toContain("Read Users mapping");
+  });
+
+  it("passes on PingFederate's detail for another 400 at `scim`", async () => {
+    scim.findUsers.mockRejectedValue(
+      new ScimStatusError(400, "Unsupported parameter")
+    );
+
+    const error = await failure();
+
+    expect(error).toMatchObject({
+      type: "validation_error",
+      payload: { status: 400, step: "scim" },
+    });
+    expect(error.message).toContain("Unsupported parameter");
+    expect(error.message).not.toContain("Read Users mapping");
+  });
+
+  it("fails at `scim` when something else answers for /pf-scim", async () => {
+    scim.findUsers.mockRejectedValue(new ScimReplyError());
+
+    const error = await failure();
+
+    expect(error).toMatchObject({
+      type: "validation_error",
+      payload: { step: "scim" },
+    });
+    expect(error.message).toContain("/pf-scim");
+  });
+
+  it("matches the role attribute without case", async () => {
+    scim.getExtensionAttributes.mockResolvedValue([
+      { ...AWS_ROLE, name: "AwsRole" },
+    ]);
+
+    await expect(validate()).resolves.toEqual({ entityId: ENTITY_ID });
   });
 
   it("fails at `scim` when the connector doesn't trust the certificate", async () => {
