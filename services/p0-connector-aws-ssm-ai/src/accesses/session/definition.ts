@@ -2,7 +2,13 @@ import { newZodResourceRootParsers } from "@p0security/connector-core";
 import { z } from "zod";
 
 import { installContext, requestContext } from "../../context.ts";
-import { USER_PATTERN } from "../../script/provision.ts";
+import { RUN_AS_PATTERN, USER_PATTERN } from "../../script/provision.ts";
+
+/**
+ * The user a session switches to with sudo, `root` or another Linux user.
+ * Blank runs as the agent's own Linux user.
+ */
+const runAs = z.union([z.literal(""), z.string().regex(RUN_AS_PATTERN)]);
 
 /**
  * A holder group: the grants that share one key to one instance, as one
@@ -14,13 +20,24 @@ const userBody = z.object({
   user: z.string().regex(USER_PATTERN),
   /** The secret's name, within Secrets Manager's own rule for a name. */
   secretName: z.string().regex(/^[A-Za-z0-9/_+=.@-]{1,512}$/),
+  /**
+   * The user the group's key line switches to. P0 gives each run-as user a
+   * secret of its own, so a group has one.
+   */
+  runAs: runAs.optional(),
 });
 
 /** The secret's ARN. */
 const userId = z.string().min(1);
 
-/** What P0 granted one holder of the group. */
-const policy = z.object({ sudo: z.boolean() });
+/**
+ * What P0 granted one holder of the group. `sudo` comes only from a grant
+ * made before run-as, and `true` counts as run-as `root`.
+ */
+const policy = z.object({
+  runAs: runAs.optional(),
+  sudo: z.boolean().optional(),
+});
 
 const listerQuery = z.object({
   type: z.literal("instance"),

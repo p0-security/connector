@@ -106,7 +106,10 @@ type FakeInstanceState = {
  */
 export const fakeInstance = () => {
   /** Marker to the key line's user and public key. */
-  const keys = new Map<string, { user: string; publicKey: string }>();
+  const keys = new Map<
+    string,
+    { user: string; publicKey: string; runAs?: string }
+  >();
   /** Marker to the sudoers entry's user and run-as users. */
   const sudo = new Map<string, { user: string; runAs: string[] }>();
   /** The arguments of every script that ran, in order. */
@@ -147,7 +150,7 @@ export const fakeInstance = () => {
     const [action, user = "", marker = "", value = "", ...rest] = args;
     switch (action) {
       case "ensure-key":
-        keys.set(marker, { user, publicKey: value });
+        keys.set(marker, { user, publicKey: value, runAs: rest[0] });
         return ok(state.hostKeys.map((key) => `${HOST_KEY_PREFIX}${key}`));
       case "set-run-as":
         if (value) sudo.set(marker, { user, runAs: [value, ...rest] });

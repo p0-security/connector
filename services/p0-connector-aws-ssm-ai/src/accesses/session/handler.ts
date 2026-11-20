@@ -145,7 +145,9 @@ const withExitCodeType = (
  *
  * The "user" of this lifecycle is that secret, as it is for
  * `p0-connector-github-ai`. The policies are what P0 granted each holder of
- * the group, and they decide one thing: whether the Linux user has sudo.
+ * the group, and they decide one thing: which run-as users the Linux user
+ * can switch to with sudo. The key line itself switches to the group's own
+ * run-as user, from the user body.
  *
  * A revoke that can't remove access from the instance fails and keeps the
  * secret. P0 then marks the request errored, and a person cleans up by
@@ -208,7 +210,7 @@ export const router = (
         return secret?.hasValue ? secret.arn : null;
       },
 
-      createUser: async (context, { user, secretName }) => {
+      createUser: async (context, { user, secretName, runAs }) => {
         const logger = loggerFor(context, user);
         const secrets = secretsFor(context);
         // The empty secret comes first, so that when Secrets Manager
@@ -217,11 +219,13 @@ export const router = (
         const keys = newKeyPair();
         // A marker's new key replaces its old one, so a second try after a
         // failure below leaves one key on the instance, the one it stores.
+        // A blank run-as gets the plain key line.
         const { stdout } = await run(context, logger, {
           action: "ensure-key",
           user,
           marker: markerFor(secretName),
           publicKey: keys.publicKey,
+          runAs: runAs || undefined,
         });
         const value: SessionSecret = {
           privateKey: keys.privateKey,
@@ -239,16 +243,26 @@ export const router = (
       setPoliciesForUser: async (context, _userId, body, policies) => {
         const { user, secretName } = body;
         const logger = loggerFor(context, user);
-        // The full set every time: the user has sudo while P0 grants it to
-        // any holder of the group.
-        const sudo = policies.some((policy) => policy.sudo);
+        // The full set every time: the user can switch to every run-as user
+        // P0 grants any holder of the group, and to none once no holder is
+        // left. A grant from before run-as has sudo, which was root.
+        const runAs = [
+          ...new Set(
+            policies
+              .map((policy) => policy.runAs || (policy.sudo ? "root" : ""))
+              .filter(Boolean)
+          ),
+        ].sort();
         await run(context, logger, {
           action: "set-run-as",
           user,
           marker: markerFor(secretName),
-          runAs: sudo ? ["root"] : [],
+          runAs,
         });
-        logger.info({ sudo, nPolicies: policies.length }, "set sudo");
+        logger.info(
+          { runAs, nPolicies: policies.length },
+          "set the run-as users"
+        );
       },
 
       deleteUser: async (context, userId, { user, secretName }) => {

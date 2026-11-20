@@ -14,18 +14,23 @@ instance. A holder group is the set of grants that share one secret, and so one 
 Linux user. The "user" of the access is that secret, as it is for `p0-connector-github-ai`.
 
 Every call carries the request context `{ requestId, secrets: { manager: "aws", region },
-instance: { id, region } }` and the user body `{ user, secretName }`. `user` is the agent's
-Linux user and must match `^[a-z][a-z0-9_-]*-ai$` with at most 32 characters. `secretName` is
-the secret's name. P0 chooses both. The user id is the secret's ARN.
+instance: { id, region } }` and the user body `{ user, secretName, runAs? }`. `user` is the
+agent's Linux user and must match `^[a-z][a-z0-9_-]*-ai$` with at most 32 characters.
+`secretName` is the secret's name. `runAs` is the user the group's sessions switch to, `root`
+or another user name of at most 32 characters matching `^[a-z_][a-z0-9_-]*$`. Blank or absent,
+sessions run as `user`. P0 chooses all three, and gives each run-as user a secret of its own.
+The user id is the secret's ARN.
 
 - `provisionUser` returns the ARN when the secret exists and holds a value. Otherwise it
   creates the secret when it is missing, with no value, mints an ed25519 key pair, runs
-  `ensure-key` on the instance, and writes the secret's value. The secret comes first, so the
-  instance is untouched when Secrets Manager refuses it. A grant that stopped halfway finishes
-  on the next call: the new key replaces the old one on the instance.
-- `setPoliciesForUser` takes the group's full set of policies, each `{ sudo: boolean }`. It
-  runs `set-run-as root` when any policy has `sudo: true`, and `set-run-as` with no user
-  otherwise.
+  `ensure-key` on the instance, with `runAs` when it isn't blank, and writes the secret's
+  value. The secret comes first, so the instance is untouched when Secrets Manager refuses it.
+  A grant that stopped halfway finishes on the next call: the new key replaces the old one on
+  the instance.
+- `setPoliciesForUser` takes the group's full set of policies, each `{ runAs?, sudo? }`. It
+  runs `set-run-as` with every run-as user the policies name, once each. `sudo: true` comes
+  from a grant made before run-as and counts as `root`. With no run-as user left, as on the
+  last holder's revoke, `set-run-as` removes the group's entry.
 - `deleteUser` runs `remove-key`, and deletes the secret only after that succeeds. The Linux
   user stays. It refuses an ARN that doesn't name `secretName` in the request's region.
 - `list` takes `{ type: "instance", context: { region } }`. It returns one item for each Linux
@@ -68,9 +73,10 @@ line, it names only the command. The connector logs the end of stderr in a warni
 75 or an `unknown` keeps the message `runScript` built, which ends with that stderr, because P0
 never shows either one's message.
 
-Sudo belongs to the Linux user, not to a holder group. When two groups share one Linux user and
-one of them has sudo, sessions of both can use it on the instance. The marker only records which
-group asked for the entry, so that each can take its own away.
+Run-as users belong to the Linux user, not to a holder group. When two groups share one Linux
+user and one of them can switch to root, sessions of both can, with `sudo -u root`, on the
+instance. The marker only records which group asked for the entry, so that each can take its
+own away.
 
 Secrets Manager deletes a secret in the background, and describes it with a `DeletedDate` until
 the deletion finishes. `provisionUser` counts that secret as gone and goes on to create a new
