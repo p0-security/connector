@@ -14,17 +14,23 @@ instance. A holder group is the set of grants that share one secret, and so one 
 Linux user. The "user" of the access is that secret, as it is for `p0-connector-github-ai`.
 
 Every call carries the request context `{ requestId, secrets: { manager: "aws", region },
-instance: { id, region } }` and the user body `{ user, secretName }`. `user` is the agent's
-Linux user and must match `^[a-z][a-z0-9_-]*-ai$` with at most 32 characters. `secretName` is
-the secret's name. P0 chooses both. The user id is the secret's ARN.
+instance: { id, region } }` and the user body `{ user, secretName, runAs? }`. `user` is the
+agent's Linux user and must match `^[a-z][a-z0-9_-]*-ai$` with at most 32 characters.
+`secretName` is the secret's name. `runAs` is the user the group's sessions switch to, `root`
+or another user name of at most 32 characters matching `^[a-z_][a-z0-9_-]*$`. Blank or absent,
+sessions run as `user`. P0 chooses all three, and gives each run-as user a secret of its own.
+The user id is the secret's ARN.
 
 - `provisionUser` returns the ARN when the secret exists and holds a value. Otherwise it
   creates the secret when it is missing, with no value, mints an ed25519 key pair, runs
-  `ensure-key` on the instance, and writes the secret's value. The secret comes first, so the
-  instance is untouched when Secrets Manager refuses it. A grant that stopped halfway finishes
-  on the next call: the new key replaces the old one on the instance.
-- `setPoliciesForUser` takes the group's full set of policies, each `{ sudo: boolean }`. It
-  runs `set-sudo on` when any policy has `sudo: true`, and `set-sudo off` otherwise.
+  `ensure-key` on the instance, with `runAs` when it isn't blank, and writes the secret's
+  value. The secret comes first, so the instance is untouched when Secrets Manager refuses it.
+  A grant that stopped halfway finishes on the next call: the new key replaces the old one on
+  the instance.
+- `setPoliciesForUser` takes the group's full set of policies, each `{ runAs?, sudo? }`. It
+  runs `set-run-as` with every run-as user the policies name, once each. `sudo: true` comes
+  from a grant made before run-as and counts as `root`. With no run-as user left, as on the
+  last holder's revoke, `set-run-as` removes the group's entry.
 - `deleteUser` runs `remove-key`, and deletes the secret only after that succeeds. The Linux
   user stays. It refuses an ARN that doesn't name `secretName` in the request's region.
 - `list` takes `{ type: "instance", context: { region } }`. It returns one item for each Linux
@@ -35,7 +41,7 @@ the secret's name. P0 chooses both. The user id is the secret's ARN.
   has no `Name` tag or EC2 refuses the call.
 
 A revoke fails when it can't remove access from the instance. `setPoliciesForUser` fails when
-`set-sudo off` fails, and `deleteUser` fails when `remove-key` fails, so a stopped instance or
+`set-run-as` fails, and `deleteUser` fails when `remove-key` fails, so a stopped instance or
 an agent that breaks its own key removal fails the revoke. `deleteUser` then keeps the secret.
 P0 marks the request errored, and a person cleans up by hand, in this order:
 
@@ -67,9 +73,10 @@ line, it names only the command. The connector logs the end of stderr in a warni
 75 or an `unknown` keeps the message `runScript` built, which ends with that stderr, because P0
 never shows either one's message.
 
-Sudo belongs to the Linux user, not to a holder group. When two groups share one Linux user and
-one of them has sudo, sessions of both can use it on the instance. The marker only records which
-group asked for the entry, so that each can take its own away.
+Run-as users belong to the Linux user, not to a holder group. When two groups share one Linux
+user and one of them can switch to root, sessions of both can, with `sudo -u root`, on the
+instance. The marker only records which group asked for the entry, so that each can take its
+own away.
 
 Secrets Manager deletes a secret in the background, and describes it with a `DeletedDate` until
 the deletion finishes. `provisionUser` counts that secret as gone and goes on to create a new
@@ -137,13 +144,15 @@ than one call. Every call to SSM, its retries included, stops at that deadline.
 
 P0 tries a failed step twice more, half a second apart, while it still holds its lock. The
 script may still be running from the try before. So each command carries a comment,
-`p0-ssh-ai:<marker>:<action>`, where the action is `ensure-key`, `set-sudo-on`,
-`set-sudo-off` or `remove-key`. Before it sends anything, a run lists the instance's recent
+`p0-ssh-ai:<marker>:<action>`, where the action is `ensure-key`, `set-run-as-<hash>`,
+`set-run-as-none` or `remove-key`. The hash is the first 12 hex digits of the SHA-256 of the
+sorted run-as users, so only a command for the same users counts as the same action. Before it
+sends anything, a run lists the instance's recent
 `AWS-RunShellScript` commands (`ssm:ListCommands`, every page) and looks at the ones of its
 marker that haven't ended:
 
 - It waits for every one with another action, so a grant's and a revoke's changes land in the
-  order P0 made them. A late `set-sudo on` can't land after a revoke.
+  order P0 made them. A late `set-run-as` can't land after a revoke.
 - One with the same action it takes over instead of sending another, and polls it as its own.
   It takes over the newest. `ensure-key` is never taken over: each try sends a new key, and the
   key a try stores must be the one it installed. That run waits for the earlier one and then
@@ -197,20 +206,36 @@ only the bundle. The script runs as root. It takes everything as arguments and c
 API, so another transport can run the same script later. `buildProvisionScript` checks and
 quotes one action's arguments and returns the text to pass to `runScript`.
 
-| Action                                    | What it does                                                                                                               |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `ensure-key <user> <marker> <public key>` | Creates the Linux user when it is missing, puts the key in its `authorized_keys`, and prints the instance's SSH host keys. |
-| `set-sudo <user> <marker> on\|off`        | Adds or removes the marker's entry in `/etc/sudoers-p0`. `visudo -cf` checks the file before an addition replaces it.      |
-| `remove-key <user> <marker>`              | Removes the marker's key line and sudoers entry. It keeps the user and everything else.                                    |
+| Action                                                    | What it does                                                                                                                                                                       |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ensure-key <user> <marker> <public key> [<run-as user>]` | Creates the Linux user when it is missing, puts the key in its `authorized_keys`, and prints the instance's SSH host keys. With a run-as user, the key line gets a forced command. |
+| `set-run-as <user> <marker> [<run-as user>...]`           | Gives the marker's entry in `/etc/sudoers-p0` the run-as users, or removes the entry when there are none. `visudo -cf` checks the file before an addition replaces it.             |
+| `remove-key <user> <marker>`                              | Removes the marker's key line, with or without a forced command, and its sudoers entry. It keeps the user and everything else.                                                     |
 
 A marker names one holder group. An action only touches what carries its own marker, so two
 groups can share one Linux user. Running an action again changes nothing.
 
 - The user name must match `^[a-z][a-z0-9_-]*-ai$` and have at most 32 characters. The marker is
   1 to 64 letters, digits, `_` or `-`. The public key is one ed25519 key with no options and no
-  comment. The script checks all three itself, before it changes anything.
+  comment. The script checks these and the run-as users' names itself, before it changes
+  anything.
 - A key line in `authorized_keys` ends with `p0-ssh-ai:<marker>`, as the key's comment. A
   marker's new key replaces its old one.
+- A run-as user is `root` or another user name of at most 32 characters, matching
+  `^[a-z_][a-z0-9_-]*$`. The script checks the name, then that the account exists, since sudo
+  can't switch to one that doesn't. It refuses a missing account with exit 69. Any account
+  that exists can be a run-as user, because P0's access policies decide who may switch to
+  which.
+- With a run-as user, `ensure-key` writes the key line as
+  `restrict,command="exec sudo -n -u <run-as user> -H -- /bin/bash -l -c 'cd && exec /bin/bash -c \"$1\"' p0-ssh-ai \"$SSH_ORIGINAL_COMMAND\"" <key> p0-ssh-ai:<marker>`.
+  The agent signs in as its own user, and sshd runs only that command, so the instance's logs
+  show the agent's login and then sudo's switch. A login bash reads the run-as user's profile
+  and starts in its home, as `sudo -i` would. `sudo -i` itself isn't used, because it hands
+  the command to the login shell with its `$` unescaped, so that shell expands them before
+  bash runs the command. `restrict` turns off the terminal, forwarding and `~/.ssh/rc`.
+  Without a run-as user the line is the key and the marker alone.
+- `set-run-as` writes one entry for the marker, `<user> ALL=(<run-as users>) NOPASSWD: ALL`,
+  with the users separated by `, `. P0 sends them once each, sorted.
 - The script edits `authorized_keys` as the agent's user, with `setpriv`. The agent owns its
   home directory, so a link it plants there could point a write by root at any file.
 - That child shell gets the script's stderr and none of its other open files, and its stdout
@@ -241,8 +266,8 @@ groups can share one Linux user. Running an action again changes nothing.
   65536 to 90000, P0's id range. A user outside that range is someone else's account: the agent
   would get its groups and files, and a sudo grant would give root to everyone else who can log
   in as it. So `ensure-key` refuses it with exit 69, before it changes any account, sudoers file
-  or home. `set-sudo` and `remove-key` don't check the id, so a revoke works on any user. A
-  holder group's later grants run only `set-sudo`, and a sudoers entry names the user, so sudo
+  or home. `set-run-as` and `remove-key` don't check the id, so a revoke works on any user. A
+  holder group's later grants run only `set-run-as`, and a sudoers entry names the user, so sudo
   goes to whichever account has that name when someone runs sudo.
 - When no user has the agent's name but a Linux group does, `ensure-key` deletes that group and
   makes it again for the agent's user only when its group id is in P0's range. Such a group
@@ -286,18 +311,19 @@ range. When no user has that name, it also refuses a group with it whose id is o
 
   ```
   # RequestID: p0-ssh-ai:<marker> | GrantedAt: <unix time>
-  <user> ALL=(ALL) NOPASSWD: ALL
+  <user> ALL=(<run-as users>) NOPASSWD: ALL
   ```
 
   The SSH integration's `cleanup` deletes every line of that file that is not part of such a
-  pair, so no other shape survives there.
+  pair, so no other shape survives there. An entry from before run-as names `(ALL)`, and the
+  marker's next `set-run-as` replaces it.
 
 - The script writes no `RevokedAt` line. The SSH integration refuses to grant an id that has
   one, and P0 grants a marker again and again. Removing an entry removes its two lines and
   leaves every other line as it was.
-- `set-sudo on` creates `/etc/sudoers-p0` when it is missing, with mode 0440, and adds
-  `#include sudoers-p0` to `/etc/sudoers` when that line is missing. Only the whole line counts,
-  so a commented-out include doesn't. The script adds a line break first when the last line of
+- `set-run-as` with a run-as user creates `/etc/sudoers-p0` when it is missing, with mode
+  0440, and adds `#include sudoers-p0` to `/etc/sudoers` when that line is missing. Only the
+  whole line counts, so a commented-out include doesn't. The script adds a line break first when the last line of
   `/etc/sudoers` has none, and renames its draft over the file only after `visudo -cf` accepts
   it with every file it includes. It never deletes `/etc/sudoers-p0`, because `/etc/sudoers`
   includes it by name. That file stays, empty, when its last entry goes.
@@ -311,7 +337,7 @@ range. When no user has that name, it also refuses a group with it whose id is o
 - `flock` and `setpriv` from util-linux.
 - `timeout` from coreutils. The script uses its `-k` to send KILL after TERM.
 - `useradd`, `groupadd` and `groupdel`, which `ensure-key` checks for before it creates a user.
-- `sudo`, for `set-sudo on`.
+- `sudo`, for a run-as user.
 - The SSH host keys in `/etc/ssh`, for `ensure-key`.
 
 ### Tests

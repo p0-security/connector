@@ -293,7 +293,7 @@ describe.skipIf(!BASH_VERSION)(
         ["an empty marker", ["remove-key", "alice-ai", ""], "invalid marker"],
         [
           "a marker with the entry format's bar",
-          ["set-sudo", "alice-ai", "m | GrantedAt: 1", "on"],
+          ["set-run-as", "alice-ai", "m | GrantedAt: 1", "root"],
           "invalid marker",
         ],
         [
@@ -319,12 +319,42 @@ describe.skipIf(!BASH_VERSION)(
         [
           "a missing public key",
           ["ensure-key", "alice-ai", "m1"],
-          "ensure-key takes a user, a marker and a public key",
+          "ensure-key takes a user, a marker, a public key and at most one run-as user",
         ],
         [
-          "a sudo state that is neither on nor off",
-          ["set-sudo", "alice-ai", "m1", "maybe"],
-          "set-sudo takes on or off",
+          "two run-as users for one key",
+          ["ensure-key", "alice-ai", "m1", KEY, "root", "bob"],
+          "ensure-key takes a user, a marker, a public key and at most one run-as user",
+        ],
+        [
+          "an empty run-as user for a key",
+          ["ensure-key", "alice-ai", "m1", KEY, ""],
+          "invalid run-as user",
+        ],
+        [
+          "a run-as user with a command in it",
+          ["ensure-key", "alice-ai", "m1", KEY, "bob$(id)"],
+          "invalid run-as user",
+        ],
+        [
+          "a run-as user with a quote, which the forced command would end on",
+          ["set-run-as", "alice-ai", "m1", 'bob"'],
+          "invalid run-as user",
+        ],
+        [
+          "a run-as user list for the entry",
+          ["set-run-as", "alice-ai", "m1", "root, bob"],
+          "invalid run-as user",
+        ],
+        [
+          "a run-as user that ends in a line break",
+          ["set-run-as", "alice-ai", "m1", "root", "bob\n"],
+          "invalid run-as user",
+        ],
+        [
+          "a run-as user of 33 characters",
+          ["set-run-as", "alice-ai", "m1", "b".repeat(33)],
+          "invalid run-as user",
         ],
         [
           "an extra argument",
@@ -346,7 +376,9 @@ describe.skipIf(!BASH_VERSION)(
         () => {
           for (const args of [
             ["ensure-key", "alice-ai", "m1", KEY],
-            ["set-sudo", "alice-ai", "m1", "on"],
+            ["ensure-key", "alice-ai", "m1", KEY, "root"],
+            ["set-run-as", "alice-ai", "m1"],
+            ["set-run-as", "alice-ai", "m1", "_svc", "bob", "root"],
             ["remove-key", `${"a".repeat(29)}-ai`, "m".repeat(64)],
           ]) {
             const run = runScript(...args);
@@ -361,7 +393,7 @@ describe.skipIf(!BASH_VERSION)(
     describe("the sudoers entry", () => {
       const MAIN = "root ALL=(ALL:ALL) ALL\n";
       const ENTRY =
-        /^# RequestID: p0-ssh-ai:m1 \| GrantedAt: \d+\nalice-ai ALL=\(ALL\) NOPASSWD: ALL\n$/;
+        /^# RequestID: p0-ssh-ai:m1 \| GrantedAt: \d+\nalice-ai ALL=\(root\) NOPASSWD: ALL\n$/;
       // What P0's SSH integration leaves in the same file.
       const REFERENCE_BEFORE = [
         "# RequestID: refreqAAAA1111 | GrantedAt: 1794935763",
@@ -382,7 +414,7 @@ describe.skipIf(!BASH_VERSION)(
       it.skipIf(!visudoFollowsTempIncludes)(
         "is added as two lines, in a file of mode 0440 that the main file includes (needs visudo)",
         () => {
-          const run = runFunctions("edit_sudoers add m1 alice-ai");
+          const run = runFunctions("edit_sudoers add m1 alice-ai root");
           expect(run.stderr).toBe("");
           expect(run.lastLine).toBe(RESULT_LINES.ok);
           expect(read("sudoers-p0")).toMatch(ENTRY);
@@ -395,11 +427,11 @@ describe.skipIf(!BASH_VERSION)(
       it.skipIf(!visudoFollowsTempIncludes)(
         "is left as it is by a second add (needs visudo)",
         () => {
-          runFunctions("edit_sudoers add m1 alice-ai");
+          runFunctions("edit_sudoers add m1 alice-ai root");
           const first = read("sudoers-p0");
           const inode = statSync(join(dir, "sudoers-p0")).ino;
           const mainInode = statSync(join(dir, "sudoers")).ino;
-          const run = runFunctions("edit_sudoers add m1 alice-ai");
+          const run = runFunctions("edit_sudoers add m1 alice-ai root");
           expect(run.status).toBe(0);
           expect(read("sudoers-p0")).toBe(first);
           expect(statSync(join(dir, "sudoers-p0")).ino).toBe(inode);
@@ -412,7 +444,7 @@ describe.skipIf(!BASH_VERSION)(
         "puts the include line on a line of its own when the main file's last line has no line break (needs visudo)",
         () => {
           writeFileSync(join(dir, "sudoers"), MAIN.trimEnd());
-          const run = runFunctions("edit_sudoers add m1 alice-ai");
+          const run = runFunctions("edit_sudoers add m1 alice-ai root");
           expect(run.stderr).toBe("");
           expect(run.status).toBe(0);
           expect(read("sudoers")).toBe(`${MAIN}#include sudoers-p0\n`);
@@ -426,7 +458,7 @@ describe.skipIf(!BASH_VERSION)(
         () => {
           const commented = `${MAIN}# #include sudoers-p0\n`;
           writeFileSync(join(dir, "sudoers"), commented);
-          const run = runFunctions("edit_sudoers add m1 alice-ai");
+          const run = runFunctions("edit_sudoers add m1 alice-ai root");
           expect(run.status).toBe(0);
           expect(read("sudoers")).toBe(`${commented}#include sudoers-p0\n`);
         }
@@ -437,7 +469,7 @@ describe.skipIf(!BASH_VERSION)(
         () => {
           const broken = `${MAIN}this is not sudoers syntax (\n`;
           writeFileSync(join(dir, "sudoers"), broken);
-          const run = runFunctions("edit_sudoers add m1 alice-ai");
+          const run = runFunctions("edit_sudoers add m1 alice-ai root");
           const reason = `visudo refused ${join(dir, "sudoers")} with P0's include line added, so the script left it as it was. Fix the line visudo names.`;
           expect(run.status).toBe(INSTANCE_STATE_EXIT_CODE);
           expect(run.stderr).toContain(`p0-ssh-ai: ${reason}\n`);
@@ -452,7 +484,7 @@ describe.skipIf(!BASH_VERSION)(
         () => {
           const broken = `${REFERENCE_BEFORE}this is not sudoers syntax (\n`;
           writeFileSync(join(dir, "sudoers-p0"), broken);
-          const run = runFunctions("edit_sudoers add m1 alice-ai");
+          const run = runFunctions("edit_sudoers add m1 alice-ai root");
           const reason = `visudo refused ${join(dir, "sudoers-p0")} with the agent's sudo entry added, so the script left it as it was. Fix the line visudo names.`;
           expect(run.status).toBe(INSTANCE_STATE_EXIT_CODE);
           expect(run.stderr).toContain(`p0-ssh-ai: ${reason}\n`);
@@ -666,6 +698,18 @@ describe.skipIf(!BASH_VERSION)(
         expect(readFileSync(keysFile(), "utf8")).toBe(`${HUMAN}\n`);
       });
 
+      it("is removed, or replaced, when it has a forced command", () => {
+        const forced = `restrict,command="exec sudo -n -u bob -H -- /bin/bash -l -c 'cd && exec /bin/bash -c \\"$1\\"' p0-ssh-ai \\"$SSH_ORIGINAL_COMMAND\\"" ${LINE}`;
+        seed(HUMAN, forced);
+        expect(editKeys(forced).status).toBe(0);
+        expect(readFileSync(keysFile(), "utf8")).toBe(`${HUMAN}\n${forced}\n`);
+        expect(editKeys(LINE).status).toBe(0);
+        expect(readFileSync(keysFile(), "utf8")).toBe(`${HUMAN}\n${LINE}\n`);
+        seed(HUMAN, forced);
+        expect(editKeys("").status).toBe(0);
+        expect(readFileSync(keysFile(), "utf8")).toBe(`${HUMAN}\n`);
+      });
+
       it("has nothing to remove when there is no .ssh or no file", () => {
         expect(editKeys("").status).toBe(0);
         expect(existsSync(join(dir, "home", ".ssh"))).toBe(false);
@@ -795,6 +839,248 @@ describe.skipIf(!BASH_VERSION)(
       expect(existsSync(home)).toBe(false);
     });
 
+    describe("run-as", () => {
+      const MISSING =
+        "a run-as user doesn't exist on the instance. Create it there, or request a run-as user that exists";
+      const FORCED = String.raw`restrict,command="exec sudo -n -u bob -H -- /bin/bash -l -c 'cd && exec /bin/bash -c \"$1\"' p0-ssh-ai \"$SSH_ORIGINAL_COMMAND\""`;
+
+      /** A stand-in for `id -u <name>` that knows these users' ids. */
+      const idsOf = (ids: Record<string, number>) =>
+        [
+          "id() {",
+          '  case "$2" in',
+          ...Object.entries(ids).map(
+            ([name, uid]) => `    ${name}) echo ${uid} ;;`
+          ),
+          "    *) return 1 ;;",
+          "  esac",
+          "}",
+        ].join("\n");
+
+      it.each([
+        ["root, with user id 0", "root", 0],
+        ["a person's account, with user id 1000", "bob", 1000],
+        ["another agent's account", "carol-ai", 65536],
+        ["a system account", "daemon", 1],
+        ["another name for user id 0", "toor", 0],
+      ])("takes %s", (_name, user, uid) => {
+        const run = runFunctions(
+          [idsOf({ [user]: uid }), `check_run_as ${user}`].join("\n")
+        );
+        expect(run.stderr).toBe("");
+        expect(run.status).toBe(0);
+      });
+
+      it("refuses a user that doesn't exist with the instance's code, naming no user", () => {
+        const run = runFunctions([idsOf({}), "check_run_as dave"].join("\n"));
+        expect(run.status).toBe(INSTANCE_STATE_EXIT_CODE);
+        expect(run.stderr).toBe(`p0-ssh-ai: ${MISSING}\n`);
+        expect(run.stdout).toBe(failedWith(MISSING));
+      });
+
+      it("puts the forced command before a run-as grant's key", () => {
+        const run = runFunctions("forced_command bob");
+        expect(run.stdout).toBe(`${FORCED}${RESULT_LINES.ok}\n`);
+      });
+
+      // What sshd does with the line: it takes what is inside command="...",
+      // reads \" as ", and runs it with the user's shell, -c.
+      const commandOf = (line: string) =>
+        line
+          .slice(line.indexOf('"') + 1, line.lastIndexOf('"'))
+          .replaceAll('\\"', '"');
+
+      it("hands sudo the agent's command as one argument, after its options", () => {
+        writeFileSync(
+          join(dir, "sudo"),
+          `#!/bin/bash\nprintf '[%s]\\n' "$@"\n`,
+          { mode: 0o755 }
+        );
+        const original = `echo "it's" $HOME; id -u | cat`;
+        // The only command on PATH is the sudo stand-in.
+        const run = spawnSync("/bin/bash", ["-c", commandOf(FORCED)], {
+          encoding: "utf8",
+          env: { PATH: dir, SSH_ORIGINAL_COMMAND: original },
+        });
+        expect(run.stderr).toBe("");
+        expect(run.stdout).toBe(
+          [
+            "-n",
+            "-u",
+            "bob",
+            "-H",
+            "--",
+            "/bin/bash",
+            "-l",
+            "-c",
+            'cd && exec /bin/bash -c "$1"',
+            "p0-ssh-ai",
+            original,
+          ]
+            .map((arg) => `[${arg}]\n`)
+            .join("")
+        );
+      });
+
+      // sudo -i would expand the command's $ once more, so $p, $1 and '$HOME'
+      // would each change meaning, and a command's own exit code would be
+      // lost.
+      it("runs the agent's command as it sent it, from the run-as user's home, with its exit code", () => {
+        const home = join(dir, "bob");
+        mkdirSync(home);
+        // A sudo that switches no user: it drops its options and runs the
+        // rest, as a sudo that let the switch through would.
+        writeFileSync(
+          join(dir, "sudo"),
+          `#!/bin/bash\nwhile [ "$1" != -- ]; do shift; done\nshift\nexec "$@"\n`,
+          { mode: 0o755 }
+        );
+        const original = `p=5; echo "p=$p" '$HOME' "$1"; pwd; exit 3`;
+        const run = spawnSync("/bin/bash", ["-c", commandOf(FORCED)], {
+          encoding: "utf8",
+          env: {
+            PATH: `${dir}:/usr/bin:/bin`,
+            HOME: home,
+            SSH_ORIGINAL_COMMAND: original,
+          },
+        });
+        expect(run.status).toBe(3);
+        expect(run.stdout.split("\n").slice(-3)).toEqual([
+          "p=5 $HOME ",
+          home,
+          "",
+        ]);
+      });
+
+      /**
+       * Runs `ensure_key` for alice-ai with stand-ins for everything that
+       * would change this machine. The key edit's stand-in prints the line
+       * it would write.
+       */
+      const ensureKey = (ids: Record<string, number>, ...runAs: string[]) =>
+        runFunctions(
+          [
+            "host_keys() { echo 'p0-ssh-ai-host-key: ssh-ed25519 AAAA'; }",
+            'ensure_user() { echo "would make $1" >&2; }',
+            `home_of() { echo ${quoteShellWord(join(dir, "home"))}; }`,
+            'as_user() { echo "would write: $5" >&2; }',
+            idsOf(ids),
+            `ensure_key alice-ai m1 ${quoteShellWord(KEY)} ${runAs.map(quoteShellWord).join(" ")}`,
+          ].join("\n")
+        );
+
+      it("writes the plain key line for a blank run-as", () => {
+        const run = ensureKey({}, "");
+        expect(run.status).toBe(0);
+        expect(run.stderr).toBe(
+          `would make alice-ai\nwould write: ${KEY} p0-ssh-ai:m1\n`
+        );
+      });
+
+      it.skipIf(!hasTool("sudo"))(
+        "writes the forced command for a run-as user (needs sudo)",
+        () => {
+          const run = ensureKey({ bob: 1000 }, "bob");
+          expect(run.status).toBe(0);
+          expect(run.stderr).toBe(
+            `would make alice-ai\nwould write: ${FORCED} ${KEY} p0-ssh-ai:m1\n`
+          );
+        }
+      );
+
+      it.skipIf(!hasTool("sudo"))(
+        "refuses a run-as user the instance doesn't have before it makes the agent's user (needs sudo)",
+        () => {
+          const run = ensureKey({}, "bob");
+          expect(run.status).toBe(INSTANCE_STATE_EXIT_CODE);
+          expect(run.stderr).toBe(`p0-ssh-ai: ${MISSING}\n`);
+        }
+      );
+
+      /** Runs `set_run_as`, whose sudoers edit's stand-in prints its arguments. */
+      const setRunAs = (ids: Record<string, number>, ...runAs: string[]) =>
+        runFunctions(
+          [
+            'edit_sudoers() { printf "would edit:"; printf " [%s]" "$@"; echo; } >&2',
+            idsOf({ "alice-ai": 65536, ...ids }),
+            `set_run_as alice-ai m1 ${runAs.join(" ")}`,
+          ].join("\n")
+        );
+
+      it("gives the entry every run-as user, as one list", () => {
+        const run = setRunAs({ bob: 1000, root: 0 }, "bob", "root");
+        expect(run.status).toBe(0);
+        expect(run.stderr).toBe(
+          "would edit: [add] [m1] [alice-ai] [bob, root]\n"
+        );
+      });
+
+      it("takes the entry out when there is no run-as user", () => {
+        const run = setRunAs({});
+        expect(run.status).toBe(0);
+        expect(run.stderr).toBe("would edit: [remove] [m1]\n");
+      });
+
+      it("refuses the entry, and leaves the file alone, when one run-as user doesn't exist", () => {
+        const run = setRunAs({ bob: 1000 }, "bob", "dave");
+        expect(run.status).toBe(INSTANCE_STATE_EXIT_CODE);
+        expect(run.stderr).toBe(`p0-ssh-ai: ${MISSING}\n`);
+      });
+
+      const entry = (marker: string, runAs: string) =>
+        `# RequestID: p0-ssh-ai:${marker} | GrantedAt: 1794935763\nalice-ai ALL=(${runAs}) NOPASSWD: ALL\n`;
+
+      // The revoke of one holder of two, after bob's account went away.
+      it("keeps a run-as user that the entry already names, though the instance no longer has it", () => {
+        writeFileSync(join(dir, "sudoers-p0"), entry("m1", "bob, root"));
+        const run = setRunAs({ root: 0 }, "bob");
+        expect(run.status).toBe(0);
+        expect(run.stderr).toBe("would edit: [add] [m1] [alice-ai] [bob]\n");
+      });
+
+      it("checks a run-as user that the entry doesn't name yet", () => {
+        writeFileSync(join(dir, "sudoers-p0"), entry("m1", "root"));
+        const run = setRunAs({ root: 0 }, "bob", "root");
+        expect(run.status).toBe(INSTANCE_STATE_EXIT_CODE);
+        expect(run.stderr).toBe(`p0-ssh-ai: ${MISSING}\n`);
+      });
+
+      it("checks a run-as user that only another marker's entry names", () => {
+        writeFileSync(join(dir, "sudoers-p0"), entry("m2", "bob"));
+        const run = setRunAs({}, "bob");
+        expect(run.status).toBe(INSTANCE_STATE_EXIT_CODE);
+        expect(run.stderr).toBe(`p0-ssh-ai: ${MISSING}\n`);
+      });
+
+      it.skipIf(!visudoFollowsTempIncludes)(
+        "writes an entry visudo accepts for several run-as users (needs visudo)",
+        () => {
+          writeFileSync(join(dir, "sudoers"), "root ALL=(ALL:ALL) ALL\n");
+          const run = runFunctions('edit_sudoers add m1 alice-ai "bob, root"');
+          expect(run.stderr).toBe("");
+          expect(run.status).toBe(0);
+          expect(read("sudoers-p0")).toMatch(
+            /^# RequestID: p0-ssh-ai:m1 \| GrantedAt: \d+\nalice-ai ALL=\(bob, root\) NOPASSWD: ALL\n$/
+          );
+        }
+      );
+
+      it("replaces an entry from before run-as, which named (ALL)", () => {
+        writeFileSync(
+          join(dir, "sudoers-p0"),
+          "# RequestID: p0-ssh-ai:m1 | GrantedAt: 1794935763\nalice-ai ALL=(ALL) NOPASSWD: ALL\n"
+        );
+        const run = runFunctions(
+          "visudo() { return 0; }\nensure_sudoers_include() { :; }\nedit_sudoers add m1 alice-ai root"
+        );
+        expect(run.stderr).toBe("");
+        expect(run.status).toBe(0);
+        expect(read("sudoers-p0")).toMatch(
+          /^# RequestID: p0-ssh-ai:m1 \| GrantedAt: \d+\nalice-ai ALL=\(root\) NOPASSWD: ALL\n$/
+        );
+      });
+    });
+
     describe("a user that already has the agent's name", () => {
       const REASON =
         "the agent's Linux user name belongs to an account outside P0's user ids. Ask your P0 admin to rename the agent, or rename that account on the instance";
@@ -851,7 +1137,7 @@ describe.skipIf(!BASH_VERSION)(
             `id() { [ "$*" = '-u alice-ai' ] && echo 1500; }`,
             `getent() { echo ${quoteShellWord(entry)}; }`,
             'timeout() { echo "would run: $*" >&2; }',
-            `ensure_key alice-ai m1 ${quoteShellWord(KEY)}`,
+            `ensure_key alice-ai m1 ${quoteShellWord(KEY)} ''`,
           ].join("\n")
         );
         expect(run.status).toBe(INSTANCE_STATE_EXIT_CODE);

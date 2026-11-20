@@ -10,6 +10,7 @@ import {
   type ProvisionAction,
   REASON_PREFIX,
   RESULT_LINES,
+  RUN_AS_PATTERN,
   USER_PATTERN,
   buildProvisionScript,
   commandTagFor,
@@ -69,12 +70,21 @@ describe("buildProvisionScript", () => {
 
   it.each<[ProvisionAction, string]>([
     [
-      { action: "set-sudo", user: "alice-ai", marker: "g1", sudo: true },
-      "set -- 'set-sudo' 'alice-ai' 'g1' 'on'",
+      { ...ensureKey, runAs: "root" },
+      `set -- 'ensure-key' 'alice-ai' 'group-1' '${PUBLIC_KEY}' 'root'`,
     ],
     [
-      { action: "set-sudo", user: "alice-ai", marker: "g1", sudo: false },
-      "set -- 'set-sudo' 'alice-ai' 'g1' 'off'",
+      { action: "set-run-as", user: "alice-ai", marker: "g1", runAs: [] },
+      "set -- 'set-run-as' 'alice-ai' 'g1'",
+    ],
+    [
+      {
+        action: "set-run-as",
+        user: "alice-ai",
+        marker: "g1",
+        runAs: ["root", "bob", "root", "_svc"],
+      },
+      "set -- 'set-run-as' 'alice-ai' 'g1' '_svc' 'bob' 'root'",
     ],
     [
       { action: "remove-key", user: "alice-ai", marker: "g1" },
@@ -108,6 +118,11 @@ describe("buildProvisionScript", () => {
     ["a key with options", { publicKey: `no-pty ${PUBLIC_KEY}` }],
     ["two keys", { publicKey: `${PUBLIC_KEY}\n${PUBLIC_KEY}` }],
     ["a key that is too short", { publicKey: PUBLIC_KEY.slice(0, -1) }],
+    ["an empty run-as user", { runAs: "" }],
+    ["a run-as user with a quote", { runAs: 'bob"' }],
+    ["a run-as user with a space", { runAs: "bob root" }],
+    ["a run-as user of 33 characters", { runAs: "b".repeat(33) }],
+    ["a run-as user that starts with a digit", { runAs: "1bob" }],
   ])(
     "refuses %s as P0's own bug, and keeps it out of the error",
     (_name, change) => {
@@ -116,7 +131,7 @@ describe("buildProvisionScript", () => {
       );
       expect(data.type).toBe("unknown");
       expect(data.message).toMatch(
-        /^P0 built an invalid (user name|holder group id|public key) for the provisioning script\. Contact P0 support\.$/
+        /^P0 built an invalid (user name|holder group id|public key|run-as user) for the provisioning script\. Contact P0 support\.$/
       );
       const [value] = Object.values(change);
       expect(JSON.stringify(data)).not.toContain(JSON.stringify(value));
@@ -131,6 +146,18 @@ describe("buildProvisionScript", () => {
       "P0 built an invalid holder group id for the provisioning script. Contact P0 support."
     );
     expect(data.payload).toEqual({ argument: "holder group id" });
+  });
+
+  it("refuses a bad run-as user in a set-run-as list", () => {
+    const data = errorOf(() =>
+      buildProvisionScript({
+        action: "set-run-as",
+        user: "alice-ai",
+        marker: "g1",
+        runAs: ["root", "bob;id"],
+      })
+    );
+    expect(data.payload).toEqual({ argument: "run-as user" });
   });
 
   it("accepts a user of 32 characters and a marker of 64", () => {
@@ -149,8 +176,12 @@ describe("commandTagFor", () => {
 
   it.each([
     [{ ...common, action: "ensure-key", publicKey: "k" }, "ensure-key", false],
-    [{ ...common, action: "set-sudo", sudo: true }, "set-sudo-on", true],
-    [{ ...common, action: "set-sudo", sudo: false }, "set-sudo-off", true],
+    [{ ...common, action: "set-run-as", runAs: [] }, "set-run-as-none", true],
+    [
+      { ...common, action: "set-run-as", runAs: ["root"] },
+      "set-run-as-4813494d137e",
+      true,
+    ],
     [{ ...common, action: "remove-key" }, "remove-key", true],
   ] as const)(
     "tags %o as %s, taken over by a retry: %s",
@@ -160,6 +191,14 @@ describe("commandTagFor", () => {
       expect(commentOf(tag).length).toBeLessThanOrEqual(100);
     }
   );
+
+  it("tags one set of run-as users alike, in any order, and another set apart", () => {
+    const tagOf = (runAs: string[]) =>
+      commandTagFor({ ...common, action: "set-run-as", runAs }).action;
+    expect(tagOf(["root", "bob"])).toBe(tagOf(["bob", "root", "bob"]));
+    expect(tagOf(["root", "bob"])).not.toBe(tagOf(["root"]));
+    expect(tagOf(["root", "bob"])).toMatch(/^set-run-as-[0-9a-f]{12}$/);
+  });
 
   it("refuses a marker the script would refuse", () => {
     expect(() =>
@@ -188,6 +227,7 @@ describe("the argument patterns", () => {
     ["user name", USER_PATTERN],
     ["marker", MARKER_PATTERN],
     ["public key", PUBLIC_KEY_PATTERN],
+    ["run-as user", RUN_AS_PATTERN],
   ])("are the ones the script checks the %s with", (what, pattern) => {
     const checked = new RegExp(`check '${what}' '([^']+)' "\\$`).exec(
       PROVISION_SCRIPT
@@ -303,7 +343,7 @@ describe("PROVISION_SCRIPT", () => {
   it("writes a sudoers entry the SSH integration's script reads as a pair", () => {
     expect(code).toContain("TAG_PREFIX='p0-ssh-ai:'");
     expect(code).toContain('echo "# RequestID: $TAG_PREFIX$1 | GrantedAt: "');
-    expect(code).toContain('line="$3 ALL=(ALL) NOPASSWD: ALL"');
+    expect(code).toContain('line="$3 ALL=($4) NOPASSWD: ALL"');
     expect(code).toContain(
       String.raw`printf '%s%s\n%s\n' "$head" "$(date +%s)" "$line"`
     );

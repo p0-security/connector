@@ -54,12 +54,17 @@ const session = () =>
     ec2: tags.client,
   }).createCaller({ logger: log.logger });
 
-const grant = (body = userBody) =>
+type UserBody = { user: string; secretName: string; runAs?: string };
+
+const grant = (body: UserBody = userBody) =>
   session().provisionUser({ userBody: body, context });
 
 const identify = () => session().identifyUser({ userBody, context });
 
-const setPolicies = (policies: { sudo: boolean }[], body = userBody) =>
+const setPolicies = (
+  policies: { runAs?: string; sudo?: boolean }[],
+  body: UserBody = userBody
+) =>
   session().setPoliciesForUser({
     userId: ARN,
     userBody: body,
@@ -278,47 +283,115 @@ describe("a grant that stopped halfway", () => {
   });
 });
 
-describe("sudo", () => {
+describe("the run-as key line", () => {
+  it.each([
+    ["no run-as", {}, undefined],
+    ["a blank run-as", { runAs: "" }, undefined],
+    ["root", { runAs: "root" }, "root"],
+    ["another user", { runAs: "bob" }, "bob"],
+  ])("goes on the instance for %s", async (_name, change, runAs) => {
+    await grant({ ...userBody, ...change });
+    const installed = instance.keys.get(MARKER);
+    expect(installed?.runAs).toBe(runAs);
+    expect(instance.actions).toEqual([
+      [
+        "ensure-key",
+        "alice-ai",
+        MARKER,
+        installed?.publicKey,
+        ...(runAs ? [runAs] : []),
+      ],
+    ]);
+  });
+
+  it.each(["bob root", 'bob"', "Bob", "b".repeat(33)])(
+    "refuses run-as %j before it calls AWS",
+    async (runAs) => {
+      await errorOf(grant({ ...userBody, runAs }));
+      expect(instance.actions).toEqual([]);
+      expect(vault.calls).toEqual([]);
+    }
+  );
+});
+
+describe("the run-as users", () => {
   beforeEach(async () => {
     await grant();
     instance.actions.length = 0;
   });
 
-  it("is on while any holder of the group was granted it", async () => {
-    await expect(
-      setPolicies([{ sudo: false }, { sudo: true }])
-    ).resolves.toBeNull();
-    expect(instance.actions).toEqual([["set-sudo", "alice-ai", MARKER, "on"]]);
-    expect(instance.sudo.get(MARKER)).toBe("alice-ai");
+  it.each([
+    ["a blank run-as", [{ runAs: "" }], []],
+    ["no run-as", [{}], []],
+    ["root", [{ runAs: "root" }], ["root"]],
+    ["another user", [{ runAs: "bob" }], ["bob"]],
+    [
+      "two holders with different users, once each and sorted",
+      [{ runAs: "root" }, { runAs: "bob" }, { runAs: "root" }, { runAs: "" }],
+      ["bob", "root"],
+    ],
+    [
+      "a grant from before run-as with sudo, as root",
+      [{ sudo: true }],
+      ["root"],
+    ],
+    ["a grant from before run-as without sudo", [{ sudo: false }], []],
+    [
+      "grants from before and after run-as together",
+      [{ sudo: false }, { sudo: true }, { runAs: "bob" }],
+      ["bob", "root"],
+    ],
+    // The app sends sudo too, for a connector from before run-as.
+    [
+      "policies with both fields, as the app sends them",
+      [
+        { runAs: "root", sudo: true },
+        { runAs: "bob", sudo: false },
+        { runAs: "", sudo: false },
+      ],
+      ["bob", "root"],
+    ],
+  ])("go to the instance for %s", async (_name, policies, runAs) => {
+    await expect(setPolicies(policies)).resolves.toBeNull();
+    expect(instance.actions).toEqual([
+      ["set-run-as", "alice-ai", MARKER, ...runAs],
+    ]);
+    expect(instance.sudo.get(MARKER)?.runAs).toEqual(
+      runAs.length ? runAs : undefined
+    );
   });
 
-  it("goes off when the holder that had it leaves, and when no holder is left", async () => {
-    await setPolicies([{ sudo: false }, { sudo: true }]);
-    await setPolicies([{ sudo: false }]);
-    expect(instance.sudo.has(MARKER)).toBe(false);
-    await setPolicies([{ sudo: true }]);
+  it("refuses a run-as user of the wrong shape before it calls AWS", async () => {
+    await errorOf(setPolicies([{ runAs: "root" }, { runAs: "bob;id" }]));
+    expect(instance.actions).toEqual([]);
+  });
+
+  it("go when the holder that had them leaves, and when no holder is left", async () => {
+    await setPolicies([{ runAs: "bob" }, { runAs: "root" }]);
+    await setPolicies([{ runAs: "bob" }]);
+    expect(instance.sudo.get(MARKER)?.runAs).toEqual(["bob"]);
     await setPolicies([]);
     expect(instance.sudo.has(MARKER)).toBe(false);
-    expect(instance.actions.map(([, , , value]) => value)).toEqual([
-      "on",
-      "off",
-      "on",
-      "off",
+    expect(instance.actions.map(([, , , ...runAs]) => runAs)).toEqual([
+      ["bob", "root"],
+      ["bob"],
+      [],
     ]);
   });
 
   it("sends the same script again when the same set is applied again", async () => {
-    await setPolicies([{ sudo: true }]);
-    await setPolicies([{ sudo: true }]);
+    await setPolicies([{ runAs: "root" }]);
+    await setPolicies([{ runAs: "root" }]);
     expect(instance.actions).toEqual([
-      ["set-sudo", "alice-ai", MARKER, "on"],
-      ["set-sudo", "alice-ai", MARKER, "on"],
+      ["set-run-as", "alice-ai", MARKER, "root"],
+      ["set-run-as", "alice-ai", MARKER, "root"],
     ]);
   });
 
-  // sudo belongs to the Linux user, not to a group. The marker only says
-  // which group asked for the entry, so that each can take its own away.
-  it("leaves a shared Linux user with sudo while either group's entry names it", async () => {
+  // The run-as users belong to the Linux user, not to a group. The marker
+  // only says which group asked for the entry, so that each can take its
+  // own away.
+  it("leaves a shared Linux user with its run-as users while either group's entry names them", async () => {
     const other = { user: "alice-ai", secretName: `${SECRET}/other` };
     await grant(other);
     await setPolicies([{ sudo: true }]);
@@ -326,7 +399,9 @@ describe("sudo", () => {
 
     // One entry, asked for by the first group, and it names the user that
     // the other group logs in as too.
-    expect([...instance.sudo.entries()]).toEqual([[MARKER, "alice-ai"]]);
+    expect([...instance.sudo.entries()]).toEqual([
+      [MARKER, { user: "alice-ai", runAs: ["root"] }],
+    ]);
     expect(instance.keys.get(markerFor(other.secretName))?.user).toBe(
       "alice-ai"
     );
@@ -354,7 +429,7 @@ describe("sudo", () => {
         payload: { reason: "instance_unreachable", requestId: "r1" },
       });
     }
-    expect(instance.sudo.get(MARKER)).toBe("alice-ai");
+    expect(instance.sudo.get(MARKER)?.user).toBe("alice-ai");
   });
 
   it("fails to take sudo away when the script itself fails", async () => {
@@ -496,6 +571,36 @@ describe("revoke", () => {
     expect(instance.sudo.size).toBe(0);
     expect(vault.secrets.size).toBe(0);
     expect(vault.calls.at(-1)).toBe("deleteSecret");
+  });
+
+  it("removes a run-as group's key line and entry after its last holder leaves", async () => {
+    const body = { ...userBody, runAs: "bob" };
+    await grant(body);
+    await setPolicies([{ runAs: "bob" }], body);
+    await setPolicies([], body);
+    await expect(revoke()).resolves.toBeNull();
+
+    expect(instance.actions.slice(-2)).toEqual([
+      ["set-run-as", "alice-ai", MARKER],
+      ["remove-key", "alice-ai", MARKER],
+    ]);
+    expect(instance.keys.size).toBe(0);
+    expect(instance.sudo.size).toBe(0);
+    expect(vault.secrets.size).toBe(0);
+  });
+
+  it("fails and keeps the secret when the script can't take the run-as users away", async () => {
+    await grant();
+    await setPolicies([{ runAs: "root" }]);
+    instance.state.failNext = {
+      stderr: `p0-ssh-ai: could not replace /etc/sudoers-p0 with its draft`,
+      exitCode: INSTANCE_STATE_EXIT_CODE,
+      reason: "could not replace /etc/sudoers-p0 with its draft",
+    };
+    const data = await dataOf(setPolicies([]));
+    expect(data).toMatchObject({ type: "dependency_violation" });
+    expect(instance.sudo.get(MARKER)?.runAs).toEqual(["root"]);
+    expect(vault.calls).not.toContain("deleteSecret");
   });
 
   it("gives the same result the second time", async () => {
