@@ -288,8 +288,13 @@ describe("sudo", () => {
     await expect(
       setPolicies([{ sudo: false }, { sudo: true }])
     ).resolves.toBeNull();
-    expect(instance.actions).toEqual([["set-sudo", "alice-ai", MARKER, "on"]]);
-    expect(instance.sudo.get(MARKER)).toBe("alice-ai");
+    expect(instance.actions).toEqual([
+      ["set-run-as", "alice-ai", MARKER, "root"],
+    ]);
+    expect(instance.sudo.get(MARKER)).toEqual({
+      user: "alice-ai",
+      runAs: ["root"],
+    });
   });
 
   it("goes off when the holder that had it leaves, and when no holder is left", async () => {
@@ -299,11 +304,11 @@ describe("sudo", () => {
     await setPolicies([{ sudo: true }]);
     await setPolicies([]);
     expect(instance.sudo.has(MARKER)).toBe(false);
-    expect(instance.actions.map(([, , , value]) => value)).toEqual([
-      "on",
-      "off",
-      "on",
-      "off",
+    expect(instance.actions.map(([, , , ...runAs]) => runAs)).toEqual([
+      ["root"],
+      [],
+      ["root"],
+      [],
     ]);
   });
 
@@ -311,8 +316,8 @@ describe("sudo", () => {
     await setPolicies([{ sudo: true }]);
     await setPolicies([{ sudo: true }]);
     expect(instance.actions).toEqual([
-      ["set-sudo", "alice-ai", MARKER, "on"],
-      ["set-sudo", "alice-ai", MARKER, "on"],
+      ["set-run-as", "alice-ai", MARKER, "root"],
+      ["set-run-as", "alice-ai", MARKER, "root"],
     ]);
   });
 
@@ -326,7 +331,9 @@ describe("sudo", () => {
 
     // One entry, asked for by the first group, and it names the user that
     // the other group logs in as too.
-    expect([...instance.sudo.entries()]).toEqual([[MARKER, "alice-ai"]]);
+    expect([...instance.sudo.entries()]).toEqual([
+      [MARKER, { user: "alice-ai", runAs: ["root"] }],
+    ]);
     expect(instance.keys.get(markerFor(other.secretName))?.user).toBe(
       "alice-ai"
     );
@@ -354,7 +361,7 @@ describe("sudo", () => {
         payload: { reason: "instance_unreachable", requestId: "r1" },
       });
     }
-    expect(instance.sudo.get(MARKER)).toBe("alice-ai");
+    expect(instance.sudo.get(MARKER)?.user).toBe("alice-ai");
   });
 
   it("fails to take sudo away when the script itself fails", async () => {

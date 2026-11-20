@@ -243,10 +243,10 @@ export const router = (
         // any holder of the group.
         const sudo = policies.some((policy) => policy.sudo);
         await run(context, logger, {
-          action: "set-sudo",
+          action: "set-run-as",
           user,
           marker: markerFor(secretName),
-          sudo,
+          runAs: sudo ? ["root"] : [],
         });
         logger.info({ sudo, nPolicies: policies.length }, "set sudo");
       },

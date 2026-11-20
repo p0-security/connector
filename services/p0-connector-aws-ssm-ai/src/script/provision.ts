@@ -1,6 +1,10 @@
 import { ConnectorError, throwAssertNever } from "@p0security/connector-core";
+import { createHash } from "node:crypto";
 
 import type { CommandTag } from "../ssm/run-script.ts";
+
+/** How many hex digits of a hash name a `set-run-as` command's users. */
+const RUN_AS_HASH_LENGTH = 12;
 
 // The script checks its arguments with these same patterns, in bash's
 // `[[ =~ ]]`. Each one uses only what bash's extended regular expressions
@@ -33,6 +37,14 @@ const PUBLIC_KEY_SOURCE =
 export const USER_PATTERN = new RegExp(USER_SOURCE);
 export const MARKER_PATTERN = new RegExp(MARKER_SOURCE);
 export const PUBLIC_KEY_PATTERN = new RegExp(PUBLIC_KEY_SOURCE);
+
+/**
+ * A run-as user: `root`, or the name of another Linux account on the
+ * instance, of at most 32 characters. The script checks the account itself.
+ */
+const RUN_AS_SOURCE = "^[a-z_][a-z0-9_-]{0,31}$";
+
+export const RUN_AS_PATTERN = new RegExp(RUN_AS_SOURCE);
 
 /** The script prints each of the instance's SSH host public keys after this. */
 export const HOST_KEY_PREFIX = "p0-ssh-ai-host-key: ";
@@ -104,9 +116,9 @@ export const P0_BUG_EXIT_CODE = 1;
  * The script's exit code when the instance's own state stops the action: a
  * missing tool, a user or group with the agent's name whose id is outside
  * P0's range, no free user id, an unusable home or `.ssh`, no SSH host keys,
- * a sudoers file that visudo refuses or it can't write or replace, or a lock
- * it can't take. It is sysexits' EX_UNAVAILABLE. A person with access to the
- * instance can fix it.
+ * a run-as user it refuses, a sudoers file that visudo refuses or it can't
+ * write or replace, or a lock it can't take. It is sysexits' EX_UNAVAILABLE.
+ * A person with access to the instance can fix it.
  */
 export const INSTANCE_STATE_EXIT_CODE = 69;
 
@@ -125,8 +137,8 @@ const BODY = String.raw`# P0 SSH (AI): prepares a Linux user for an agent. It ta
 # arguments and calls no cloud API, so any transport that runs bash as root
 # can run it.
 #
-#   ensure-key <user> <marker> <public key>
-#   set-sudo <user> <marker> on|off
+#   ensure-key <user> <marker> <public key> [<run-as user>]
+#   set-run-as <user> <marker> [<run-as user>...]
 #   remove-key <user> <marker>
 #
 # A marker names one holder group. An action only touches what carries its
@@ -437,7 +449,9 @@ edit_keys() {
 # format, with the marker where that integration writes a request id:
 #
 #   # RequestID: p0-ssh-ai:<marker> | GrantedAt: <unix time>
-#   <user> ALL=(ALL) NOPASSWD: ALL
+#   <user> ALL=(<run-as users>) NOPASSWD: ALL
+#
+# Entries from before run-as name (ALL) instead, and read the same way.
 #
 # That integration's cleanup deletes every line of the file that is not
 # part of such a pair. This script writes no RevokedAt line, because P0
@@ -465,6 +479,19 @@ sudoers_has_entry() {
     after && $0 == line { found = 1 }
     { after = is_head($0) }
     END { exit !found }
+  ' "$SUDOERS_FILE"
+}
+
+# The run-as users that the entry names now, one per line. An entry from
+# before run-as users names ALL.
+sudoers_run_as_of() {
+  [ -f "$SUDOERS_FILE" ] || return 0
+  awk -v head="$1" "$IS_HEAD"'
+    after && match($0, / ALL=\([^)]*\) /) {
+      n = split(substr($0, RSTART + 6, RLENGTH - 8), users, ", ")
+      for (i = 1; i <= n; i++) print users[i]
+    }
+    { after = is_head($0) }
   ' "$SUDOERS_FILE"
 }
 
@@ -503,13 +530,13 @@ ensure_sudoers_include() {
   sudoers_draft=''
 }
 
-# Puts the marker's entry in the sudoers file for the user, or takes the
-# marker's entry out.
+# Puts the marker's entry in the sudoers file, letting the user run
+# commands as the run-as users, or takes the marker's entry out.
 edit_sudoers() {
   local change="$1" head line
   head="$(sudoers_head "$2")"
   if [ "$change" = add ]; then
-    line="$3 ALL=(ALL) NOPASSWD: ALL"
+    line="$3 ALL=($4) NOPASSWD: ALL"
     command -v visudo >/dev/null 2>&1 || fail_instance 'sudo is not installed'
     if [ -f "$SUDOERS_FILE" ] && sudoers_has_entry "$head" "$line"; then
       ensure_sudoers_include
@@ -553,11 +580,40 @@ host_keys() {
   [ "$found" -eq 1 ] || fail_instance 'no SSH host keys in /etc/ssh'
 }
 
+# A run-as user can be any account on the instance: P0's access policies
+# decide who may switch to which. sudo can't switch to one that doesn't
+# exist. The reason names no user, as no reason holds an argument.
+check_run_as() {
+  id -u "$1" >/dev/null 2>&1 ||
+    fail_instance "a run-as user doesn't exist on the instance. Create it there, or request a run-as user that exists"
+}
+
+# The options before the key on a run-as grant's key line. The agent signs
+# in as its own user, and sshd runs only this, which switches to the run-as
+# user with sudo, so the instance's logs show both. restrict turns off the
+# terminal, forwarding and ~/.ssh/rc. sshd reads \" inside the quotes as a
+# quote, and \047 is printf's single quote.
+#
+# Not sudo -i: it hands the command to the login shell with every character
+# but letters, digits, _, - and $ escaped, so that shell expands the
+# command's $ before bash sees it. A login bash with the command as an
+# argument reads the same profile and starts in the same home, and runs the
+# command as the agent sent it.
+forced_command() {
+  printf 'restrict,command="exec sudo -n -u %s -H -- /bin/bash -l -c \047cd && exec /bin/bash -c \\"$1\\"\047 p0-ssh-ai \\"$SSH_ORIGINAL_COMMAND\\""' "$1"
+}
+
 ensure_key() {
-  local user="$1" tag="$TAG_PREFIX$2" key="$3" keys home
+  local user="$1" tag="$TAG_PREFIX$2" key="$3" run_as="$4" keys home line
   # Read before the script changes any account, sudoers file or home: a
   # grant is no use without the host keys.
   keys="$(host_keys)"
+  line="$key $tag"
+  if [ -n "$run_as" ]; then
+    command -v sudo >/dev/null 2>&1 || fail_instance 'sudo is not installed'
+    check_run_as "$run_as"
+    line="$(forced_command "$run_as") $line"
+  fi
   ensure_user "$user"
   home="$(home_of "$user")"
   if [ -z "$home" ]; then
@@ -565,18 +621,30 @@ ensure_key() {
     home="$(home_of "$user")"
   fi
   [ -n "$home" ] || fail_instance "the agent's Linux user has no home directory"
-  as_user "$user" edit_keys "$home" "$tag" "$key $tag"
+  as_user "$user" edit_keys "$home" "$tag" "$line"
   printf '%s\n' "$keys"
 }
 
-set_sudo() {
-  local user="$1" marker="$2"
-  if [ "$3" = on ]; then
-    id -u "$user" >/dev/null 2>&1 || fail_instance "the agent's Linux user does not exist"
-    edit_sudoers add "$marker" "$user"
-  else
+# Gives the marker's entry the run-as users, or takes the entry out when
+# there are none.
+set_run_as() {
+  local user="$1" marker="$2" current target targets='' separator=''
+  shift 2
+  if [ "$#" -eq 0 ]; then
     edit_sudoers remove "$marker"
+    return 0
   fi
+  id -u "$user" >/dev/null 2>&1 || fail_instance "the agent's Linux user does not exist"
+  current="$(sudoers_run_as_of "$(sudoers_head "$marker")")"
+  for target in "$@"; do
+    # A user the entry already names passed the check when it went in. A
+    # revoke that only narrows the entry must work even when one of them
+    # has changed since.
+    printf '%s\n' "$current" | grep -qxF -- "$target" || check_run_as "$target"
+    targets="$targets$separator$target"
+    separator=', '
+  done
+  edit_sudoers add "$marker" "$user" "$targets"
 }
 
 remove_key() {
@@ -609,20 +677,28 @@ take_lock() {
 
 main() {
   [ "$#" -ge 3 ] || fail 'expected an action, a user and a marker'
-  local action="$1" user="$2" marker="$3"
+  local action="$1" user="$2" marker="$3" run_as='' target
   check 'user name' '${USER_SOURCE}' "$user"
   check 'marker' '${MARKER_SOURCE}' "$marker"
+  # What is left is the action's own arguments.
+  shift 3
   case "$action" in
     ensure-key)
-      [ "$#" -eq 4 ] || fail 'ensure-key takes a user, a marker and a public key'
-      check 'public key' '${PUBLIC_KEY_SOURCE}' "$4"
+      [ "$#" -eq 1 ] || [ "$#" -eq 2 ] ||
+        fail 'ensure-key takes a user, a marker, a public key and at most one run-as user'
+      check 'public key' '${PUBLIC_KEY_SOURCE}' "$1"
+      if [ "$#" -eq 2 ]; then
+        check 'run-as user' '${RUN_AS_SOURCE}' "$2"
+        run_as="$2"
+      fi
       ;;
-    set-sudo)
-      [ "$#" -eq 4 ] || fail 'set-sudo takes a user, a marker and on or off'
-      [ "$4" = on ] || [ "$4" = off ] || fail 'set-sudo takes on or off'
+    set-run-as)
+      for target in "$@"; do
+        check 'run-as user' '${RUN_AS_SOURCE}' "$target"
+      done
       ;;
     remove-key)
-      [ "$#" -eq 3 ] || fail 'remove-key takes a user and a marker'
+      [ "$#" -eq 0 ] || fail 'remove-key takes a user and a marker'
       ;;
     *)
       fail 'unknown action'
@@ -632,7 +708,7 @@ main() {
   # Without one of these a command exits 127, and its step's own reason
   # would point at the wrong fix.
   local tools='flock timeout'
-  [ "$action" = set-sudo ] || tools="$tools setpriv"
+  [ "$action" = set-run-as ] || tools="$tools setpriv"
   for tool in $tools; do
     command -v "$tool" >/dev/null 2>&1 || fail_instance "$tool is not installed"
   done
@@ -643,8 +719,8 @@ main() {
   take_lock
 
   case "$action" in
-    ensure-key) ensure_key "$user" "$marker" "$4" ;;
-    set-sudo) set_sudo "$user" "$marker" "$4" ;;
+    ensure-key) ensure_key "$user" "$marker" "$1" "$run_as" ;;
+    set-run-as) set_run_as "$user" "$marker" "$@" ;;
     remove-key) remove_key "$user" "$marker" ;;
   esac
 }
@@ -659,9 +735,22 @@ main "$@"
 export const PROVISION_SCRIPT = `${SHEBANG}\n${BODY}`;
 
 export type ProvisionAction =
-  | { action: "ensure-key"; user: string; marker: string; publicKey: string }
-  | { action: "remove-key"; user: string; marker: string }
-  | { action: "set-sudo"; user: string; marker: string; sudo: boolean };
+  | {
+      action: "ensure-key";
+      user: string;
+      marker: string;
+      publicKey: string;
+      /** The user the key line switches to. Absent signs in as `user` itself. */
+      runAs?: string;
+    }
+  | {
+      action: "set-run-as";
+      user: string;
+      marker: string;
+      /** The users the entry lets `user` switch to. None removes it. */
+      runAs: readonly string[];
+    }
+  | { action: "remove-key"; user: string; marker: string };
 
 const invalid = (what: string) =>
   new ConnectorError({
@@ -678,6 +767,15 @@ const validateArgument = (what: string, pattern: RegExp, value: string) => {
   return value;
 };
 
+/**
+ * The run-as users once each, sorted, so that one set always gives the
+ * same arguments and the same command tag.
+ */
+const toRunAsUsers = (runAs: readonly string[]) =>
+  [...new Set(runAs)]
+    .sort()
+    .map((each) => validateArgument("run-as user", RUN_AS_PATTERN, each));
+
 const toArguments = (input: ProvisionAction): string[] => {
   const common = [
     input.action,
@@ -689,9 +787,12 @@ const toArguments = (input: ProvisionAction): string[] => {
       return [
         ...common,
         validateArgument("public key", PUBLIC_KEY_PATTERN, input.publicKey),
+        ...(input.runAs === undefined
+          ? []
+          : [validateArgument("run-as user", RUN_AS_PATTERN, input.runAs)]),
       ];
-    case "set-sudo":
-      return [...common, input.sudo ? "on" : "off"];
+    case "set-run-as":
+      return [...common, ...toRunAsUsers(input.runAs)];
     case "remove-key":
       return common;
     default:
@@ -703,19 +804,27 @@ const toArguments = (input: ProvisionAction): string[] => {
  * What SSM keeps on the command for an action, so that a try P0 makes again
  * finds it. The group is the marker's, so a grant's and a revoke's commands
  * land in the order P0 sent them. Only `ensure-key` differs between tries,
- * by its new key, so it is the one action a try never takes over.
+ * by its new key, so it is the one action a try never takes over. A
+ * `set-run-as` names its users by a hash, which fits SSM's comment and its
+ * characters, so a try takes over only the command for the same users.
  */
 export const commandTagFor = (input: ProvisionAction): CommandTag => {
   const group = `p0-ssh-ai:${validateArgument("holder group id", MARKER_PATTERN, input.marker)}`;
   switch (input.action) {
     case "ensure-key":
       return { group, action: "ensure-key", reusable: false };
-    case "set-sudo":
+    case "set-run-as": {
+      const users = toRunAsUsers(input.runAs);
+      const hash = createHash("sha256")
+        .update(users.join("\n"))
+        .digest("hex")
+        .slice(0, RUN_AS_HASH_LENGTH);
       return {
         group,
-        action: input.sudo ? "set-sudo-on" : "set-sudo-off",
+        action: users.length ? `set-run-as-${hash}` : "set-run-as-none",
         reusable: true,
       };
+    }
     case "remove-key":
       return { group, action: "remove-key", reusable: true };
     default:
