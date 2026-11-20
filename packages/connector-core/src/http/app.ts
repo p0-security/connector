@@ -47,15 +47,22 @@ export const createExpressApp = (
   return app;
 };
 
+/** Listens on `$PORT`, on every interface unless `host` is given. */
 export const runExpressApp = (
   moduleName: string,
   routes: Record<string, Router>,
-  middlewares: express.RequestHandler[] = []
+  middlewares: express.RequestHandler[] = [],
+  host?: string
 ) => {
   const app = createExpressApp(moduleName, routes, middlewares);
 
   const PORT = process.env.PORT || 8080;
-  app.listen(PORT, () => {
+  const onListening = () => {
     logger.info({ port: PORT, module: moduleName }, "Server is running");
-  });
+  };
+  if (host === undefined) {
+    app.listen(PORT, onListening);
+  } else {
+    app.listen(Number(PORT), host, onListening);
+  }
 };

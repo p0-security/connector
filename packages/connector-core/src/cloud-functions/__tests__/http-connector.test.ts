@@ -11,11 +11,20 @@ import {
   authorize,
   emptyRouter,
   fetchHealth,
+  fetchPing,
   mintExpiredToken,
   mintToken,
   mintTokenWithBadSignature,
+  pingRouter,
   stubGoogleCerts,
 } from "./google-id-token-fixtures.ts";
+
+const { warn } = vi.hoisted(() => ({ warn: vi.fn() }));
+
+// Capture the startup warning without printing it.
+vi.mock("../../logger.ts", () => ({
+  createLogger: () => ({ info: vi.fn(), warn, error: vi.fn() }),
+}));
 
 // Keep the real bearer middleware; only stop the server from binding a port.
 vi.mock("../../http/index.ts", async (importOriginal) => ({
@@ -43,6 +52,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
   vi.mocked(runExpressApp).mockClear();
+  warn.mockClear();
 });
 
 describe("runHttpConnector at startup", () => {
@@ -83,10 +93,11 @@ describe("runHttpConnector at startup", () => {
     }
   );
 
-  it("starts with CONNECTOR_AUDIENCE", () => {
+  it("starts with CONNECTOR_AUDIENCE, without the gateway warning", () => {
     runHttpConnector("test", emptyRouter);
 
     expect(runExpressApp).toHaveBeenCalledTimes(1);
+    expect(warn).not.toHaveBeenCalled();
   });
 });
 
@@ -141,5 +152,75 @@ describe("GET /health served by runHttpConnector", () => {
       status: 200,
       body: { module: "test" },
     });
+  });
+});
+
+/** Starts the connector on `pingRouter` and returns what it would serve. */
+const startPing = () => {
+  runHttpConnector("test", pingRouter);
+  const [, routes, middlewares, host] = vi.mocked(runExpressApp).mock.calls[0]!;
+  return { routes, middlewares: middlewares!, host };
+};
+
+describe("runHttpConnector with CONNECTOR_AUTH=google-id-token", () => {
+  beforeEach(() => {
+    vi.stubEnv("CONNECTOR_AUTH", "google-id-token");
+  });
+
+  it("refuses /trpc without an Authorization header", async () => {
+    const { routes, middlewares, host } = startPing();
+
+    expect(host).toBeUndefined();
+    await expect(fetchPing(routes, middlewares)).resolves.toMatchObject({
+      status: 403,
+    });
+  });
+});
+
+describe("runHttpConnector with an unknown CONNECTOR_AUTH", () => {
+  it.each(["", "none"])(
+    "throws without serving when CONNECTOR_AUTH is %j",
+    (value) => {
+      vi.stubEnv("CONNECTOR_AUTH", value);
+
+      expect(() => runHttpConnector("test", emptyRouter)).toThrow(
+        /CONNECTOR_AUTH must be "google-id-token" or "gateway"/
+      );
+      expect(runExpressApp).not.toHaveBeenCalled();
+    }
+  );
+});
+
+describe("runHttpConnector with CONNECTOR_AUTH=gateway", () => {
+  beforeEach(() => {
+    vi.stubEnv("CONNECTOR_AUTH", "gateway");
+    vi.stubEnv("INVOKER_SA_EMAIL", undefined);
+    vi.stubEnv("CONNECTOR_AUDIENCE", undefined);
+  });
+
+  it("serves /trpc without an Authorization header", async () => {
+    const { routes, middlewares } = startPing();
+
+    await expect(fetchPing(routes, middlewares)).resolves.toEqual({
+      status: 200,
+      body: { result: { data: "pong" } },
+    });
+  });
+
+  it("listens on 127.0.0.1 by default", () => {
+    expect(startPing().host).toBe("127.0.0.1");
+  });
+
+  it("warns once at startup that it doesn't authenticate, naming the address", () => {
+    vi.stubEnv("CONNECTOR_BIND_ADDRESS", "10.0.0.5");
+
+    expect(startPing().host).toBe("10.0.0.5");
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      { authMode: "gateway", bindAddress: "10.0.0.5" },
+      expect.stringMatching(
+        /does not authenticate requests and relies on the proxy in front of it.*10\.0\.0\.5/
+      )
+    );
   });
 });

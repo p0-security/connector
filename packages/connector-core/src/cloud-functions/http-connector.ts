@@ -1,10 +1,14 @@
 import type { AnyRouter } from "@trpc/server";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 
+import { createLogger } from "../logger.ts";
 import {
   newGoogleIdTokenVerifier,
   serveGoogleIdTokenConnector,
 } from "./google-id-token-connector.ts";
+import { serveTrpcConnector } from "./trpc-server.ts";
+
+const logger = createLogger();
 
 /**
  * Reads `CONNECTOR_AUDIENCE`, throwing when it's unset or set to a value that
@@ -46,6 +50,12 @@ const connectorAudienceFromEnv = (): string => {
  *
  * `GET /health` is the one route served without a token, for load balancer
  * health checks. It returns `{ module: moduleName }`.
+ *
+ * With `CONNECTOR_AUTH=gateway`, the server checks no token and trusts a proxy
+ * in front of it to authenticate every request. It listens on `127.0.0.1`
+ * unless `CONNECTOR_BIND_ADDRESS` names another address, so `GET /health` is
+ * reachable only there too, and it logs a warning at startup. Any value other
+ * than `google-id-token` (the default) or `gateway` throws before binding a port.
  * @summary Creates a service that exposes a tRPC router over Express.
  * @category Cloud Functions
  *
@@ -60,6 +70,18 @@ export const runHttpConnector = <T>(
 ) => {
   // Read the environment before serving, so a misconfigured connector fails to
   // start rather than answering every request with a 403.
+  const mode = process.env.CONNECTOR_AUTH ?? "google-id-token";
+  if (mode === "gateway") {
+    const host = process.env.CONNECTOR_BIND_ADDRESS || "127.0.0.1";
+    logger.warn(
+      { authMode: mode, bindAddress: host },
+      `Auth mode is gateway: this connector does not authenticate requests and relies on the proxy in front of it. Listening on ${host}.`
+    );
+    return serveTrpcConnector(moduleName, router, createContext, null, host);
+  }
+  if (mode !== "google-id-token") {
+    throw new Error('CONNECTOR_AUTH must be "google-id-token" or "gateway"');
+  }
   const verify = newGoogleIdTokenVerifier(connectorAudienceFromEnv());
   return serveGoogleIdTokenConnector(moduleName, router, createContext, verify);
 };

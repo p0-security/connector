@@ -77,6 +77,8 @@ export const newCustomAppCloudRunServer = (
  * The server requires `CONNECTOR_AUDIENCE` and rejects a token whose `aud`
  * differs. It speaks plain HTTP on `$PORT`, so put it behind something that
  * terminates TLS.
+ * With `CONNECTOR_AUTH=gateway` it checks no token, requires neither variable,
+ * and listens on `127.0.0.1`; see the README.
  * @category Deployment
  */
 export const newCustomAppHttpServer = (
