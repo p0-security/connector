@@ -272,6 +272,10 @@ jobs:
             dockerfile: docker/connector/cloud-run/Dockerfile
             WORKSPACE: "@p0security/p0-connector-pingfederate-aws-iam-federation"
             context: .
+          - image: p0-connector-aws-ssm-ai
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-aws-ssm-ai"
+            context: .
 
     steps:
       - uses: actions/checkout@v5
