@@ -30,7 +30,7 @@ afterEach(() => {
 
 describe("newCustomAppCloudRunServer", () => {
   it("serves through runCloudRunConnector", () => {
-    newCustomAppCloudRunServer({ actions, connectorVersion: "1.2.3" })();
+    newCustomAppCloudRunServer({ actions })();
 
     expect(core.runCloudRunConnector).toHaveBeenCalledWith(
       "app",
@@ -43,7 +43,7 @@ describe("newCustomAppCloudRunServer", () => {
 
 describe("newCustomAppHttpServer", () => {
   it("serves through runHttpConnector", () => {
-    newCustomAppHttpServer({ actions, connectorVersion: "1.2.3" })();
+    newCustomAppHttpServer({ actions })();
 
     expect(core.runHttpConnector).toHaveBeenCalledWith(
       "app",
@@ -54,7 +54,7 @@ describe("newCustomAppHttpServer", () => {
   });
 
   it("doesn't start a server until it's called", () => {
-    newCustomAppHttpServer({ actions, connectorVersion: "1.2.3" });
+    newCustomAppHttpServer({ actions });
 
     expect(core.runHttpConnector).not.toHaveBeenCalled();
   });

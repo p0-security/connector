@@ -84,12 +84,7 @@ into an AWS Lambda handler:
 ```ts
 import { newCustomAppLambdaHandler } from "@p0security/connector-sdk";
 
-import packageJson from "../package.json" with { type: "json" };
-
-export const handler = newCustomAppLambdaHandler({
-  actions: newActions,
-  connectorVersion: packageJson.version,
-});
+export const handler = newCustomAppLambdaHandler({ actions: newActions });
 ```
 
 **GCP Cloud Run** — use `newCustomAppCloudRunServer` in your `index.ts` to turn your `actions`
@@ -98,12 +93,7 @@ into a Cloud Run service:
 ```ts
 import { newCustomAppCloudRunServer } from "@p0security/connector-sdk";
 
-import packageJson from "../package.json" with { type: "json" };
-
-const run = newCustomAppCloudRunServer({
-  actions: newActions,
-  connectorVersion: packageJson.version,
-});
+const run = newCustomAppCloudRunServer({ actions: newActions });
 
 run();
 ```
@@ -114,15 +104,15 @@ the Cloud Run server, and always checks the token's audience:
 ```ts
 import { newCustomAppHttpServer } from "@p0security/connector-sdk";
 
-import packageJson from "../package.json" with { type: "json" };
-
-const run = newCustomAppHttpServer({
-  actions: newActions,
-  connectorVersion: packageJson.version,
-});
+const run = newCustomAppHttpServer({ actions: newActions });
 
 run();
 ```
+
+P0 reads your connector's version from its `metadata.get` route. The connector reports the
+version of `@p0security/connector-sdk` it was built with, so upgrading the SDK upgrades the
+connector. Earlier releases took a `connectorVersion` argument. It is now ignored, and you can
+delete it.
 
 ## Deploying
 

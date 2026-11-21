@@ -25,10 +25,7 @@ const newConnectorContext = () => {
  * Builds the AWS Lambda handler for a Custom Application connector:
  *
  * ```ts
- * export const handler = newCustomAppLambdaHandler({
- *   actions,
- *   connectorVersion: packageJson.version,
- * });
+ * export const handler = newCustomAppLambdaHandler({ actions });
  * ```
  *
  * @category Deployment
@@ -42,10 +39,7 @@ export const newCustomAppLambdaHandler = (
  * Builds the GCP Cloud Run server for a Custom Application connector:
  *
  * ```ts
- * const run = newCustomAppCloudRunServer({
- *   actions,
- *   connectorVersion: packageJson.version,
- * });
+ * const run = newCustomAppCloudRunServer({ actions });
  * run();
  * ```
  *
@@ -67,10 +61,7 @@ export const newCustomAppCloudRunServer = (
  * a private Cloud Run service:
  *
  * ```ts
- * const run = newCustomAppHttpServer({
- *   actions,
- *   connectorVersion: packageJson.version,
- * });
+ * const run = newCustomAppHttpServer({ actions });
  * run();
  * ```
  *
