@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import packageJson from "../../package.json" with { type: "json" };
 import { onePasswordClientFor } from "../client.ts";
 import { AWS_SECRET, GCP_SECRET } from "./fixtures.ts";
 
@@ -33,7 +34,7 @@ describe("onePasswordClientFor", () => {
     expect(sdk.createClient).toHaveBeenCalledWith({
       auth: "ops_a",
       integrationName: "P0 Security",
-      integrationVersion: "1.0.0",
+      integrationVersion: packageJson.version,
     });
   });
 

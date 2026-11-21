@@ -23,6 +23,7 @@ import {
   resetBetweenTests,
   stubFetch,
 } from "../../__tests__/http.ts";
+import { CONNECTOR_VERSION } from "../../databricks/api.ts";
 import { connectorRouter } from "../../router.ts";
 import type { InstallValidationInput, ProbeInput } from "../definition.ts";
 import { DBSQL_MCP_PATH, MCP_ACCEPT } from "../probe.ts";
@@ -438,7 +439,10 @@ describe("install validation probe", () => {
         params: {
           protocolVersion: "2025-06-18",
           capabilities: {},
-          clientInfo: { name: "p0-connector-databricks-ai", version: "1.0.0" },
+          clientInfo: {
+            name: "p0-connector-databricks-ai",
+            version: CONNECTOR_VERSION,
+          },
         },
       },
       { jsonrpc: "2.0", method: "notifications/initialized" },

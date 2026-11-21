@@ -14,6 +14,7 @@ import {
   stubFetch,
 } from "../../__tests__/http.ts";
 import { AWS_JWT, stsSend } from "../../__tests__/sts.ts";
+import { CONNECTOR_VERSION } from "../api.ts";
 import {
   AWS_TOKEN_LIFETIME_SECONDS,
   DATABRICKS_TOKEN_AUDIENCE,
@@ -88,7 +89,7 @@ describe("databricksAccessToken", () => {
       await databricksAccessToken(accountContext({ requestId: "req-777" }));
 
       expect(fetchCalls(fetchMock)[0]?.init.headers["User-Agent"]).toBe(
-        "p0-connector-databricks/1.0.0 request/req-777"
+        `p0-connector-databricks/${CONNECTOR_VERSION} request/req-777`
       );
     });
 
