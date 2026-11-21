@@ -1,0 +1,235 @@
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Connector release, x.y.z. Must be above every v* tag.
+        required: true
+        type: string
+
+name: Release
+
+# Started from main, the bump job writes the version into every
+# services/*/package.json as a release commit on a new release/x.y.z branch,
+# and dispatches this workflow again on that branch. The second run lints and
+# tests the release commit, builds and pushes every image from it (tagged
+# sha-<release commit>, never latest), tags it vx.y.z and opens a PR that
+# brings the same version bump to main. See "Releasing connector images" in
+# the README.
+#
+# No GitHub Release is created: publish.yaml publishes the NPM packages when
+# one is, and would fail its tag-vs-package check on a connector tag.
+
+permissions:
+  contents: read
+
+# A second release started from main waits for the first's bump job, which
+# then holds a release branch, so the second refuses to start.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    name: Cut the release branch
+    if: ${{ !startsWith(github.ref, 'refs/heads/release/') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
+    env:
+      VERSION: ${{ inputs.version }}
+      BRANCH: release/${{ inputs.version }}
+    steps:
+      # Runs on any branch but a release branch, so a run started from the
+      # wrong branch fails here instead of skipping every job.
+      - name: Run from main
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Start a release from main, not $GITHUB_REF."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      # Plain x.y.z, vx.y.z free, above every v* tag (the NPM packages' v0.*
+      # tags included) and above what main's services already report.
+      - name: Version can be released
+        run: node .github/scripts/check-version.mjs
+
+      # promote deletes its branch once the tag is pushed, so a release branch
+      # here is a release still running, or a failed one to finish first.
+      - name: No other release is in flight
+        run: |
+          branches=$(git ls-remote --heads origin 'refs/heads/release/*' | cut -f2)
+          if [ -n "$branches" ]; then
+            echo "::error::Finish or delete these release branches first: $(echo "$branches" | tr '\n' ' ')"
+            exit 1
+          fi
+
+      - name: Write the version
+        run: |
+          node .github/scripts/write-version.mjs
+          git --no-pager diff --stat
+
+      # A push made with the workflow's token starts no workflow, so the run
+      # on the release branch is dispatched explicitly.
+      - name: Push the release branch and start its run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "Release $VERSION"
+          git push origin "HEAD:refs/heads/$BRANCH"
+          gh workflow run release.yaml --repo "$GITHUB_REPOSITORY" --ref "$BRANCH" -f version="$VERSION"
+          echo "Started the release run on $BRANCH: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/workflows/release.yaml?query=branch%3A$BRANCH" >> "$GITHUB_STEP_SUMMARY"
+
+  # Everything below runs on release/x.y.z, where github.sha is the release
+  # commit.
+  verify:
+    name: Check the release commit
+    if: startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Branch names the version
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/release/$VERSION" ]; then
+            echo "::error::$GITHUB_REF does not release $VERSION. Dispatch with version set to the branch's version."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Every service is at the version
+        run: node .github/scripts/verify-version.mjs
+
+  lint:
+    needs: verify
+    uses: ./.github/workflows/lint.yaml
+    with:
+      ref: ${{ github.sha }}
+
+  test:
+    needs: verify
+    uses: ./.github/workflows/test.yaml
+    with:
+      ref: ${{ github.sha }}
+
+  # The same build a merge to main gets. Run on the release branch, it tags
+  # every image sha-<release commit> and leaves latest where it is. Needs the
+  # docker-publish environment to allow release/*.
+  build:
+    needs: [lint, test]
+    uses: ./.github/workflows/docker.yaml
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+
+  promote:
+    name: Tag the release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ inputs.version }}
+      SHA: ${{ github.sha }}
+    steps:
+      # By sha, so a re-run still checks out after the branch is deleted.
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.sha }}
+
+      # From the commit the images were built from, so the tag names the
+      # version they report.
+      - name: Every service is at the version
+        run: node .github/scripts/verify-version.mjs
+
+      # A tag already on this commit is a re-run.
+      - name: Tag the release commit
+        run: |
+          tagged=$(git ls-remote origin "refs/tags/v$VERSION" | cut -f1)
+          if [ -z "$tagged" ]; then
+            git push origin "$SHA:refs/tags/v$VERSION"
+          elif [ "$tagged" != "$SHA" ]; then
+            echo "::error::v$VERSION already tags $tagged, not $SHA."
+            exit 1
+          fi
+
+      # The tag keeps the commit, and a leftover branch would stop the next
+      # release from starting.
+      - name: Delete the release branch
+        run: |
+          if git ls-remote --exit-code --heads origin "$GITHUB_REF_NAME" > /dev/null; then
+            git push origin --delete "$GITHUB_REF_NAME"
+          fi
+
+      - name: Summary
+        run: |
+          {
+            echo "Released $VERSION from $SHA, tagged v$VERSION."
+            echo
+            echo "Every image in docker.yaml is tagged sha-${SHA:0:7} in Artifact Registry and on Docker Hub, and reports connectorVersion $VERSION. latest did not move."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # Builds from main report the last release only once this PR merges. The
+  # version is written onto main's tip, not cherry-picked from the release
+  # commit, so a service added since the release branch was cut is bumped too.
+  bump-pr:
+    name: Open the version-bump PR
+    needs: promote
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ inputs.version }}
+      SHA: ${{ github.sha }}
+      BRANCH: version-bump/${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: main
+
+      # Fails rather than lower main's versions, as a re-run after a later
+      # release's bump PR merged would.
+      - name: Write the version
+        run: node .github/scripts/write-version.mjs
+
+      # A PR opened with the workflow's token starts no workflow, so lint and
+      # test only run on it once someone closes and reopens it.
+      - name: Push the branch and open the PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if git diff --quiet; then
+            echo "main is already at $VERSION." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "Bump connector services to $VERSION"
+          git push --force origin "HEAD:refs/heads/$BRANCH"
+          url=$(gh pr list --repo "$GITHUB_REPOSITORY" --head "$BRANCH" --base main --state open --json url --jq '.[0].url // empty')
+          if [ -z "$url" ]; then
+            url=$(gh pr create --repo "$GITHUB_REPOSITORY" --base main --head "$BRANCH" \
+              --title "Bump connector services to $VERSION" \
+              --body "$(cat <<EOF
+          Brings release [v$VERSION]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/v$VERSION) back to main, so builds from main (and \`latest\`) report \`connectorVersion\` $VERSION. Its images were built from the release commit $SHA and are tagged \`sha-${SHA:0:7}\`.
+
+          Opened by the [release run]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID). A PR opened by a workflow starts no checks: close and reopen it to run lint and test.
+          EOF
+          )")
+          fi
+          echo "Version-bump PR: $url" >> "$GITHUB_STEP_SUMMARY"
