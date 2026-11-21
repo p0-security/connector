@@ -1,6 +1,6 @@
 {
   "name": "@p0security/p0-connector-gitguardian-ai",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "P0 GitGuardian (Agentic) connector (AWS Lambda / GCP Cloud Run)",
   "type": "module",
   "exports": {

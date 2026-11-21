@@ -1,6 +1,6 @@
 {
   "name": "@p0security/p0-connector-session-logging-gcp",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "P0 GCP Cloud Logging connector (GCP Cloud Run only): reads Cloud Audit Logs for Access Logs",
   "type": "module",
   "exports": {

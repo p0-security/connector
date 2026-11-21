@@ -1,6 +1,6 @@
 {
   "name": "@p0security/p0-connector-gcp-service-account",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "P0 GCP service account impersonation connector (GCP Cloud Run)",
   "type": "module",
   "exports": {
