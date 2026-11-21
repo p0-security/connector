@@ -5,7 +5,10 @@ import {
 
 import sdkPackageJson from "../package.json" with { type: "json" };
 
-export const newMetadataRouter = (
-  t: AnyConnectorTRPCInstance,
-  connectorVersion: string
-) => newCoreMetadataRouter(t, connectorVersion, sdkPackageJson.version);
+/**
+ * Reports the SDK's own version as both the connector and framework version.
+ * A custom application connector is the SDK deployed with the customer's
+ * actions, so the SDK version is the version of the deployable.
+ */
+export const newMetadataRouter = (t: AnyConnectorTRPCInstance) =>
+  newCoreMetadataRouter(t, sdkPackageJson.version, sdkPackageJson.version);

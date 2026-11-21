@@ -22,8 +22,13 @@ export type CustomAppConnectorParams = {
    * somewhere to live, and no connector has to restructure later to get it.
    */
   actions: (ctx: ConnectorContext) => CustomAppConnectorActions;
-  /** Conventionally your own `package.json` version. */
-  connectorVersion: string;
+  /**
+   * @deprecated Ignored. The connector reports the SDK's own NPM version, since
+   * the SDK is the deployable P0 tracks; a version passed here would be
+   * whatever the caller chose. Kept optional so existing callers still
+   * compile; remove it from your code.
+   */
+  connectorVersion?: string;
 };
 
 /**
@@ -74,7 +79,7 @@ export const newCustomAppConnectorRouter = (
       ),
     },
     install: t.router({}),
-    metadata: newMetadataRouter(t, params.connectorVersion),
+    metadata: newMetadataRouter(t),
   });
 };
 

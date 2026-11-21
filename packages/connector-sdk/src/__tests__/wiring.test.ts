@@ -1,6 +1,7 @@
 import { createLogger, newConnectorTRPC } from "@p0security/connector-core";
 import { describe, expect, it } from "vitest";
 
+import sdkPackageJson from "../../package.json" with { type: "json" };
 import { newCustomAppConnectorRouter } from "../router.ts";
 import type { CustomAppConnectorActions, RequestContext } from "../schema.ts";
 
@@ -31,10 +32,7 @@ const newCaller = (router: ReturnType<typeof newCustomAppConnectorRouter>) =>
 
 describe("newCustomAppConnectorRouter", () => {
   it("exposes exactly the five access procedures and the metadata endpoint", () => {
-    const router = newCustomAppConnectorRouter({
-      actions: newActions,
-      connectorVersion: "1.2.3",
-    });
+    const router = newCustomAppConnectorRouter({ actions: newActions });
 
     expect(Object.keys(router._def.procedures).sort()).toEqual([
       "app.accesses.access.deleteUser",
@@ -46,12 +44,9 @@ describe("newCustomAppConnectorRouter", () => {
     ]);
   });
 
-  it("mounts the access procedures under app.accesses.access and reports its own version", async () => {
+  it("mounts the access procedures under app.accesses.access", async () => {
     const caller = newCaller(
-      newCustomAppConnectorRouter({
-        actions: newActions,
-        connectorVersion: "1.2.3",
-      })
+      newCustomAppConnectorRouter({ actions: newActions })
     );
 
     const userId = await caller.app.accesses.access.provisionUser({
@@ -59,18 +54,11 @@ describe("newCustomAppConnectorRouter", () => {
       context: { requestId: "req-1", appId: "app-1" },
     });
     expect(userId).toBe("person@example.com");
-
-    const metadata = await caller.app.metadata.get();
-    expect(metadata.connectorVersion).toBe("1.2.3");
-    expect(metadata.frameworkVersion).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it("rebuilds the actions for each request", async () => {
     const caller = newCaller(
-      newCustomAppConnectorRouter({
-        actions: newActions,
-        connectorVersion: "1.2.3",
-      })
+      newCustomAppConnectorRouter({ actions: newActions })
     );
 
     const options = await caller.app.accesses.access.list({
@@ -80,12 +68,33 @@ describe("newCustomAppConnectorRouter", () => {
   });
 });
 
+describe("the metadata endpoint", () => {
+  it("reports the SDK's own version", async () => {
+    const caller = newCaller(
+      newCustomAppConnectorRouter({ actions: newActions })
+    );
+
+    const metadata = await caller.app.metadata.get();
+    expect(metadata.connectorVersion).toBe(sdkPackageJson.version);
+    expect(metadata.frameworkVersion).toBe(sdkPackageJson.version);
+  });
+
+  it("ignores a caller-supplied connectorVersion", async () => {
+    const caller = newCaller(
+      newCustomAppConnectorRouter({
+        actions: newActions,
+        connectorVersion: "999.0.0",
+      })
+    );
+
+    const metadata = await caller.app.metadata.get();
+    expect(metadata.connectorVersion).toBe(sdkPackageJson.version);
+  });
+});
+
 describe("the router's mount keys", () => {
   it("stay literal rather than widening to an index signature", () => {
-    const router = newCustomAppConnectorRouter({
-      actions: newActions,
-      connectorVersion: "1.2.3",
-    });
+    const router = newCustomAppConnectorRouter({ actions: newActions });
     const caller = newCaller(router);
 
     // @ts-expect-error -- an index signature would admit any access name
@@ -100,10 +109,7 @@ describe("the router's mount keys", () => {
 describe("the user validator", () => {
   const newGuardedCaller = () =>
     newCaller(
-      newCustomAppConnectorRouter({
-        actions: newActionsWith(userValidator),
-        connectorVersion: "1.2.3",
-      })
+      newCustomAppConnectorRouter({ actions: newActionsWith(userValidator) })
     );
 
   it("admit a user the connector recognizes", async () => {
@@ -165,7 +171,6 @@ describe("the user validator", () => {
             return true;
           },
         }),
-        connectorVersion: "1.2.3",
       })
     );
 
@@ -185,7 +190,6 @@ describe("the user validator", () => {
     const caller = newCaller(
       newCustomAppConnectorRouter({
         actions: newActionsWith({ validateUser: record }),
-        connectorVersion: "1.2.3",
       })
     );
 
@@ -211,7 +215,6 @@ describe("the user validator", () => {
             return KNOWN_PRINCIPALS.has(user.principal);
           },
         }),
-        connectorVersion: "1.2.3",
       })
     );
 
@@ -234,10 +237,7 @@ describe("the user validator", () => {
 
   it("lets a connector opt out by returning true unconditionally", async () => {
     const caller = newCaller(
-      newCustomAppConnectorRouter({
-        actions: newActions,
-        connectorVersion: "1.2.3",
-      })
+      newCustomAppConnectorRouter({ actions: newActions })
     );
 
     await expect(
