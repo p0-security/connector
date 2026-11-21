@@ -1,6 +1,6 @@
 {
   "name": "@p0security/p0-connector-aws-ssm-ai",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "P0 aws-ssm-ai connector (AWS Lambda): prepares EC2 instances for SSH (AI)",
   "type": "module",
   "exports": {

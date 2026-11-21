@@ -1,6 +1,6 @@
 {
   "name": "@p0security/p0-connector-session-logging-aws",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "P0 AWS CloudWatch Logs connector (AWS Lambda): reads CloudTrail and RDS logs for Access Logs",
   "type": "module",
   "exports": {
