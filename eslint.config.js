@@ -95,4 +95,16 @@ export default defineConfig([
       ],
     },
   },
+  {
+    // Plain Node ESM run by the release workflow, outside every tsconfig.
+    name: "Release scripts",
+    files: [".github/scripts/**/*.mjs"],
+    extends: [js.configs.recommended, eslintConfigPrettier],
+    languageOptions: {
+      globals: { console: "readonly", process: "readonly" },
+    },
+    rules: {
+      eqeqeq: ["error", "always"],
+    },
+  },
 ]);

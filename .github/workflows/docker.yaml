@@ -1,5 +1,11 @@
-# No pull_request trigger: the Docker Hub secrets live in the main-only
-# `docker-publish` environment, so a PR build couldn't log in.
+# Called by on-push-main.yaml for every merge to main, and by release.yaml on a
+# release/x.y.z branch to build that release's commit. No pull_request
+# trigger: the Docker Hub secrets live in the `docker-publish` environment,
+# which only main and release/* may deploy to, so a PR build couldn't log in.
+#
+# Every build is tagged sha-<7 hex> of the commit it built (github.sha of the
+# calling run). Only a build on the default branch also moves `latest`, so a
+# release build never does.
 on:
   workflow_call:
     outputs:
@@ -309,6 +315,8 @@ jobs:
           images: |
             us-west1-docker.pkg.dev/p0-prod/docker-repository/p0/${{ matrix.image }}
             p0security/${{ matrix.image }}
+          # A release run is dispatched on its release/x.y.z branch, so
+          # github.sha is the release commit and is_default_branch is false.
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=sha
