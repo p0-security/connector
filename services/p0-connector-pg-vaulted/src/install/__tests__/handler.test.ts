@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   MANAGER,
   MANAGER_SECRET_ARN,
+  MANAGER_TARGET_ID,
   capturingLogger,
   dataOf,
   env,
@@ -46,6 +47,11 @@ const validate = (overrides: ManagerDependencies = {}) =>
 
 const mappingOf = (mapping: unknown) => ({
   MANAGER_SECRET_ARNS: JSON.stringify(mapping),
+});
+
+const entry = (arn: string, targetId = MANAGER_TARGET_ID) => ({
+  arn,
+  targetId,
 });
 
 describe("install validation input", () => {
@@ -158,41 +164,74 @@ describe("manager_mapping", () => {
     ["is empty", { MANAGER_SECRET_ARNS: "" }],
     ["is not JSON", { MANAGER_SECRET_ARNS: "{" }],
     ["is not an object", mappingOf([MANAGER_SECRET_ARN])],
-    ["maps a host to a secret's name", mappingOf({ [HOST]: "orders-manager" })],
+    ["maps a host to an ARN alone", mappingOf({ [HOST]: MANAGER_SECRET_ARN })],
+    [
+      "maps a host to a secret's name",
+      mappingOf({ [HOST]: entry("orders-manager") }),
+    ],
     [
       "maps a host to an ARN of another service",
       mappingOf({
-        [HOST]: "arn:aws:ssm:us-east-1:123456789012:parameter/orders-manager",
+        [HOST]: entry(
+          "arn:aws:ssm:us-east-1:123456789012:parameter/orders-manager"
+        ),
       }),
     ],
     [
       "maps a host to an ARN in an unknown partition",
       mappingOf({
-        [HOST]:
-          "arn:evil:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+        [HOST]: entry(
+          "arn:evil:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf"
+        ),
       }),
     ],
     [
       "maps a host to an ARN whose region is not a region",
       mappingOf({
-        [HOST]:
-          "arn:aws:secretsmanager:us-east-1.example.com/:123456789012:secret:orders-manager-AbCdEf",
+        [HOST]: entry(
+          "arn:aws:secretsmanager:us-east-1.example.com/:123456789012:secret:orders-manager-AbCdEf"
+        ),
       }),
     ],
     [
       "maps a host to an ARN whose account is not 12 digits",
       mappingOf({
-        [HOST]:
-          "arn:aws:secretsmanager:us-east-1:12345:secret:orders-manager-AbCdEf",
+        [HOST]: entry(
+          "arn:aws:secretsmanager:us-east-1:12345:secret:orders-manager-AbCdEf"
+        ),
       }),
     ],
     [
       "maps a host to an ARN with more after the secret's name",
-      mappingOf({ [HOST]: `${MANAGER_SECRET_ARN}:extra` }),
+      mappingOf({ [HOST]: entry(`${MANAGER_SECRET_ARN}:extra`) }),
     ],
     [
-      "maps another host to something that is not an ARN",
-      mappingOf({ [HOST]: MANAGER_SECRET_ARN, "other.example.com": 7 }),
+      "maps a host to an entry with no target id",
+      mappingOf({ [HOST]: { arn: MANAGER_SECRET_ARN } }),
+    ],
+    [
+      "maps a host to an entry with no ARN",
+      mappingOf({ [HOST]: { targetId: MANAGER_TARGET_ID } }),
+    ],
+    [
+      "maps a host to an empty target id",
+      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN, "") }),
+    ],
+    [
+      "maps a host to a target id with a slash",
+      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN, "orders/prod") }),
+    ],
+    [
+      "maps a host to a target id that starts with a hyphen",
+      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN, "-orders") }),
+    ],
+    [
+      "maps a host to a target id of 64 characters",
+      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN, "a".repeat(64)) }),
+    ],
+    [
+      "maps another host to something that is not an entry",
+      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN), "other.example.com": 7 }),
     ],
   ])("fails as a validation error when the variable %s", async (_, env) => {
     const data = await dataOf(validate({ env }));
@@ -207,7 +246,7 @@ describe("manager_mapping", () => {
   it("fails as not found when the mapping has no entry for the target's host", async () => {
     const data = await dataOf(
       validate({
-        env: mappingOf({ "billing.example.com": MANAGER_SECRET_ARN }),
+        env: mappingOf({ "billing.example.com": entry(MANAGER_SECRET_ARN) }),
       })
     );
 
@@ -217,7 +256,7 @@ describe("manager_mapping", () => {
   });
 
   it("finds the host whatever its case", async () => {
-    const env = mappingOf({ [HOST.toUpperCase()]: MANAGER_SECRET_ARN });
+    const env = mappingOf({ [HOST.toUpperCase()]: entry(MANAGER_SECRET_ARN) });
 
     await expect(validate({ env })).resolves.toEqual({
       grantableRoles: ["analyst", "reporting"],
@@ -231,7 +270,7 @@ describe("manager_mapping", () => {
     vault = fakeSecretStore({ [arn]: JSON.stringify(MANAGER) });
 
     await validate({
-      env: mappingOf({ [HOST]: arn }),
+      env: mappingOf({ [HOST]: entry(arn) }),
       connectSecretManager: vault.connectSecretManager,
     });
 

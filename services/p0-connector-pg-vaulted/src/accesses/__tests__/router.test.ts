@@ -227,7 +227,10 @@ describe("list", () => {
       list("role", {
         env: {
           MANAGER_SECRET_ARNS: JSON.stringify({
-            "billing.example.com": MANAGER_SECRET_ARN,
+            "billing.example.com": {
+              arn: MANAGER_SECRET_ARN,
+              targetId: "billing",
+            },
           }),
         },
       })
