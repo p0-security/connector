@@ -1,0 +1,1009 @@
+import { UnauthorizedError } from "@p0security/connector-secret-manager-client";
+import { inspect } from "node:util";
+import { beforeEach, describe, expect, it } from "vitest";
+
+import {
+  type FakeObject,
+  type FakeRole,
+  type Journal,
+  MANAGER_SECRET_ARN,
+  capturingLogger,
+  dataOf,
+  env,
+  errorOf,
+  fakeDatabase,
+  fakeRandomBytes,
+  fakeSecretStore,
+  fakeWait,
+  pgError,
+} from "../../__tests__/fakes.ts";
+import { LOGIN, context } from "../../__tests__/fixtures.ts";
+import type { RequestContext } from "../../context.ts";
+import { t } from "../../router.ts";
+import { router } from "../role/handler.ts";
+
+const SECRET = context.secretName;
+const OTHER_LOGIN = `p0v_${"f".repeat(32)}`;
+
+let journal: Journal = [];
+let db = fakeDatabase();
+let vault = fakeSecretStore();
+let log = capturingLogger();
+let wait = fakeWait(journal);
+
+beforeEach(() => {
+  journal = [];
+  db = fakeDatabase({}, journal);
+  vault = fakeSecretStore(undefined, journal);
+  log = capturingLogger();
+  wait = fakeWait(journal);
+});
+
+const role = () =>
+  router(t, {
+    env,
+    connectSecretManager: vault.connectSecretManager,
+    secretsManagerSdk: vault.secretsManagerSdk,
+    connect: db.connect,
+    randomBytes: fakeRandomBytes(),
+    wait,
+  }).createCaller({ logger: log.logger });
+
+const user = { userId: LOGIN, userBody: LOGIN, context };
+
+const provision = () => role().provisionUser({ userBody: LOGIN, context });
+
+const approve = (rolename: string) =>
+  role().setPoliciesForUser({
+    ...user,
+    policies: [{ type: "role", rolename }],
+  });
+
+const identify = () => role().identifyUser({ userBody: LOGIN, context });
+
+/** The database cutoff. */
+const cutOff = () => role().setPoliciesForUser({ ...user, policies: [] });
+
+/** The cleanup. */
+const cleanUp = (overrides: Partial<RequestContext> = {}) =>
+  role().deleteUser({ ...user, context: { ...context, ...overrides } });
+
+const EARLIER = {
+  validUntil: "2026-11-01T00:00:00Z",
+  comment: "an earlier comment",
+};
+const VERIFIER = "an earlier verifier";
+
+/** A retired login: as the cutoff leaves it, with no password. */
+const RETIRED: FakeRole = { canLogin: false, connectionLimit: 0, ...EARLIER };
+
+const ROLES: Record<"active" | "prepared" | "retired", FakeRole> = {
+  prepared: {
+    canLogin: false,
+    connectionLimit: -1,
+    password: VERIFIER,
+    ...EARLIER,
+  },
+  active: {
+    canLogin: true,
+    connectionLimit: -1,
+    password: VERIFIER,
+    ...EARLIER,
+  },
+  retired: RETIRED,
+};
+
+type State = keyof typeof ROLES | "absent";
+
+/** Puts the grant login in `state`, with or without its grant secret. */
+const given = (state: State, secret: "absent" | "filled" = "filled") => {
+  if (state !== "absent") db.roles.set(LOGIN, { ...ROLES[state] });
+  if (secret === "filled") vault.holding(SECRET, "an earlier password");
+};
+
+/** What the revoke path may change: the login, the memberships, what
+ * depends on roles and the open sessions in PostgreSQL, and the grant
+ * secret's values. */
+const everything = () => ({
+  roles: structuredClone([...db.roles]),
+  memberships: structuredClone(db.memberships),
+  objects: structuredClone(db.objects),
+  sessions: structuredClone(db.sessions),
+  secret: vault.secrets.get(SECRET)?.values.map(String),
+});
+
+const RETIRE = [
+  "BEGIN",
+  ["format", "ALTER ROLE %I NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL", LOGIN],
+  `ALTER ROLE ${LOGIN} NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL`,
+  ["managerGrantedRoles", LOGIN],
+];
+
+describe("setPoliciesForUser with no policies", () => {
+  it("retires the login and takes back the manager's grants in one transaction, then ends its sessions, then counts that none is left", async () => {
+    given("active");
+    db.roles.set(OTHER_LOGIN, { ...ROLES.active });
+    db.memberships.push(
+      { role: "analyst", member: LOGIN, byManager: true },
+      { role: "dba_team", member: LOGIN, byManager: false },
+      { role: "analyst", member: OTHER_LOGIN, byManager: true }
+    );
+    db.sessions.push(
+      { usename: LOGIN },
+      { usename: OTHER_LOGIN },
+      { usename: LOGIN }
+    );
+
+    await expect(cutOff()).resolves.toBe(null);
+
+    expect(journal).toEqual([
+      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      ["login", LOGIN],
+      "BEGIN",
+      [
+        "format",
+        "ALTER ROLE %I NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL",
+        LOGIN,
+      ],
+      `ALTER ROLE ${LOGIN} NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL`,
+      ["managerGrantedRoles", LOGIN],
+      ["format", "REVOKE %I FROM %I", "analyst", LOGIN],
+      `REVOKE analyst FROM ${LOGIN}`,
+      "COMMIT",
+      ["endSessions", LOGIN],
+      ["countSessions", LOGIN],
+      "wait 200",
+      ["endSessions", LOGIN],
+      ["countSessions", LOGIN],
+      "close",
+    ]);
+    expect(everything()).toEqual({
+      roles: [
+        [
+          LOGIN,
+          {
+            canLogin: false,
+            connectionLimit: 0,
+            validUntil: "2026-11-01T00:00:00Z",
+            comment: "an earlier comment",
+          },
+        ],
+        [OTHER_LOGIN, ROLES.active],
+      ],
+      memberships: [
+        { role: "dba_team", member: LOGIN, byManager: false },
+        { role: "analyst", member: OTHER_LOGIN, byManager: true },
+      ],
+      objects: [],
+      sessions: [{ usename: OTHER_LOGIN }],
+      secret: ["an earlier password"],
+    });
+  });
+
+  it("with no login, succeeds without a write", async () => {
+    given("absent");
+    const before = everything();
+
+    await expect(cutOff()).resolves.toBe(null);
+
+    expect(everything()).toEqual(before);
+    expect(journal).toEqual([
+      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      ["login", LOGIN],
+      "close",
+    ]);
+  });
+
+  it.each(["prepared", "active", "retired"] as const)(
+    "leaves a %s login retired, and run again changes nothing",
+    async (state) => {
+      given(state);
+      db.sessions.push({ usename: LOGIN });
+
+      await expect(cutOff()).resolves.toBe(null);
+
+      const after = everything();
+      expect(after).toEqual({
+        roles: [[LOGIN, RETIRED]],
+        memberships: [],
+        objects: [],
+        sessions: [],
+        secret: ["an earlier password"],
+      });
+      await expect(identify()).resolves.toBe(LOGIN);
+      db.calls.length = 0;
+
+      await expect(cutOff()).resolves.toBe(null);
+
+      expect(everything()).toEqual(after);
+      expect(db.calls).toEqual([
+        ["login", LOGIN],
+        ...RETIRE,
+        "COMMIT",
+        ["endSessions", LOGIN],
+        ["countSessions", LOGIN],
+        ["endSessions", LOGIN],
+        ["countSessions", LOGIN],
+        "close",
+      ]);
+    }
+  );
+
+  it("looks again after a wait, and ends again, while a session it ended is still going", async () => {
+    given("active");
+    db.sessions.push({ usename: LOGIN, outlives: 2 }, { usename: LOGIN });
+
+    await expect(cutOff()).resolves.toBe(null);
+
+    expect(journal.slice(journal.indexOf("COMMIT"))).toEqual([
+      "COMMIT",
+      ["endSessions", LOGIN],
+      ["countSessions", LOGIN],
+      "wait 200",
+      ["endSessions", LOGIN],
+      ["countSessions", LOGIN],
+      "wait 200",
+      ["endSessions", LOGIN],
+      ["countSessions", LOGIN],
+      "close",
+    ]);
+    expect(db.sessions).toEqual([]);
+    expect(log.lines.join("")).toContain('"sessionsEnded":2');
+  });
+
+  it("ends a session that shows only after the first look, as one does that signed in just before the commit", async () => {
+    given("active");
+    const late = [{ usename: LOGIN }];
+    wait = async (ms) => {
+      journal.push(`wait ${ms}`);
+      db.sessions.push(...late.splice(0));
+    };
+
+    await expect(cutOff()).resolves.toBe(null);
+
+    expect(journal.slice(journal.indexOf("COMMIT"))).toEqual([
+      "COMMIT",
+      ["endSessions", LOGIN],
+      ["countSessions", LOGIN],
+      "wait 200",
+      ["endSessions", LOGIN],
+      ["countSessions", LOGIN],
+      "close",
+    ]);
+    expect(db.sessions).toEqual([]);
+    expect(log.lines.join("")).toContain('"sessionsEnded":1');
+  });
+
+  it("throws as unavailable when a session will not end, leaves the login retired, and succeeds once the session is gone", async () => {
+    given("active");
+    db.memberships.push({ role: "analyst", member: LOGIN, byManager: true });
+    db.sessions.push(
+      { usename: LOGIN, outlives: Infinity },
+      { usename: LOGIN }
+    );
+
+    await expect(dataOf(cutOff())).resolves.toEqual({
+      type: "upstream_unavailable",
+      message:
+        "The grant login is disabled, but some of its sessions have not ended yet. Try again in a moment.",
+      payload: { login: LOGIN, sessions: 1 },
+    });
+
+    expect(journal.slice(journal.indexOf("COMMIT"))).toEqual([
+      "COMMIT",
+      ["endSessions", LOGIN],
+      ["countSessions", LOGIN],
+      ...Array.from({ length: 9 }).flatMap(() => [
+        "wait 200",
+        ["endSessions", LOGIN],
+        ["countSessions", LOGIN],
+      ]),
+      "close",
+    ]);
+    expect(db.roles.get(LOGIN)).toEqual(RETIRED);
+    expect(db.memberships).toEqual([]);
+    await expect(identify()).resolves.toBe(LOGIN);
+
+    db.sessions.length = 0;
+    await expect(cutOff()).resolves.toBe(null);
+
+    expect(db.roles.get(LOGIN)).toEqual(RETIRED);
+  });
+
+  it.each([
+    ["ALTER ROLE", "active"],
+    ["REVOKE", "active"],
+    ["COMMIT", "active"],
+    ["endSessions", "retired"],
+    ["countSessions", "retired"],
+  ] as const)(
+    "when PostgreSQL refuses %s, leaves the login %s, and the next call finishes the cutoff",
+    async (statement, left) => {
+      given("active");
+      db.memberships.push({ role: "analyst", member: LOGIN, byManager: true });
+      db.sessions.push({ usename: LOGIN });
+      const before = everything();
+      const stop = db.failOn(statement, pgError("57014"));
+
+      const data = await dataOf(cutOff());
+
+      expect(data.type).toBe("upstream_unavailable");
+      expect(data.payload).toEqual({ sqlState: "57014" });
+      expect(everything()).toEqual(
+        left === "active"
+          ? before
+          : {
+              ...before,
+              roles: [[LOGIN, RETIRED]],
+              memberships: [],
+              sessions: [
+                {
+                  usename: LOGIN,
+                  ...(statement === "countSessions" ? { signalled: true } : {}),
+                },
+              ],
+            }
+      );
+      await expect(identify()).resolves.toBe(LOGIN);
+
+      stop();
+      await expect(cutOff()).resolves.toBe(null);
+
+      expect(everything()).toEqual({
+        ...before,
+        roles: [[LOGIN, RETIRED]],
+        memberships: [],
+        sessions: [],
+      });
+    }
+  );
+});
+
+/** Something the grant login owns in `database`. */
+const owned = (database: string, name: string): FakeObject => ({
+  database,
+  name,
+  owner: LOGIN,
+  grantees: [],
+});
+
+const HAND_OVER = [
+  "BEGIN",
+  ["format", "REASSIGN OWNED BY %I TO %I", LOGIN, "analyst"],
+  `REASSIGN OWNED BY ${LOGIN} TO analyst`,
+  ["format", "DROP OWNED BY %I", LOGIN],
+  `DROP OWNED BY ${LOGIN}`,
+  "COMMIT",
+  "close",
+];
+
+/** The looks for a session the cutoff missed, before the login is dropped. */
+const LAST_LOOKS = [
+  ["endSessions", LOGIN],
+  ["countSessions", LOGIN],
+  "wait 200",
+  ["endSessions", LOGIN],
+  ["countSessions", LOGIN],
+];
+
+describe("deleteUser", () => {
+  it("ends a session the cutoff missed before it drops the login", async () => {
+    given("retired");
+    db.sessions.push({ usename: LOGIN }, { usename: OTHER_LOGIN });
+
+    await expect(cleanUp()).resolves.toBe(null);
+
+    expect(db.sessions).toEqual([{ usename: OTHER_LOGIN }]);
+    expect([...db.roles]).toEqual([]);
+  });
+
+  it("does not drop a login whose session will not end, so that the next call still finds both", async () => {
+    given("retired");
+    db.sessions.push({ usename: LOGIN, outlives: 100 });
+
+    await expect(dataOf(cleanUp())).resolves.toEqual({
+      type: "upstream_unavailable",
+      message:
+        "The grant login is disabled, but some of its sessions have not ended yet. Try again in a moment.",
+      payload: { login: LOGIN, sessions: 1 },
+    });
+
+    expect(db.roles.get(LOGIN)).toEqual(RETIRED);
+    expect(db.calls).not.toContain(`DROP ROLE ${LOGIN}`);
+    await expect(identify()).resolves.toBe(LOGIN);
+  });
+
+  it("deletes the grant secret, takes the login's privileges, hands over what it owns in each database, then drops it", async () => {
+    given("retired");
+    db.objects.push(
+      owned("orders", "orders.public.drafts"),
+      {
+        database: "orders",
+        name: "orders.public.invoices",
+        owner: "billing",
+        grantees: [LOGIN, "analyst"],
+      },
+      owned("postgres", "postgres.public.notes")
+    );
+
+    await expect(cleanUp()).resolves.toBe(null);
+
+    expect(journal).toEqual([
+      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      ["login", LOGIN],
+      ["isGrantableRole", "analyst"],
+      `deleteSecret ${SECRET}`,
+      "hasGrantOptions",
+      ["format", "GRANT %I TO current_user WITH INHERIT TRUE", LOGIN],
+      `GRANT ${LOGIN} TO current_user WITH INHERIT TRUE`,
+      "connectableDatabases",
+      "BEGIN",
+      ["format", "REASSIGN OWNED BY %I TO %I", LOGIN, "analyst"],
+      `REASSIGN OWNED BY ${LOGIN} TO analyst`,
+      ["format", "DROP OWNED BY %I", LOGIN],
+      `DROP OWNED BY ${LOGIN}`,
+      "COMMIT",
+      "close",
+      "BEGIN",
+      ["format", "REASSIGN OWNED BY %I TO %I", LOGIN, "analyst"],
+      `REASSIGN OWNED BY ${LOGIN} TO analyst`,
+      ["format", "DROP OWNED BY %I", LOGIN],
+      `DROP OWNED BY ${LOGIN}`,
+      "COMMIT",
+      "close",
+      ...LAST_LOOKS,
+      ["format", "DROP ROLE %I", LOGIN],
+      `DROP ROLE ${LOGIN}`,
+      "close",
+    ]);
+    expect(db.signIns.map(({ database }) => database)).toEqual([
+      "postgres",
+      "orders",
+      "postgres",
+    ]);
+    expect(everything()).toEqual({
+      roles: [],
+      memberships: [],
+      objects: [
+        {
+          database: "orders",
+          name: "orders.public.drafts",
+          owner: "analyst",
+          grantees: [],
+        },
+        {
+          database: "orders",
+          name: "orders.public.invoices",
+          owner: "billing",
+          grantees: ["analyst"],
+        },
+        {
+          database: "postgres",
+          name: "postgres.public.notes",
+          owner: "analyst",
+          grantees: [],
+        },
+      ],
+      sessions: [],
+      secret: undefined,
+    });
+    await expect(identify()).resolves.toBe(null);
+  });
+
+  it("reads the manager's credential once, and signs in to every database with it", async () => {
+    given("retired");
+
+    await cleanUp();
+
+    expect(vault.reads.map(({ ref }) => ref)).toEqual([MANAGER_SECRET_ARN]);
+    expect(db.signIns).toEqual(
+      ["postgres", "orders", "postgres"].map((database) => ({
+        host: "orders.cluster-abc123.us-east-1.rds.amazonaws.com",
+        port: 5432,
+        database,
+        username: "p0_manager",
+        password: "correct-horse-battery-staple",
+      }))
+    );
+  });
+
+  it("deletes the grant secret in the request's region", async () => {
+    given("retired");
+
+    await cleanUp({ secrets: { manager: "aws", region: "eu-west-1" } });
+
+    expect(vault.regions).toEqual(["eu-west-1"]);
+    expect(vault.secrets.has(SECRET)).toBe(false);
+  });
+
+  it("takes the login's privileges without an option before PostgreSQL 16", async () => {
+    db = fakeDatabase({ hasGrantOptions: false }, journal);
+    given("retired");
+    db.objects.push(owned("orders", "orders.public.drafts"));
+
+    await expect(cleanUp()).resolves.toBe(null);
+
+    expect(db.calls.slice(2, 5)).toEqual([
+      "hasGrantOptions",
+      ["format", "GRANT %I TO current_user", LOGIN],
+      `GRANT ${LOGIN} TO current_user`,
+    ]);
+    expect([...db.roles]).toEqual([]);
+    expect(db.memberships).toEqual([]);
+  });
+
+  it.each(["absent", "filled"] as const)(
+    "with no login and its grant secret %s, leaves no grant secret and succeeds",
+    async (secret) => {
+      given("absent", secret);
+
+      await expect(cleanUp()).resolves.toBe(null);
+
+      expect(journal).toEqual([
+        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        ["login", LOGIN],
+        `deleteSecret ${SECRET}`,
+        "close",
+      ]);
+      expect(everything()).toEqual({
+        roles: [],
+        memberships: [],
+        objects: [],
+        sessions: [],
+        secret: undefined,
+      });
+    }
+  );
+
+  it.each(["prepared", "active"] as const)(
+    "refuses a %s login, which has not been cut off, and changes nothing",
+    async (state) => {
+      given(state);
+      db.objects.push(owned("orders", "orders.public.drafts"));
+      const before = everything();
+
+      await expect(dataOf(cleanUp())).resolves.toEqual({
+        type: "dependency_violation",
+        message:
+          "The grant login has not been cut off. The connector drops a login only after its database cutoff.",
+        payload: { login: LOGIN, state },
+      });
+
+      expect(everything()).toEqual(before);
+      expect(journal).toEqual([
+        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        ["login", LOGIN],
+        "close",
+      ]);
+    }
+  );
+
+  it("refuses an objectOwner that is not a grantable role, before it writes anything", async () => {
+    given("retired");
+    db.objects.push(owned("orders", "orders.public.drafts"));
+    const before = everything();
+
+    await expect(dataOf(cleanUp({ objectOwner: "postgres" }))).resolves.toEqual(
+      {
+        type: "validation_error",
+        message: "The role postgres is not a grantable role of this target.",
+        payload: { login: LOGIN, rolename: "postgres" },
+      }
+    );
+
+    expect(everything()).toEqual(before);
+    expect(journal).toEqual([
+      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      ["login", LOGIN],
+      ["isGrantableRole", "postgres"],
+      "close",
+    ]);
+  });
+
+  it("finishes a retired login whose grant secret is already gone", async () => {
+    given("retired", "absent");
+    db.objects.push(owned("orders", "orders.public.drafts"));
+
+    await expect(identify()).resolves.toBe(LOGIN);
+    await expect(cleanUp()).resolves.toBe(null);
+
+    expect(journal).toContain(`deleteSecret ${SECRET}`);
+    expect(everything()).toEqual({
+      roles: [],
+      memberships: [],
+      objects: [
+        {
+          database: "orders",
+          name: "orders.public.drafts",
+          owner: "analyst",
+          grantees: [],
+        },
+      ],
+      sessions: [],
+      secret: undefined,
+    });
+  });
+
+  describe("with a database the manager cannot connect to", () => {
+    beforeEach(() => {
+      db = fakeDatabase(
+        {
+          databases: ["billing", "orders", "postgres"],
+          closedDatabases: ["billing"],
+        },
+        journal
+      );
+      given("retired");
+      db.objects.push(owned("orders", "orders.public.drafts"));
+    });
+
+    it("hands over in every other database, and drops a login that owns nothing in that one", async () => {
+      await expect(cleanUp()).resolves.toBe(null);
+
+      expect(db.signIns.map(({ database }) => database)).toEqual([
+        "postgres",
+        "orders",
+        "postgres",
+      ]);
+      expect([...db.roles]).toEqual([]);
+      expect(db.objects).toEqual([
+        {
+          database: "orders",
+          name: "orders.public.drafts",
+          owner: "analyst",
+          grantees: [],
+        },
+      ]);
+    });
+
+    it("cannot drop a login that owns something in that one, leaves it retired, and finishes once that is dealt with", async () => {
+      db.objects.push(owned("billing", "billing.public.ledger"));
+
+      await expect(dataOf(cleanUp())).resolves.toEqual({
+        type: "dependency_violation",
+        message:
+          "PostgreSQL refused the operation because other objects depend on the role.",
+        payload: { sqlState: "2BP01" },
+      });
+
+      expect(everything()).toEqual({
+        roles: [[LOGIN, RETIRED]],
+        // The grant of the login to the manager, which goes with the login.
+        memberships: [{ role: LOGIN, member: "p0_manager", byManager: true }],
+        objects: [
+          {
+            database: "orders",
+            name: "orders.public.drafts",
+            owner: "analyst",
+            grantees: [],
+          },
+          {
+            database: "billing",
+            name: "billing.public.ledger",
+            owner: LOGIN,
+            grantees: [],
+          },
+        ],
+        sessions: [],
+        secret: undefined,
+      });
+      await expect(identify()).resolves.toBe(LOGIN);
+
+      db.objects.pop();
+      await expect(cleanUp()).resolves.toBe(null);
+
+      expect([...db.roles]).toEqual([]);
+      expect(db.memberships).toEqual([]);
+    });
+  });
+
+  describe("when a step fails", () => {
+    const DONE = {
+      roles: [],
+      memberships: [],
+      objects: [
+        {
+          database: "orders",
+          name: "orders.public.drafts",
+          owner: "analyst",
+          grantees: [],
+        },
+        {
+          database: "postgres",
+          name: "postgres.public.notes",
+          owner: "analyst",
+          grantees: [],
+        },
+      ],
+      sessions: [],
+      secret: undefined,
+    };
+    const ORDERS = owned("orders", "orders.public.drafts");
+    const NOTES = owned("postgres", "postgres.public.notes");
+    const TAKEN = { role: LOGIN, member: "p0_manager", byManager: true };
+    const HANDED_OVER = { ...ORDERS, owner: "analyst" };
+
+    beforeEach(() => {
+      given("retired");
+      db.objects.push({ ...ORDERS }, { ...NOTES });
+    });
+
+    it("the deletion of the grant secret, it changes nothing, and the next call finishes the cleanup", async () => {
+      const before = everything();
+      vault.state.failNextDelete = new UnauthorizedError("aws");
+
+      await expect(dataOf(cleanUp())).resolves.toEqual({
+        type: "insufficient_privileges",
+        message:
+          "Secrets Manager refused to let the connector delete the grant secret. Give the connector's role secretsmanager:DeleteSecret on the secrets under p0/postgres-ai/<vpc id>/.",
+        payload: {},
+      });
+
+      expect(everything()).toEqual(before);
+      expect(db.calls).toEqual([
+        ["login", LOGIN],
+        ["isGrantableRole", "analyst"],
+        "close",
+      ]);
+
+      await expect(cleanUp()).resolves.toBe(null);
+
+      expect(everything()).toEqual(DONE);
+    });
+
+    it.each([
+      [
+        "the grant of the login to the manager",
+        "GRANT p0v_",
+        undefined,
+        { memberships: [], objects: [ORDERS, NOTES] },
+      ],
+      [
+        "the reassign in the first database",
+        "REASSIGN OWNED",
+        "orders",
+        { memberships: [TAKEN], objects: [ORDERS, NOTES] },
+      ],
+      [
+        "the commit in the first database",
+        "COMMIT",
+        "orders",
+        { memberships: [TAKEN], objects: [ORDERS, NOTES] },
+      ],
+      [
+        "the drop of what it owns in the second database",
+        "DROP OWNED",
+        "postgres",
+        { memberships: [TAKEN], objects: [HANDED_OVER, NOTES] },
+      ],
+      [
+        "the drop of the login",
+        "DROP ROLE",
+        undefined,
+        { memberships: [TAKEN], objects: DONE.objects },
+      ],
+    ])(
+      "%s, the login stays retired and found, and the next call finishes the cleanup",
+      async (_, statement, database, left) => {
+        const stop = db.failOn(statement, pgError("57014"), database);
+
+        const data = await dataOf(cleanUp());
+
+        expect(data.type).toBe("upstream_unavailable");
+        expect(data.payload).toEqual({ sqlState: "57014" });
+        expect(everything()).toEqual({
+          roles: [[LOGIN, RETIRED]],
+          sessions: [],
+          secret: undefined,
+          ...left,
+        });
+        await expect(identify()).resolves.toBe(LOGIN);
+
+        stop();
+        journal.length = 0;
+        await expect(cleanUp()).resolves.toBe(null);
+
+        expect(everything()).toEqual(DONE);
+        expect(journal).toEqual([
+          `getSecretValue ${MANAGER_SECRET_ARN}`,
+          ["login", LOGIN],
+          ["isGrantableRole", "analyst"],
+          `deleteSecret ${SECRET}`,
+          "hasGrantOptions",
+          ["format", "GRANT %I TO current_user WITH INHERIT TRUE", LOGIN],
+          `GRANT ${LOGIN} TO current_user WITH INHERIT TRUE`,
+          "connectableDatabases",
+          ...HAND_OVER,
+          ...HAND_OVER,
+          ...LAST_LOOKS,
+          ["format", "DROP ROLE %I", LOGIN],
+          `DROP ROLE ${LOGIN}`,
+          "close",
+        ]);
+      }
+    );
+  });
+});
+
+describe("a grant's whole life, from provisionUser to deleteUser", () => {
+  /** A revoke, as the P0 control plane drives it. */
+  const revoke = async () => {
+    if ((await identify()) !== null) await cutOff();
+    if ((await identify()) !== null) await cleanUp();
+  };
+
+  it("ends with no login, no grant secret, and the manager a member of nothing", async () => {
+    await provision();
+    await approve("analyst");
+    db.sessions.push({ usename: LOGIN });
+    db.objects.push(owned("orders", "orders.public.drafts"));
+    expect(db.memberships).toEqual([
+      { role: "analyst", member: LOGIN, byManager: true },
+    ]);
+
+    await revoke();
+
+    expect(everything()).toEqual({
+      roles: [],
+      memberships: [],
+      objects: [
+        {
+          database: "orders",
+          name: "orders.public.drafts",
+          owner: "analyst",
+          grantees: [],
+        },
+      ],
+      sessions: [],
+      secret: undefined,
+    });
+    await expect(identify()).resolves.toBe(null);
+  });
+
+  it("revoked again, changes nothing and reaches PostgreSQL only to look the login up", async () => {
+    await provision();
+    await approve("analyst");
+    await revoke();
+    const after = everything();
+    db.calls.length = 0;
+
+    await revoke();
+    await expect(cutOff()).resolves.toBe(null);
+    await expect(cleanUp()).resolves.toBe(null);
+
+    expect(everything()).toEqual(after);
+    expect(db.calls).toEqual([
+      ["login", LOGIN],
+      "close",
+      ["login", LOGIN],
+      "close",
+      ["login", LOGIN],
+      "close",
+      ["login", LOGIN],
+      "close",
+    ]);
+  });
+
+  it("never reads the grant secret's value", async () => {
+    await provision();
+    await approve("analyst");
+    await revoke();
+
+    expect([...new Set(vault.reads.map(({ ref }) => ref))]).toEqual([
+      MANAGER_SECRET_ARN,
+    ]);
+  });
+});
+
+describe("what the revoke path shows", () => {
+  const HIDDEN = [
+    VERIFIER,
+    "an earlier password",
+    "ALTER ROLE",
+    "REVOKE",
+    "REASSIGN OWNED",
+    "DROP OWNED",
+    "DROP ROLE",
+    "pg_terminate_backend",
+    "current_user",
+  ];
+
+  /** Everything a call shows: the error it failed with, with its causes,
+   * and the log. */
+  const shownBy = async (call: Promise<unknown>) => {
+    const error = await call.then(
+      () => undefined,
+      (e: unknown) => e
+    );
+    return `${inspect(error, { depth: 10 })}\n${log.lines.join("")}`;
+  };
+
+  const expectNothingHiddenIn = (shown: string) => {
+    for (const hidden of HIDDEN) expect(shown).not.toContain(hidden);
+  };
+
+  it("logs the state a cutoff came from, the roles it revoked and the sessions it ended, and no statement", async () => {
+    given("active");
+    db.memberships.push({ role: "analyst", member: LOGIN, byManager: true });
+    db.sessions.push({ usename: LOGIN }, { usename: LOGIN });
+
+    const shown = await shownBy(cutOff());
+
+    expect(shown).toContain(
+      "cut off the grant login and confirmed that none of its sessions is left"
+    );
+    expect(shown).toContain(
+      '"from":"active","revoked":["analyst"],"sessionsEnded":2'
+    );
+    expect(shown).toContain(`"login":"${LOGIN}"`);
+    expectNothingHiddenIn(shown);
+  });
+
+  it("logs the state a cleanup came from, the new owner and the databases, and no statement or secret value", async () => {
+    given("retired");
+
+    const shown = await shownBy(cleanUp());
+
+    expect(shown).toContain(
+      "cleaned up the grant: its secret is deleted and its login is gone"
+    );
+    expect(shown).toContain(
+      '"from":"retired","to":"absent","owner":"analyst","databases":["orders","postgres"]'
+    );
+    expectNothingHiddenIn(shown);
+  });
+
+  it.each(["format", "ALTER ROLE", "REVOKE", "endSessions", "countSessions"])(
+    "keeps the statement and its bindings out of the error and the log when PostgreSQL's error quotes those of %s in a cutoff",
+    async (statement) => {
+      given("active");
+      db.memberships.push({ role: "analyst", member: LOGIN, byManager: true });
+      db.failOn(statement, (sql, bindings) =>
+        pgError("42501", `${sql} ${bindings.join(" ")} ${VERIFIER}`)
+      );
+
+      const shown = await shownBy(cutOff());
+
+      expect(shown).toContain("connector request errored");
+      expect(shown).toContain("42501");
+      expectNothingHiddenIn(shown);
+    }
+  );
+
+  it.each(["GRANT p0v_", "REASSIGN OWNED", "DROP OWNED", "DROP ROLE"])(
+    "keeps the statement out of the error and the log when PostgreSQL's error quotes %s in a cleanup",
+    async (statement) => {
+      given("retired");
+      db.failOn(statement, (sql) => pgError("42501", sql));
+
+      const shown = await shownBy(cleanUp());
+
+      expect(shown).toContain("connector request errored");
+      expect(shown).toContain("42501");
+      expectNothingHiddenIn(shown);
+    }
+  );
+
+  it("keeps the secret manager's error out of the error and the log when it will not delete the grant secret", async () => {
+    given("retired");
+    vault.state.failNextDelete = new Error("DeleteSecret an earlier password", {
+      cause: new Error("an earlier password"),
+    });
+
+    const shown = await shownBy(cleanUp());
+
+    expect(shown).toContain("The connector could not delete the grant secret.");
+    expectNothingHiddenIn(shown);
+  });
+
+  it("names nothing but the login and the count when sessions outlive a cutoff", async () => {
+    given("active");
+    db.sessions.push({ usename: LOGIN, outlives: Infinity });
+
+    const error = await errorOf(cutOff());
+    const shown = `${inspect(error, { depth: 10 })}\n${log.lines.join("")}`;
+
+    expect(shown).toContain(`payload: { login: '${LOGIN}', sessions: 1 }`);
+    expectNothingHiddenIn(shown);
+  });
+});

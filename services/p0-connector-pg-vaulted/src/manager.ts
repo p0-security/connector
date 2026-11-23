@@ -151,22 +151,36 @@ const readManagerCredential = async (
   return credential.data;
 };
 
+/** Runs `run` signed in to another database of the target as its manager,
+ * then closes that connection. */
+export type InDatabase = <T>(
+  database: string,
+  run: (session: PgSession) => Promise<T>
+) => Promise<T>;
+
 /**
  * Runs `run` signed in to `target` as its manager, then closes the
  * connection. The driver connects on its first statement, so that is where a
- * refused sign-in surfaces.
+ * refused sign-in surfaces. `run` also gets a way into the target's other
+ * databases, which signs in with the credential this call read.
  */
 export const withManager = async <T>(
   target: Target,
   secret: ManagerSecret,
   dependencies: Dependencies,
   logger: Logger,
-  run: (session: PgSession) => Promise<T>
+  run: (session: PgSession, inDatabase: InDatabase) => Promise<T>
 ): Promise<T> => {
   const {
     connectSecretManager = createSecretManagerClient,
     connect = connectWithTls,
   } = dependencies;
   const credential = await readManagerCredential(secret, connectSecretManager);
-  return withSession(connect({ ...target, ...credential }), logger, run);
+  const inDatabase: InDatabase = (database, runThere) =>
+    withSession(
+      connect({ ...target, ...credential, database }),
+      logger,
+      runThere
+    );
+  return inDatabase(target.database, (session) => run(session, inDatabase));
 };

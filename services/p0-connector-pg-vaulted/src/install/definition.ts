@@ -24,8 +24,9 @@ export type PgVaultedInstallStep = z.infer<typeof pgVaultedInstallStep>;
  * is thrown, so these are facts about an install that works.
  */
 export const installValidation = z.object({
-  /** The roles the manager holds `ADMIN OPTION` on: the roles it can hand
-   * out, so the only ones a grant can be approved for. */
+  /** The grantable roles: the roles the manager can hand out and hand a
+   * grant login's objects to, so the only ones a grant can be approved
+   * for. */
   grantableRoles: z.array(z.string().min(1)),
 });
 

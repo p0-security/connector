@@ -9,7 +9,7 @@ import type { Connect } from "./postgres/client.ts";
 
 /**
  * Opens the shared secret manager client, of which the connector reads a
- * manager secret's value, and creates and writes a grant secret.
+ * manager secret's value, and creates, writes and deletes a grant secret.
  */
 export type ConnectSecretManager = (
   config: SecretManagerProviderConfig
@@ -23,10 +23,11 @@ export type ConnectSecretManager = (
     type: "value";
     value: Buffer<ArrayBuffer>;
   }) => Promise<unknown>;
+  deleteSecret: (params: { ref: SecretRef }) => Promise<unknown>;
 }>;
 
-/** What stands in for the connector's environment, AWS, PostgreSQL and
- * randomness in tests. */
+/** What stands in for the connector's environment, AWS, PostgreSQL,
+ * randomness and the clock in tests. */
 export type Dependencies = {
   env?: NodeJS.ProcessEnv;
   connectSecretManager?: ConnectSecretManager;
@@ -35,4 +36,7 @@ export type Dependencies = {
   connect?: Connect;
   /** Where a grant login's password and its verifier's salt come from. */
   randomBytes?: (size: number) => Buffer;
+  /** Waits between two counts of a grant login's sessions, in
+   * milliseconds. */
+  wait?: (ms: number) => Promise<void>;
 };

@@ -175,26 +175,6 @@ describe("user namespace", () => {
   });
 });
 
-// The revoke path. The grant path is in ./grant.test.ts.
-describe("stubbed primitives", () => {
-  const user = { userId: LOGIN, userBody: LOGIN, context };
-
-  it.each([
-    [
-      "setPoliciesForUser",
-      () => role().setPoliciesForUser({ ...user, policies: [] }),
-    ],
-    ["deleteUser", () => role().deleteUser(user)],
-  ])("rejects at %s, and reaches nothing", async (operation, call) => {
-    await expect(call()).rejects.toThrow(
-      `pg-vaulted ${operation} is not implemented`
-    );
-    expect(vault.reads).toEqual([]);
-    expect(vault.regions).toEqual([]);
-    expect(db.signIns).toEqual([]);
-  });
-});
-
 describe("list", () => {
   const list = (type: "database" | "role", overrides?: Dependencies) =>
     role(overrides).list({ query: { type, context: target } });

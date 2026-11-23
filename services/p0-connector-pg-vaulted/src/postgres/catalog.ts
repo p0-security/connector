@@ -28,7 +28,8 @@ export const HAS_GRANT_OPTIONS_SQL = `SELECT
 /**
  * What makes a role `r` grantable: it cannot log in, is not superuser, is
  * not PostgreSQL's or RDS's own (`pg_*`, `rds*`), is not a grant login
- * (`p0v_*`), and the manager holds `ADMIN OPTION` on it.
+ * (`p0v_*`), the manager holds `ADMIN OPTION` on it, and the manager can
+ * hand a grant login's objects to it.
  *
  * From PostgreSQL 16 the manager can use an `ADMIN OPTION` that it, or a role
  * whose privileges it inherits, holds. `pg_has_role(..., 'MEMBER WITH ADMIN
@@ -39,6 +40,12 @@ export const HAS_GRANT_OPTIONS_SQL = `SELECT
  * roles the manager was given `ADMIN OPTION` on, so that the customer chooses
  * the grantable roles the same way on every version. A superuser can grant
  * any role.
+ *
+ * `REASSIGN OWNED BY <grant login> TO r` needs the manager to be able to
+ * `SET ROLE` to `r` from PostgreSQL 16, and to hold the privileges of `r`
+ * before. The rule asks for that of the grants the customer made, so that
+ * the connector never grants the manager a role to make up for it. The `CASE`
+ * keeps `'SET'` from a server before 16, which does not know it.
  */
 const GRANTABLE_ROLE = `FROM pg_roles r,
     (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) me
@@ -49,10 +56,12 @@ const GRANTABLE_ROLE = `FROM pg_roles r,
       me.rolsuper
       OR CASE WHEN current_setting('server_version_num')::int >= 160000
         THEN EXISTS (
-          SELECT 1 FROM pg_auth_members m
-          WHERE m.roleid = r.oid AND m.admin_option
-            AND pg_has_role(current_user, m.member, 'USAGE'))
+            SELECT 1 FROM pg_auth_members m
+            WHERE m.roleid = r.oid AND m.admin_option
+              AND pg_has_role(current_user, m.member, 'USAGE'))
+          AND pg_has_role(current_user, r.oid, 'SET')
         ELSE pg_has_role(current_user, r.oid, 'MEMBER WITH ADMIN OPTION')
+          AND pg_has_role(current_user, r.oid, 'USAGE')
         END
     )`;
 
@@ -94,6 +103,31 @@ export const MANAGER_GRANTED_ROLES_SQL = `SELECT r.rolname AS name
 export const DATABASES_SQL = `SELECT datname AS name FROM pg_database
   WHERE datistemplate = false ORDER BY datname COLLATE "C"`;
 
+/**
+ * The databases the cleanup hands a grant login's objects over in: every
+ * one the manager can connect to. Never `rdsadmin`, which is RDS's own.
+ */
+export const CONNECTABLE_DATABASES_SQL = `SELECT datname AS name
+  FROM pg_database
+  WHERE NOT datistemplate
+    AND datallowconn
+    AND has_database_privilege(current_user, oid, 'CONNECT')
+    AND datname <> 'rdsadmin'
+  ORDER BY datname COLLATE "C"`;
+
+/** Ends every session of the login named `$1`: one row for each session it
+ * signalled, with the session's backend. The connector's own session is the
+ * manager's. */
+export const END_SESSIONS_SQL = `SELECT pid, pg_terminate_backend(pid) AS ended
+  FROM pg_stat_activity
+  WHERE usename = $1 AND pid <> pg_backend_pid()`;
+
+/** How many sessions the login named `$1` has. A session that was signalled
+ * is counted until its backend has exited. */
+export const COUNT_SESSIONS_SQL = `SELECT count(*)::int AS sessions
+  FROM pg_stat_activity
+  WHERE usename = $1 AND pid <> pg_backend_pid()`;
+
 const names = z.array(z.object({ name: z.string() }));
 const answer = z.tuple([z.object({ allowed: z.boolean() })]);
 
@@ -117,6 +151,22 @@ export const listGrantableRoles = async (query: PgQuery) =>
 export const listDatabases = async (query: PgQuery) =>
   names.parse(await query(DATABASES_SQL)).map(({ name }) => name);
 
+export const listConnectableDatabases = async (query: PgQuery) =>
+  names.parse(await query(CONNECTABLE_DATABASES_SQL)).map(({ name }) => name);
+
+const signalled = z.array(
+  z.object({ pid: z.number().int(), ended: z.boolean() })
+);
+const sessionCount = z.tuple([z.object({ sessions: z.number().int() })]);
+
+/** Signals every session of `login` to end, and returns the backend of each
+ * one it signalled. A signalled session takes a moment to go. */
+export const endSessions = async (query: PgQuery, login: string) =>
+  signalled.parse(await query(END_SESSIONS_SQL, [login])).map(({ pid }) => pid);
+
+export const countSessions = async (query: PgQuery, login: string) =>
+  sessionCount.parse(await query(COUNT_SESSIONS_SQL, [login]))[0].sessions;
+
 /**
  * The roles `login` is a member of by the manager's grant. A role whose
  * name is not one a policy can hold is left out: the connector grants no
@@ -138,29 +188,32 @@ export const findLogin = async (query: PgQuery, login: string) =>
   loginRows.parse(await query(LOGIN_SQL, [login]))[0];
 
 /**
- * The statements that hand what `login` owns in the connected database to
- * `owner`. `REASSIGN OWNED` needs the manager to hold the privileges of
- * `login`, and those of `owner` (before PostgreSQL 16) or the right to
- * `SET ROLE` to it (from 16). The manager grants itself both first, which a
- * grantable `owner` and a login it created allow. The README has what each
- * version requires, as measured, under Manager privileges.
+ * The statement by which the manager takes the privileges of `login`, which
+ * `REASSIGN OWNED` and `DROP OWNED` need. From PostgreSQL 16 it says
+ * `WITH INHERIT TRUE`, because the membership a role's creator gets is not
+ * inherited. It is the only grant the connector makes to the manager, and it
+ * goes when the login is dropped. Run again, it changes nothing.
  */
-export const reassignOwnedStatements = (
+export const takePrivilegesStatement = (
   login: string,
-  owner: string,
   hasGrantOptions: boolean
-): Statement[] => [
-  {
-    template: hasGrantOptions
-      ? "GRANT %I TO current_user WITH INHERIT TRUE"
-      : "GRANT %I TO current_user",
-    args: [login],
-  },
-  {
-    template: hasGrantOptions
-      ? "GRANT %I TO current_user WITH SET TRUE"
-      : "GRANT %I TO current_user",
-    args: [owner],
-  },
-  { template: "REASSIGN OWNED BY %I TO %I", args: [login, owner] },
-];
+): Statement => ({
+  template: hasGrantOptions
+    ? "GRANT %I TO current_user WITH INHERIT TRUE"
+    : "GRANT %I TO current_user",
+  args: [login],
+});
+
+/**
+ * The statement that hands what `login` owns in the connected database to
+ * `owner`. The manager needs the privileges of `login`, and what makes
+ * `owner` a grantable role. The README has what each version requires, as
+ * measured, under Manager privileges.
+ */
+export const reassignOwnedStatement = (
+  login: string,
+  owner: string
+): Statement => ({
+  template: "REASSIGN OWNED BY %I TO %I",
+  args: [login, owner],
+});

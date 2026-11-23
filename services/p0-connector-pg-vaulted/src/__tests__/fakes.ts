@@ -14,7 +14,10 @@ import type { ConnectSecretManager, Dependencies } from "../dependencies.ts";
 import {
   CAN_CREATE_ROLE_SQL,
   CAN_SIGNAL_BACKEND_SQL,
+  CONNECTABLE_DATABASES_SQL,
+  COUNT_SESSIONS_SQL,
   DATABASES_SQL,
+  END_SESSIONS_SQL,
   GRANTABLE_ROLES_SQL,
   HAS_GRANT_OPTIONS_SQL,
   IS_GRANTABLE_ROLE_SQL,
@@ -80,10 +83,15 @@ export const capturingLogger = () => {
 
 /**
  * Every call the fakes got, in order, when they share one journal: a secret
- * call as `<operation> <secret>`, and a database call as the database's own
- * `calls` have it.
+ * call as `<operation> <secret>`, a database call as the database's own
+ * `calls` have it, and a wait as `wait <milliseconds>`.
  */
 export type Journal = (string[] | string)[];
+
+/** A wait that returns at once, and is kept in the journal. */
+export const fakeWait = (journal: Journal) => async (ms: number) => {
+  journal.push(`wait ${ms}`);
+};
 
 /**
  * Randomness that repeats: the nth draw is bytes of value n. The passwords
@@ -122,6 +130,8 @@ type FakeSecretStoreState = {
   failNextCreate?: Error;
   /** The next write throws what this returns, given the value to write. */
   failNextWrite?: (value: Buffer) => Error;
+  /** The next delete throws this. */
+  failNextDelete?: Error;
 };
 
 // The shared client's refs are a brand on a string, which only a cast makes.
@@ -130,8 +140,8 @@ const refOf = (ref: string) => ref as SecretRef;
 // modelled on `fakeSecretsManager` in services/p0-connector-aws-ssm-ai/src/__tests__/fakes.ts
 /**
  * Secrets Manager in memory: the shared client the connector reads a manager
- * secret with and creates and writes a grant secret with, and the SDK client
- * it describes a grant secret with.
+ * secret with and creates, writes and deletes a grant secret with, and the
+ * SDK client it describes a grant secret with.
  *
  * The readable values are by ARN, and hold the fixture manager's secret
  * unless given others. A grant secret is by name, in `secrets`, and is
@@ -194,6 +204,15 @@ export const fakeSecretStore = (
           throw failNextWrite(value);
         }
         secret.values.push(value);
+      },
+      deleteSecret: async ({ ref }) => {
+        called("deleteSecret", ref);
+        const { failNextDelete } = state;
+        if (failNextDelete) {
+          state.failNextDelete = undefined;
+          throw failNextDelete;
+        }
+        if (!secrets.delete(ref)) throw new SecretNotFoundError(ref);
       },
     };
   };
@@ -274,6 +293,23 @@ export type FakeMembership = {
   byManager: boolean;
 };
 
+/** Something in one database that depends on roles: its owner, and the
+ * roles that were granted a privilege on it. */
+export type FakeObject = {
+  database: string;
+  name: string;
+  owner: string;
+  grantees: string[];
+};
+
+/** An open session of a login. Once it is signalled to end, `outlives` more
+ * counts still see it: none unless given, and all of them for `Infinity`. */
+export type FakeSession = {
+  usename: string;
+  outlives?: number;
+  signalled?: boolean;
+};
+
 /** What the manager can do, and what the target holds. */
 type FakeTarget = {
   canCreateRole: boolean;
@@ -282,13 +318,20 @@ type FakeTarget = {
   hasGrantOptions: boolean;
   grantableRoles: string[];
   databases: string[];
+  /** The databases the manager cannot connect to. */
+  closedDatabases: string[];
 };
 
 /** What a statement changes, which a rolled-back transaction puts back. */
 type FakeCatalog = {
   roles: Map<string, FakeRole>;
   memberships: FakeMembership[];
+  objects: FakeObject[];
 };
+
+/** Where a statement runs: the database of its connection, and the
+ * target. */
+type FakeConnection = { database: string; is: FakeTarget };
 
 /** The error a failing statement throws, or what makes it from the
  * statement and its bindings, which a driver's error can quote. */
@@ -332,11 +375,26 @@ const existing = ({ roles }: FakeCatalog, quoted?: string) => {
   return role;
 };
 
+/** Throws as PostgreSQL does unless the manager holds the privileges of the
+ * role named `quoted`, which it does once it has granted itself the role. */
+const requirePrivilegesOf = (catalog: FakeCatalog, quoted?: string) => {
+  existing(catalog, quoted);
+  const isMember = catalog.memberships.some(
+    ({ role, member }) => role === nameOf(quoted) && member === MANAGER.username
+  );
+  if (!isMember) throw pgError("42501");
+};
+
 /** Each statement the connector runs: its shape, and what it does to the
- * catalog, given the names and literals the shape captured, as written. */
+ * catalog, given the names and literals the shape captured, as written, and
+ * the connection it runs on. */
 const STATEMENTS: {
   shape: RegExp;
-  run: (catalog: FakeCatalog, captured: (string | undefined)[]) => void;
+  run: (
+    catalog: FakeCatalog,
+    captured: (string | undefined)[],
+    connection: FakeConnection
+  ) => void;
 }[] = [
   {
     shape: new RegExp(
@@ -379,16 +437,86 @@ const STATEMENTS: {
       existing(catalog, name).comment = textOf(comment);
     },
   },
-  // The manager's grants to itself, which the fake does not keep.
   {
     shape: new RegExp(
-      `^GRANT ${NAME} TO current_user(?: WITH (?:INHERIT|SET) TRUE)?$`
+      `^ALTER ROLE ${NAME} NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL$`
     ),
-    run: () => {},
+    run: (catalog, [name]) => {
+      const role = existing(catalog, name);
+      role.canLogin = false;
+      role.connectionLimit = 0;
+      delete role.password;
+    },
+  },
+  // The manager's grant of a role to itself, which only PostgreSQL 16 and
+  // later take `WITH INHERIT` on.
+  {
+    shape: new RegExp(`^GRANT ${NAME} TO current_user( WITH INHERIT TRUE)?$`),
+    run: (catalog, [quotedRole, option], { is }) => {
+      if ((option !== undefined) !== is.hasGrantOptions) throw pgError("42601");
+      existing(catalog, quotedRole);
+      const membership = {
+        role: nameOf(quotedRole),
+        member: MANAGER.username,
+        byManager: true,
+      };
+      const { memberships } = catalog;
+      if (
+        !memberships.some(
+          (m) => m.role === membership.role && m.member === membership.member
+        )
+      ) {
+        memberships.push(membership);
+      }
+    },
   },
   {
     shape: new RegExp(`^REASSIGN OWNED BY ${NAME} TO ${NAME}$`),
-    run: () => {},
+    run: (catalog, [quotedFrom, quotedTo], { database, is }) => {
+      requirePrivilegesOf(catalog, quotedFrom);
+      const [from, to] = [nameOf(quotedFrom), nameOf(quotedTo)];
+      if (!is.grantableRoles.includes(to)) throw pgError("42501");
+      for (const object of catalog.objects) {
+        if (object.database === database && object.owner === from) {
+          object.owner = to;
+        }
+      }
+    },
+  },
+  {
+    shape: new RegExp(`^DROP OWNED BY ${NAME}$`),
+    run: (catalog, [quoted], { database }) => {
+      requirePrivilegesOf(catalog, quoted);
+      const role = nameOf(quoted);
+      const kept = catalog.objects.filter(
+        (object) => object.database !== database || object.owner !== role
+      );
+      for (const object of kept) {
+        if (object.database === database) {
+          object.grantees = object.grantees.filter((name) => name !== role);
+        }
+      }
+      catalog.objects.splice(0, Infinity, ...kept);
+    },
+  },
+  {
+    shape: new RegExp(`^DROP ROLE ${NAME}$`),
+    run: (catalog, [quoted]) => {
+      existing(catalog, quoted);
+      const role = nameOf(quoted);
+      const isDependedOn = catalog.objects.some(
+        ({ owner, grantees }) => owner === role || grantees.includes(role)
+      );
+      if (isDependedOn) throw pgError("2BP01");
+      catalog.roles.delete(role);
+      catalog.memberships.splice(
+        0,
+        Infinity,
+        ...catalog.memberships.filter(
+          (m) => m.role !== role && m.member !== role
+        )
+      );
+    },
   },
   {
     shape: new RegExp(`^GRANT ${NAME} TO ${NAME}$`),
@@ -417,10 +545,14 @@ const STATEMENTS: {
 
 /**
  * A PostgreSQL target behind the driver. It answers the connector's catalog
- * statements from `is`, `roles` and `memberships`, builds a statement as
- * `format()` does, runs each statement the connector is known to run, and
- * refuses any other as a syntax error. A rolled-back transaction leaves
- * `roles` and `memberships` as they were when it began.
+ * statements from `is`, `roles`, `memberships` and `sessions`, builds a
+ * statement as `format()` does, runs each statement the connector is known
+ * to run, and refuses any other as a syntax error. A rolled-back transaction
+ * leaves `roles`, `memberships` and `objects` as they were when it began.
+ *
+ * Each connection is to one database, which is where `REASSIGN OWNED` and
+ * `DROP OWNED` act. The manager's own memberships are kept under
+ * `MANAGER.username`.
  */
 export const fakeDatabase = (
   overrides: Partial<FakeTarget> = {},
@@ -432,9 +564,23 @@ export const fakeDatabase = (
     hasGrantOptions: true,
     grantableRoles: ["analyst", "reporting"],
     databases: ["orders", "postgres"],
+    closedDatabases: [],
     ...overrides,
   };
-  const catalog: FakeCatalog = { roles: new Map(), memberships: [] };
+  const catalog: FakeCatalog = {
+    roles: new Map(),
+    memberships: [],
+    objects: [],
+  };
+  const sessions: FakeSession[] = [];
+  const pids = new WeakMap<FakeSession, number>();
+  let lastPid = 1000;
+  /** The backend of a session, which no other session has. */
+  const pidOf = (session: FakeSession) => {
+    const pid = pids.get(session) ?? ++lastPid;
+    pids.set(session, pid);
+    return pid;
+  };
   const named = (names: string[]) => names.map((name) => ({ name }));
   const answers: Record<
     string,
@@ -458,6 +604,40 @@ export const fakeDatabase = (
       rows: () => named(is.grantableRoles),
     },
     [DATABASES_SQL]: { call: "databases", rows: () => named(is.databases) },
+    [CONNECTABLE_DATABASES_SQL]: {
+      call: "connectableDatabases",
+      rows: () =>
+        named(is.databases.filter((d) => !is.closedDatabases.includes(d))),
+    },
+    [END_SESSIONS_SQL]: {
+      call: "endSessions",
+      rows: ([login]) => {
+        const signalled = sessions.filter(({ usename }) => usename === login);
+        for (const session of signalled) session.signalled = true;
+        return signalled.map((session) => ({
+          pid: pidOf(session),
+          ended: true,
+        }));
+      },
+    },
+    [COUNT_SESSIONS_SQL]: {
+      call: "countSessions",
+      rows: ([login]) => {
+        const seen = sessions.filter(({ usename }) => usename === login);
+        for (const session of seen) {
+          if (!session.signalled) continue;
+          const outlives = session.outlives ?? 0;
+          if (outlives > 0) session.outlives = outlives - 1;
+          else sessions.splice(sessions.indexOf(session), 1);
+        }
+        return [
+          {
+            sessions: sessions.filter(({ usename }) => usename === login)
+              .length,
+          },
+        ];
+      },
+    },
     [IS_GRANTABLE_ROLE_SQL]: {
       call: "isGrantableRole",
       rows: ([role = ""]) => [{ allowed: is.grantableRoles.includes(role) }],
@@ -489,72 +669,83 @@ export const fakeDatabase = (
    * the target builds, any other as its text, and `close` when the driver
    * closes. */
   const calls: Journal = [];
-  const failures: { prefix: string; failure: Failure }[] = [];
+  const failures: { prefix: string; failure: Failure; database?: string }[] =
+    [];
 
   const record = (call: string[] | string) => {
     calls.push(call);
     journal.push(call);
   };
 
-  const run = (sql: string) => {
+  const run = (sql: string, database: string) => {
     for (const { shape, run: change } of STATEMENTS) {
       const [matched, ...captured] = shape.exec(sql) ?? [];
       if (matched === undefined) continue;
-      change(catalog, captured);
+      change(catalog, captured, { database, is });
       return [];
     }
     throw pgError("42601", sql);
   };
 
-  /** Records a call, and throws when it is one that is set to fail. */
-  const called = (name: string, sql: string, bindings: readonly string[]) => {
-    record(bindings.length > 0 ? [name, ...bindings] : name);
-    const failed = failures.find(({ prefix }) => name.startsWith(prefix));
-    if (!failed) return;
-    const { failure } = failed;
-    throw typeof failure === "function" ? failure(sql, bindings) : failure;
-  };
+  /** A connection to `database`, which refuses the manager when the
+   * database is closed to it. */
+  const driverTo = (database: string): PgDriver => {
+    /** Records a call, and throws when it is one that is set to fail. */
+    const called = (name: string, sql: string, bindings: readonly string[]) => {
+      record(bindings.length > 0 ? [name, ...bindings] : name);
+      if (is.closedDatabases.includes(database)) throw pgError("42501");
+      const failed = failures.find(
+        (failure) =>
+          name.startsWith(failure.prefix) &&
+          (failure.database ?? database) === database
+      );
+      if (!failed) return;
+      const { failure } = failed;
+      throw typeof failure === "function" ? failure(sql, bindings) : failure;
+    };
 
-  const query: PgQuery = async (sql, bindings = []) => {
-    const answer = answers[sql];
-    const name = answer?.call ?? (FORMAT_SQL.test(sql) ? "format" : sql);
-    called(name, sql, bindings);
-    if (answer) return answer.rows(bindings);
-    if (name === "format") {
-      const [template = "", ...args] = bindings;
-      return [{ statement: format(template, args) }];
-    }
-    return run(sql);
-  };
+    const query: PgQuery = async (sql, bindings = []) => {
+      const answer = answers[sql];
+      const name = answer?.call ?? (FORMAT_SQL.test(sql) ? "format" : sql);
+      called(name, sql, bindings);
+      if (answer) return answer.rows(bindings);
+      if (name === "format") {
+        const [template = "", ...args] = bindings;
+        return [{ statement: format(template, args) }];
+      }
+      return run(sql, database);
+    };
 
-  const driver: PgDriver = {
-    query,
-    begin: async () => {
-      called("BEGIN", "BEGIN", []);
-      const before = structuredClone(catalog);
-      return {
-        query,
-        commit: async () => {
-          called("COMMIT", "COMMIT", []);
-        },
-        rollback: async () => {
-          called("ROLLBACK", "ROLLBACK", []);
-          catalog.roles.clear();
-          for (const [name, role] of before.roles) {
-            catalog.roles.set(name, role);
-          }
-          catalog.memberships.splice(0, Infinity, ...before.memberships);
-        },
-      };
-    },
-    close: async () => {
-      record("close");
-    },
+    return {
+      query,
+      begin: async () => {
+        called("BEGIN", "BEGIN", []);
+        const before = structuredClone(catalog);
+        return {
+          query,
+          commit: async () => {
+            called("COMMIT", "COMMIT", []);
+          },
+          rollback: async () => {
+            called("ROLLBACK", "ROLLBACK", []);
+            catalog.roles.clear();
+            for (const [name, role] of before.roles) {
+              catalog.roles.set(name, role);
+            }
+            catalog.memberships.splice(0, Infinity, ...before.memberships);
+            catalog.objects.splice(0, Infinity, ...before.objects);
+          },
+        };
+      },
+      close: async () => {
+        record("close");
+      },
+    };
   };
 
   const connect: Connect = (signIn) => {
     signIns.push(signIn);
-    return driver;
+    return driverTo(signIn.database);
   };
 
   return {
@@ -566,10 +757,15 @@ export const fakeDatabase = (
      * by name. A test sets one to start from a state. */
     roles: catalog.roles,
     memberships: catalog.memberships,
-    /** The statement whose call starts with `prefix` throws `failure`, until
-     * the function this returns is called. */
-    failOn: (prefix: string, failure: Failure) => {
-      const entry = { prefix, failure };
+    /** What depends on roles, in each database. */
+    objects: catalog.objects,
+    /** The open sessions of logins. */
+    sessions,
+    /** The statement whose call starts with `prefix` throws `failure`, on
+     * every connection or on those to `database`, until the function this
+     * returns is called. */
+    failOn: (prefix: string, failure: Failure, database?: string) => {
+      const entry = { prefix, failure, database };
       failures.push(entry);
       return () => {
         failures.splice(failures.indexOf(entry), 1);

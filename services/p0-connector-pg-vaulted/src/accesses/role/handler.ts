@@ -5,6 +5,7 @@ import {
   newResourceRootRouter,
 } from "@p0security/connector-core";
 import { randomBytes as cryptoRandomBytes } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   GRANT_LOGIN_PATTERN,
@@ -14,15 +15,28 @@ import {
 import type { Dependencies } from "../../dependencies.ts";
 import {
   activateGrantLogin,
+  endGrantLoginSessions,
+  handOverOwned,
   prepareGrantLogin,
+  readCleanup,
   readGrantLoginState,
+  retireGrantLogin,
+  takeGrantLoginPrivileges,
 } from "../../grant-login.ts";
 import { newGrantSecretStore } from "../../grant-secret.ts";
-import { managerSecretFor, withManager } from "../../manager.ts";
-import { newNotImplementedError } from "../../not-implemented.ts";
-import { listDatabases, listGrantableRoles } from "../../postgres/catalog.ts";
+import {
+  type InDatabase,
+  managerSecretFor,
+  withManager,
+} from "../../manager.ts";
+import {
+  listConnectableDatabases,
+  listDatabases,
+  listGrantableRoles,
+} from "../../postgres/catalog.ts";
 import type { PgSession } from "../../postgres/client.ts";
 import { SALT_BYTES, scramVerifier } from "../../postgres/scram.ts";
+import { execute } from "../../postgres/statement.ts";
 import { type RoleSchema, spec } from "./definition.ts";
 
 /** What `list` returns for each type of its query, by name. */
@@ -37,10 +51,10 @@ const PASSWORD_BYTES = 32;
  * exactly one grant. P0 chooses the name; the connector refuses any other,
  * and refuses a grant secret that is another login's.
  *
- * What each primitive does is in the README, under Lifecycle. The grant path
- * is implemented: `getUser`, `createUser` and `setPoliciesForUser` with
- * policies. The revoke path is not: `setPoliciesForUser` with no policies
- * and `deleteUser` throw {@link newNotImplementedError}.
+ * What each primitive does is in the README, under Lifecycle: `getUser`,
+ * `createUser` and `setPoliciesForUser` with policies are the grant path,
+ * and `setPoliciesForUser` with no policies and `deleteUser` the revoke
+ * path.
  *
  * Nothing here logs a password, its verifier or a statement's text.
  */
@@ -57,7 +71,9 @@ export const newRolePrimitives = (
     return {
       logger,
       grantSecrets: newGrantSecretStore(secrets.region, dependencies),
-      asManager: <T>(run: (session: PgSession) => Promise<T>) =>
+      asManager: <T>(
+        run: (session: PgSession, inDatabase: InDatabase) => Promise<T>
+      ) =>
         withManager(
           target,
           managerSecretFor(host, dependencies.env),
@@ -139,15 +155,56 @@ export const newRolePrimitives = (
       return login;
     },
 
-    deleteUser: async () => {
-      throw newNotImplementedError("deleteUser");
+    deleteUser: async (context, login) => {
+      const { logger, grantSecrets, asManager } = forGrant(context, login);
+      const { secretName, objectOwner: owner } = context;
+      const { wait = (ms) => sleep(ms) } = dependencies;
+      const { from, databases } = await asManager(
+        async ({ query }, inDatabase) => {
+          const cleanup = await readCleanup(query, { login, owner });
+          // Before the login is touched: `getUser` finds a retired login
+          // without its secret, so a cleanup that stops after this is found
+          // and finished by the next call.
+          await grantSecrets.remove(secretName);
+          if (!cleanup.drop) return { from: cleanup.from, databases: [] };
+          // Each of these statements is its own transaction. The grant is
+          // committed here because every database below needs it.
+          await takeGrantLoginPrivileges(query, login);
+          const connectable = await listConnectableDatabases(query);
+          for (const database of connectable) {
+            await inDatabase(database, (there) =>
+              there.committed((inTransaction) =>
+                handOverOwned(inTransaction, { login, owner })
+              )
+            );
+          }
+          // PostgreSQL drops a role whose session is still open, and the
+          // session lives on under no name, where no later call finds it.
+          // A session the cutoff missed has had time to show by now.
+          await endGrantLoginSessions(query, login, wait);
+          await execute(query, cleanup.drop);
+          return { from: cleanup.from, databases: connectable };
+        }
+      );
+      logger.info(
+        { from, to: "absent", owner, databases },
+        "cleaned up the grant: its secret is deleted and its login is gone"
+      );
     },
 
     setPoliciesForUser: async (context, login, _userBody, policies) => {
-      if (policies.length === 0) {
-        throw newNotImplementedError("setPoliciesForUser");
-      }
       const { logger, asManager } = forGrant(context, login);
+      if (policies.length === 0) {
+        const { wait = (ms) => sleep(ms) } = dependencies;
+        const { from, revoked, sessionsEnded } = await asManager((session) =>
+          retireGrantLogin(session, login, wait)
+        );
+        logger.info(
+          { from, revoked, sessionsEnded },
+          "cut off the grant login and confirmed that none of its sessions is left"
+        );
+        return;
+      }
       const roles = [...new Set(policies.map(({ rolename }) => rolename))];
       const { from, granted, revoked } = await asManager(({ committed }) =>
         committed((query) =>

@@ -15,7 +15,8 @@ import {
   PING_SQL,
   holds,
   listGrantableRoles,
-  reassignOwnedStatements,
+  reassignOwnedStatement,
+  takePrivilegesStatement,
 } from "../postgres/catalog.ts";
 import type { PgSession } from "../postgres/client.ts";
 import { execute } from "../postgres/statement.ts";
@@ -97,13 +98,11 @@ const checkManager = async (
       });
       const [owner] = grantableRoles;
       if (owner === undefined) return;
-      for (const statement of reassignOwnedStatements(
-        probe,
-        owner,
-        hasGrantOptions
-      )) {
-        await execute(inTransaction, statement);
-      }
+      await execute(
+        inTransaction,
+        takePrivilegesStatement(probe, hasGrantOptions)
+      );
+      await execute(inTransaction, reassignOwnedStatement(probe, owner));
     });
     return { grantableRoles };
   });

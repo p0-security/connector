@@ -94,7 +94,7 @@ describe("install validation", () => {
     ]);
   });
 
-  it("runs the checks in order, proves the reassign with a probe role, and leaves no role behind", async () => {
+  it("runs the checks in order, proves the reassign with a probe role, grants the manager no role but the probe, and leaves nothing behind", async () => {
     await validate();
 
     expect(withoutProbeName(db.calls)).toEqual([
@@ -108,33 +108,32 @@ describe("install validation", () => {
       "CREATE ROLE <probe> NOLOGIN",
       ["format", "GRANT %I TO current_user WITH INHERIT TRUE", "<probe>"],
       "GRANT <probe> TO current_user WITH INHERIT TRUE",
-      ["format", "GRANT %I TO current_user WITH SET TRUE", "analyst"],
-      "GRANT analyst TO current_user WITH SET TRUE",
       ["format", "REASSIGN OWNED BY %I TO %I", "<probe>", "analyst"],
       "REASSIGN OWNED BY <probe> TO analyst",
       "ROLLBACK",
       "close",
     ]);
     expect([...db.roles]).toEqual([]);
+    expect(db.memberships).toEqual([]);
   });
 
-  it("grants itself the roles without options before PostgreSQL 16", async () => {
+  it("takes the probe role's privileges without an option before PostgreSQL 16", async () => {
     db = fakeDatabase({ hasGrantOptions: false });
 
     await validate();
 
-    expect(withoutProbeName(db.calls).slice(5, 15)).toEqual([
+    expect(withoutProbeName(db.calls).slice(5)).toEqual([
       "BEGIN",
       ["format", "CREATE ROLE %I NOLOGIN", "<probe>"],
       "CREATE ROLE <probe> NOLOGIN",
       ["format", "GRANT %I TO current_user", "<probe>"],
       "GRANT <probe> TO current_user",
-      ["format", "GRANT %I TO current_user", "analyst"],
-      "GRANT analyst TO current_user",
       ["format", "REASSIGN OWNED BY %I TO %I", "<probe>", "analyst"],
       "REASSIGN OWNED BY <probe> TO analyst",
       "ROLLBACK",
+      "close",
     ]);
+    expect(db.memberships).toEqual([]);
   });
 
   it("with no grantable role, passes once the probe role can be created", async () => {
@@ -407,7 +406,7 @@ describe("the privilege checks", () => {
     });
   });
 
-  it.each(["CREATE ROLE", "GRANT p0v_", "GRANT analyst", "REASSIGN OWNED"])(
+  it.each(["CREATE ROLE", "GRANT p0v_", "REASSIGN OWNED"])(
     "fails at reassign_owned when PostgreSQL refuses %j, and leaves no role behind",
     async (statement) => {
       db.failOn(statement, pgError("42501"));

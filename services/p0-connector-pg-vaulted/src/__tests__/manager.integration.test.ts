@@ -42,7 +42,7 @@ const grantLoginRows = z.array(
   z.object({
     rolcanlogin: z.boolean(),
     rolconnlimit: z.number(),
-    rolpassword: z.string(),
+    rolpassword: z.string().nullable(),
     rolvaliduntil: z.date().nullable(),
     comment: z.string().nullable(),
     memberships: z.array(z.string()).nullable(),
@@ -51,6 +51,17 @@ const grantLoginRows = z.array(
 
 /** The SQLSTATE of a sign-in that PostgreSQL refused. */
 const refusal = z.object({ code: z.string() });
+
+/** A second database of the target, which only the tests that need one
+ * create. */
+const SECOND_DATABASE = "it_second";
+
+/** A schema the approved role may create tables in, so that a grant login
+ * can own one. */
+const WORK_SCHEMA = [
+  "CREATE SCHEMA it_work",
+  "GRANT USAGE, CREATE ON SCHEMA it_work TO analyst",
+];
 
 /** Every role the fixture creates, the manager first so that its grants go
  * with it. */
@@ -71,7 +82,8 @@ const FIXTURE_ROLES = [
  * A manager that is not superuser, set up as the README's Manager privileges
  * says, and one role for each rule a grantable role must meet: `analyst` and
  * `reporting` meet them all, `unshared` and `it_group` are not granted to the
- * manager, and each of the others breaks one rule.
+ * manager, and each of the others breaks one rule. `analyst` can create
+ * tables in the schema `it_work`.
  */
 const FIXTURE = [
   `CREATE ROLE ${MANAGER.username} LOGIN PASSWORD '${MANAGER.password}' CREATEROLE`,
@@ -86,18 +98,19 @@ const FIXTURE = [
   "CREATE ROLE it_group NOLOGIN NOINHERIT",
   `CREATE ROLE "${GRANT_LOGIN}" NOLOGIN`,
   `GRANT analyst, reporting, app_login, rds_superuser, "Sales Team", "${GRANT_LOGIN}" TO ${MANAGER.username} WITH ADMIN OPTION`,
+  ...WORK_SCHEMA,
 ];
 
 describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
   const target = { host: HOST, port, database: "postgres" };
 
-  /** Runs statements as the server's superuser, and returns the last one's
-   * rows. */
-  const asSuperuser = async (...statements: string[]) => {
+  /** Runs statements in `database` as the server's superuser, and returns
+   * the last one's rows. */
+  const asSuperuserIn = async (database: string, ...statements: string[]) => {
     const client = new pg.Client({
       host: HOST,
       port,
-      database: "postgres",
+      database,
       user: "postgres",
       password: "postgres",
     });
@@ -112,6 +125,9 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
       await client.end();
     }
   };
+
+  const asSuperuser = (...statements: string[]) =>
+    asSuperuserIn("postgres", ...statements);
 
   /** Every role and every membership, which no call may change. */
   const rolesAndMemberships = () =>
@@ -145,6 +161,13 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
   beforeEach(async () => {
     vault = fakeSecretStore({ [ARN]: JSON.stringify(MANAGER) });
     await asSuperuser(
+      // What a grant login of an earlier test may still own or be granted.
+      `DROP DATABASE IF EXISTS ${SECOND_DATABASE} WITH (FORCE)`,
+      "DROP SCHEMA IF EXISTS it_work CASCADE",
+      `DO $$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${GRANTED_LOGIN}')
+        THEN EXECUTE 'DROP OWNED BY "${GRANTED_LOGIN}"'; END IF;
+      END $$`,
       // First, so that the memberships the manager granted it go with it.
       `DROP ROLE IF EXISTS "${GRANTED_LOGIN}"`,
       ...FIXTURE_ROLES.map((role) => `DROP ROLE IF EXISTS "${role}"`),
@@ -202,9 +225,10 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
   );
 
   // No test removes a privilege that only reassign_owned needs: on a real
-  // server none exists. The manager grants itself what REASSIGN OWNED needs,
-  // which the privileges of the earlier checks always allow. The next three
-  // tests are the setups in which it fails without those grants.
+  // server none exists. The manager grants itself the probe role, which
+  // CREATEROLE always allows, and a role is grantable only when the manager
+  // can hand objects to it. The tests below are the setups in which the
+  // reassign would fail: each leaves the role out instead.
   it.runIf(version < 16)(
     "fails at signal_backend when the manager is NOINHERIT, which also rules out the reassign",
     async () => {
@@ -227,7 +251,7 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
   );
 
   it.runIf(version < 16)(
-    "passes reassign_owned to a role whose privileges the manager does not hold",
+    "leaves out a role whose ADMIN OPTION the manager holds only through a NOINHERIT role, because it does not hold the role's privileges",
     async () => {
       await asSuperuser(
         `REVOKE analyst, reporting FROM ${MANAGER.username}`,
@@ -236,20 +260,34 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
       );
       const before = await rolesAndMemberships();
 
+      await expect(validate()).resolves.toEqual({ grantableRoles: [] });
+      expect(await rolesAndMemberships()).toEqual(before);
+    }
+  );
+
+  it.runIf(version >= 16)(
+    "leaves out a role the manager was granted WITH ADMIN OPTION, SET FALSE, because it cannot SET ROLE to it",
+    async () => {
+      await asSuperuser(
+        `REVOKE analyst FROM ${MANAGER.username}`,
+        `GRANT analyst TO ${MANAGER.username} WITH ADMIN OPTION, SET FALSE`
+      );
+      const before = await rolesAndMemberships();
+
       await expect(validate()).resolves.toEqual({
-        grantableRoles: ["analyst"],
+        grantableRoles: ["reporting"],
       });
       expect(await rolesAndMemberships()).toEqual(before);
     }
   );
 
   it.runIf(version >= 16)(
-    "passes reassign_owned when the manager is NOINHERIT and holds only ADMIN OPTION on the role",
+    "passes reassign_owned when the manager is NOINHERIT and holds none of the role's privileges, but can SET ROLE to it",
     async () => {
       await asSuperuser(
         `ALTER ROLE ${MANAGER.username} NOINHERIT`,
-        `REVOKE reporting FROM ${MANAGER.username}`,
-        `GRANT analyst TO ${MANAGER.username} WITH ADMIN OPTION, INHERIT FALSE, SET FALSE`
+        `REVOKE analyst, reporting FROM ${MANAGER.username}`,
+        `GRANT analyst TO ${MANAGER.username} WITH ADMIN OPTION, INHERIT FALSE`
       );
       const before = await rolesAndMemberships();
 
@@ -274,7 +312,10 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
   );
 
   it("passes with no grantable role", async () => {
-    await asSuperuser("DROP ROLE analyst, reporting, unshared");
+    await asSuperuser(
+      "DROP SCHEMA it_work",
+      "DROP ROLE analyst, reporting, unshared"
+    );
     const before = await rolesAndMemberships();
 
     await expect(validate()).resolves.toEqual({ grantableRoles: [] });
@@ -335,16 +376,19 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
     /** The password the connector stored, which it cannot read itself. */
     const storedPassword = () => vault.valueOf(GRANT_SECRET) ?? "";
 
-    /** Signs in as the grant login over TCP. Returns the user PostgreSQL
-     * says it is, or the SQLSTATE PostgreSQL refused the sign-in with. */
-    const signIn = async (password: string) => {
-      const client = new pg.Client({
+    const asGrantLogin = (password: string, database = "postgres") =>
+      new pg.Client({
         host: HOST,
         port,
-        database: "postgres",
+        database,
         user: GRANTED_LOGIN,
         password,
       });
+
+    /** Signs in as the grant login over TCP. Returns the user PostgreSQL
+     * says it is, or the SQLSTATE PostgreSQL refused the sign-in with. */
+    const signIn = async (password: string) => {
+      const client = asGrantLogin(password);
       try {
         await client.connect();
         const { rows } = await client.query("SELECT current_user AS name");
@@ -556,6 +600,9 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
 
     it("grants and takes back a role whose ADMIN OPTION the manager holds through another role", async () => {
       await asSuperuser(
+        // Before PostgreSQL 16 the manager holds the role's privileges only
+        // through a role that inherits.
+        "ALTER ROLE it_group INHERIT",
         `REVOKE reporting FROM ${MANAGER.username}`,
         "GRANT reporting TO it_group WITH ADMIN OPTION",
         `GRANT it_group TO ${MANAGER.username}`
@@ -577,6 +624,308 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
       expect((await grantLogin()).memberships).toEqual([
         "analyst by it_manager",
       ]);
+    });
+
+    describe("and its revoke", () => {
+      const user = { userId: GRANTED_LOGIN, userBody: GRANTED_LOGIN };
+
+      /** The database cutoff. */
+      const cutOff = () =>
+        role().setPoliciesForUser({
+          ...user,
+          policies: [],
+          context: context(),
+        });
+
+      /** The cleanup. */
+      const cleanUp = (overrides?: Partial<RequestContext>) =>
+        role().deleteUser({ ...user, context: context(overrides) });
+
+      /** An open session of the grant login, and the SQLSTATE its idle
+       * connection dies with. */
+      const openSession = async (database = "postgres") => {
+        const client = asGrantLogin(storedPassword(), database);
+        const failed = new Promise<unknown>((resolve) => {
+          client.on("error", resolve);
+        });
+        await client.connect();
+        return { client, died: async () => refusal.parse(await failed).code };
+      };
+
+      const sessionsOfTheLogin = async () =>
+        asSuperuser(
+          `SELECT count(*)::int AS sessions FROM pg_stat_activity WHERE usename = '${GRANTED_LOGIN}'`
+        );
+
+      /** Who owns each table in the schema `it_work` of `database`. */
+      const tableOwners = (database = "postgres") =>
+        asSuperuserIn(
+          database,
+          "SELECT tablename, tableowner FROM pg_tables WHERE schemaname = 'it_work' ORDER BY tablename"
+        );
+
+      it("ends an open session, refuses a new sign-in, hands the login's table to the approved role, drops the login and its secret, and leaves every role's memberships as they were before the grant", async () => {
+        await asSuperuser(
+          "CREATE TABLE it_work.shared (id int)",
+          "ALTER TABLE it_work.shared OWNER TO analyst"
+        );
+        const before = await rolesAndMemberships();
+        await provision();
+        await approve(["analyst"]);
+        const password = storedPassword();
+        const idle = await openSession();
+        await idle.client.query("CREATE TABLE it_work.notes (id int)");
+        // A privilege of the login's own, which only DROP OWNED takes.
+        await idle.client.query(
+          `GRANT SELECT ON it_work.shared TO "${GRANTED_LOGIN}"`
+        );
+        const busy = await openSession();
+        const sleeping = busy.client.query("SELECT pg_sleep(600)");
+        sleeping.catch(() => {});
+
+        await expect(cutOff()).resolves.toBe(null);
+
+        await expect(idle.died()).resolves.toBe("57P01");
+        await expect(sleeping).rejects.toMatchObject({ code: "57P01" });
+        expect(await sessionsOfTheLogin()).toEqual([{ sessions: 0 }]);
+        await expect(signIn(password)).resolves.toBe("28P01");
+        await expect(identify()).resolves.toBe(GRANTED_LOGIN);
+        expect(await tableOwners()).toEqual([
+          { tablename: "notes", tableowner: GRANTED_LOGIN },
+          { tablename: "shared", tableowner: "analyst" },
+        ]);
+
+        await expect(cleanUp()).resolves.toBe(null);
+
+        await expect(identify()).resolves.toBe(null);
+        expect(await tableOwners()).toEqual([
+          { tablename: "notes", tableowner: "analyst" },
+          { tablename: "shared", tableowner: "analyst" },
+        ]);
+        await expect(grantLogin()).rejects.toThrow(
+          "the grant login does not exist"
+        );
+        expect(vault.secrets.has(GRANT_SECRET)).toBe(false);
+        expect(before).toHaveLength(FIXTURE_ROLES.length + 1);
+        expect(await rolesAndMemberships()).toEqual(before);
+      });
+
+      it("after the cutoff alone, leaves the login retired, with no password and no role the manager granted", async () => {
+        await provision();
+        await approve(["analyst", "reporting"]);
+        await asSuperuser(`GRANT unshared TO "${GRANTED_LOGIN}"`);
+        const password = storedPassword();
+
+        await expect(cutOff()).resolves.toBe(null);
+
+        expect(await grantLogin()).toEqual({
+          rolcanlogin: false,
+          rolconnlimit: 0,
+          rolpassword: null,
+          rolvaliduntil: new Date("2098-12-31T22:00:00Z"),
+          comment: "request it-1, requestor x@example.com",
+          memberships: ["unshared by postgres"],
+        });
+        await expect(signIn(password)).resolves.toBe("28P01");
+        expect(vault.valueOf(GRANT_SECRET)).toBe(password);
+        await expect(identify()).resolves.toBe(GRANTED_LOGIN);
+      });
+
+      it("cuts off a login that was prepared and never activated", async () => {
+        await provision();
+
+        await expect(cutOff()).resolves.toBe(null);
+
+        expect(await grantLogin()).toMatchObject({
+          rolcanlogin: false,
+          rolconnlimit: 0,
+          rolpassword: null,
+          memberships: null,
+        });
+        await expect(cleanUp()).resolves.toBe(null);
+        await expect(identify()).resolves.toBe(null);
+      });
+
+      it("changes nothing when the cutoff and the cleanup run again", async () => {
+        await provision();
+        await approve(["analyst"]);
+        await cutOff();
+        const retired = await grantLogin();
+
+        await expect(cutOff()).resolves.toBe(null);
+
+        expect(await grantLogin()).toEqual(retired);
+
+        await cleanUp();
+        const cleaned = await rolesAndMemberships();
+
+        await expect(cleanUp()).resolves.toBe(null);
+        await expect(cutOff()).resolves.toBe(null);
+
+        expect(await rolesAndMemberships()).toEqual(cleaned);
+        expect(cleaned).toHaveLength(FIXTURE_ROLES.length + 1);
+        expect(vault.secrets.has(GRANT_SECRET)).toBe(false);
+      });
+
+      it("refuses the cleanup of a login that has not been cut off, and leaves the login and its secret", async () => {
+        await provision();
+        await expect(dataOf(cleanUp())).resolves.toMatchObject({
+          type: "dependency_violation",
+          payload: { login: GRANTED_LOGIN, state: "prepared" },
+        });
+        await approve(["analyst"]);
+        const active = await grantLogin();
+        const password = storedPassword();
+
+        await expect(dataOf(cleanUp())).resolves.toEqual({
+          type: "dependency_violation",
+          message:
+            "The grant login has not been cut off. The connector drops a login only after its database cutoff.",
+          payload: { login: GRANTED_LOGIN, state: "active" },
+        });
+
+        expect(await grantLogin()).toEqual(active);
+        expect(vault.valueOf(GRANT_SECRET)).toBe(password);
+        await expect(signIn(password)).resolves.toBe(GRANTED_LOGIN);
+      });
+
+      it("refuses an objectOwner that is not grantable before it deletes the secret, and the cleanup then finishes with one that is", async () => {
+        await provision();
+        await approve(["analyst"]);
+        await cutOff();
+        const retired = await grantLogin();
+
+        await expect(
+          dataOf(cleanUp({ objectOwner: "unshared" }))
+        ).resolves.toEqual({
+          type: "validation_error",
+          message: "The role unshared is not a grantable role of this target.",
+          payload: { login: GRANTED_LOGIN, rolename: "unshared" },
+        });
+
+        expect(await grantLogin()).toEqual(retired);
+        expect(vault.secrets.has(GRANT_SECRET)).toBe(true);
+
+        await expect(cleanUp()).resolves.toBe(null);
+        await expect(identify()).resolves.toBe(null);
+      });
+
+      it("finishes the cleanup of a retired login whose secret is already gone", async () => {
+        await provision();
+        await approve(["analyst"]);
+        await cutOff();
+        vault.secrets.delete(GRANT_SECRET);
+
+        await expect(identify()).resolves.toBe(GRANTED_LOGIN);
+        await expect(cleanUp()).resolves.toBe(null);
+
+        await expect(identify()).resolves.toBe(null);
+      });
+
+      it("hands over what the login owns in a second database too", async () => {
+        await asSuperuser(`CREATE DATABASE ${SECOND_DATABASE}`);
+        await asSuperuserIn(SECOND_DATABASE, ...WORK_SCHEMA);
+        const before = await rolesAndMemberships();
+        await provision();
+        await approve(["analyst"]);
+        const first = await openSession();
+        await first.client.query("CREATE TABLE it_work.notes (id int)");
+        const second = await openSession(SECOND_DATABASE);
+        await second.client.query("CREATE TABLE it_work.ledger (id int)");
+
+        await cutOff();
+
+        await expect(first.died()).resolves.toBe("57P01");
+        await expect(second.died()).resolves.toBe("57P01");
+
+        await expect(cleanUp()).resolves.toBe(null);
+
+        expect(await tableOwners()).toEqual([
+          { tablename: "notes", tableowner: "analyst" },
+        ]);
+        expect(await tableOwners(SECOND_DATABASE)).toEqual([
+          { tablename: "ledger", tableowner: "analyst" },
+        ]);
+        await expect(identify()).resolves.toBe(null);
+        expect(await rolesAndMemberships()).toEqual(before);
+      });
+
+      it("cannot drop a login that someone else granted a privilege, leaves it retired, and finishes once the privilege is taken back", async () => {
+        await provision();
+        await approve(["analyst"]);
+        await asSuperuser(
+          `GRANT CONNECT ON DATABASE postgres TO "${GRANTED_LOGIN}"`
+        );
+        await cutOff();
+        const retired = await grantLogin();
+
+        await expect(dataOf(cleanUp())).resolves.toEqual({
+          type: "dependency_violation",
+          message:
+            "PostgreSQL refused the operation because other objects depend on the role.",
+          payload: { sqlState: "2BP01" },
+        });
+
+        expect(await grantLogin()).toEqual(retired);
+        await expect(identify()).resolves.toBe(GRANTED_LOGIN);
+
+        await asSuperuser(
+          `REVOKE CONNECT ON DATABASE postgres FROM "${GRANTED_LOGIN}"`
+        );
+        await expect(cleanUp()).resolves.toBe(null);
+        await expect(identify()).resolves.toBe(null);
+      });
+
+      it.runIf(version >= 16)(
+        "hands over to a role whose privileges a NOINHERIT manager does not hold, and leaves the manager's memberships as they were",
+        async () => {
+          await asSuperuser(
+            `ALTER ROLE ${MANAGER.username} NOINHERIT`,
+            `REVOKE analyst FROM ${MANAGER.username}`,
+            `GRANT analyst TO ${MANAGER.username} WITH ADMIN OPTION, INHERIT FALSE`
+          );
+          const before = await rolesAndMemberships();
+          await provision();
+          await approve(["analyst"]);
+          const session = await openSession();
+          await session.client.query("CREATE TABLE it_work.notes (id int)");
+
+          await cutOff();
+          await expect(cleanUp()).resolves.toBe(null);
+
+          expect(await tableOwners()).toEqual([
+            { tablename: "notes", tableowner: "analyst" },
+          ]);
+          expect(await rolesAndMemberships()).toEqual(before);
+        }
+      );
+
+      it("keeps every statement out of the log of a revoke", async () => {
+        await provision();
+        await approve(["analyst"]);
+        const log = capturingLogger();
+        const logged = roleRouter(t, dependencies()).createCaller({
+          logger: log.logger,
+        });
+
+        await logged.setPoliciesForUser({
+          ...user,
+          policies: [],
+          context: context(),
+        });
+        await logged.deleteUser({ ...user, context: context() });
+
+        const lines = log.lines.join("");
+        expect(lines).toContain(
+          '"from":"active","revoked":["analyst"],"sessionsEnded":0'
+        );
+        expect(lines).toContain(
+          '"from":"retired","to":"absent","owner":"analyst","databases":["postgres"]'
+        );
+        for (const hidden of ["ALTER ROLE", "DROP ROLE", "REASSIGN", "SCRAM"]) {
+          expect(lines).not.toContain(hidden);
+        }
+      });
     });
   });
 

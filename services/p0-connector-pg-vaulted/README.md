@@ -1,9 +1,9 @@
 # p0-connector-pg-vaulted
 
-> **Partly implemented.** The connector signs in as the manager, validates an install, lists a
-> target's grantable roles and databases, and grants: it prepares a grant login, stores its
-> password and activates it. It cannot revoke yet. The database cutoff and the cleanup are stubs
-> that throw. See [Not implemented yet](#not-implemented-yet).
+> **Not run against AWS yet.** The connector validates an install, lists a target's grantable
+> roles and databases, grants and revokes. All of it is measured against PostgreSQL in Docker
+> and a Secrets Manager in memory, and none of it against RDS or AWS. See
+> [Not implemented yet](#not-implemented-yet).
 
 Vaulted PostgreSQL connector, for PostgreSQL on AWS RDS that does not use IAM database
 authentication. For each access grant, the connector creates a PostgreSQL login of the grant's
@@ -24,7 +24,8 @@ scopes the secrets it can write.
 - **Approved role**: an existing customer-owned database role a grant was approved for. The
   connector grants it, and never creates or alters it.
 - **Grantable role**: a role a grant can be approved for. It cannot log in, is not the
-  database's own, and the manager can grant it. See [Grantable roles](#grantable-roles).
+  database's own, and the manager can grant it and hand a grant login's objects to it. See
+  [Grantable roles](#grantable-roles).
 - **Grant key**: 32 lowercase hex digits, random, chosen by P0.
 - **Grant login**: a login role the connector creates for exactly one grant, named
   `p0v_<grant key>`.
@@ -38,6 +39,8 @@ scopes the secrets it can write.
   cleared, and every session it opened is verified gone.
 - **Retired login**: a grant login after database cutoff and before cleanup drops it. It is not
   reactivated.
+- **Cleanup**: what follows the database cutoff. It deletes the grant secret, hands what the
+  login owns to `objectOwner`, and drops the login.
 
 ## Contract
 
@@ -91,10 +94,11 @@ it refuses a login whose grant secret is another login's. With the connector's I
 
 ### Lifecycle
 
-`validation`, `list` and the grant path are implemented: `getUser`, `createUser`, and
-`setPoliciesForUser` with policies. The revoke path is not: `setPoliciesForUser` with no
-policies and `deleteUser` throw. The resource-root primitives map to a grant's lifecycle like
-this:
+`getUser`, `createUser`, and `setPoliciesForUser` with policies are the grant path.
+`setPoliciesForUser` with no policies and `deleteUser` are the revoke path. P0 revokes with
+`identifyUser`, `setPoliciesForUser` with no policies, `identifyUser`, then `deleteUser`, and
+skips the step after an `identifyUser` that finds no login. The resource-root primitives map to
+a grant's lifecycle like this:
 
 - `validation` namespaces the user: the connector acts only on a login that matches
   `GRANT_LOGIN_PATTERN` and whose grant secret is the one in the context, by id and by body.
@@ -141,15 +145,54 @@ this:
 
   It never changes a password, and running it again changes nothing.
 
-- `setPoliciesForUser` with no policies is the revoke path, which is not implemented. It is to
-  perform the database cutoff: it disables the login, clears its password, ends its sessions
-  and verifies that none remain. It is to throw when the cutoff cannot be confirmed, so that P0
-  keeps retrying.
-- `deleteUser` is not implemented. It is to clean up after the database cutoff: delete the
-  grant secret, hand what the login owns to `objectOwner` in every database of the target, and
-  drop the login, in that order. `getUser` finds a retired login without its secret, so a
-  cleanup that stops after the secret is deleted is found and finished by the next call. It is to refuse a login that has not been cut off, and a login that is
-  already gone is a success.
+- `setPoliciesForUser` with no policies performs the database cutoff. With no login it does
+  nothing. Otherwise, whatever state the login is in:
+  1. In one transaction, it sets the login to `NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL`, and
+     revokes every membership the manager granted it. See
+     [The manager's grants](#the-managers-grants).
+  2. After the commit, it ends the login's sessions: `pg_terminate_backend` on every
+     `pg_stat_activity` row whose `usename` is the login.
+  3. It counts the login's sessions. Then it waits 200 ms, ends what it finds and counts
+     again, until a count after the first is 0. When sessions remain after 10 counts, it
+     throws `upstream_unavailable` with `{ login, sessions }`, so that P0 tries again. The
+     login stays retired.
+
+  The commit comes first because PostgreSQL then refuses every new sign-in. It does not come
+  first by much: a sign-in that PostgreSQL let in just before the commit shows in
+  `pg_stat_activity` a few milliseconds after it. That is why every count ends what it finds,
+  and why the first count alone never confirms the cutoff. See [Sessions](#sessions).
+
+  Each step is safe to repeat, and running the cutoff again changes nothing.
+
+- `deleteUser` performs the cleanup. It refuses a login that has not been cut off, prepared or
+  active, with `dependency_violation`, and changes nothing. With no login it deletes the grant
+  secret, if there is one, and succeeds. For a retired login, in this order:
+  1. It refuses, with `validation_error`, an `objectOwner` that is not a
+     [grantable role](#grantable-roles) at that moment. Nothing is written before this.
+  2. It deletes the grant secret, at once and with no recovery window. A secret that is already
+     gone is deleted.
+  3. It grants the login to the manager. See
+     [What the connector grants itself](#what-the-connector-grants-itself).
+  4. In every database of the target that the manager can connect to, it runs
+     `REASSIGN OWNED BY <grant login> TO <objectOwner>`, then `DROP OWNED BY <grant login>`, in
+     one transaction. It signs in to each with the manager's credential, which it reads once.
+     The databases are the ones that are not templates, allow connections, and give the
+     manager `CONNECT`. `rdsadmin` is never one.
+  5. It ends any session of the login that is still open, the way the cutoff does, and throws
+     `upstream_unavailable` when one will not end. See [Sessions](#sessions).
+  6. It drops the login, and with it the grant of step 3.
+
+  A step that fails throws, and the next call starts from the state it finds. `getUser` finds a
+  retired login without its secret, so a cleanup that stops after step 2 is found and finished.
+
+  PostgreSQL refuses step 6 while anything still depends on the login, and `deleteUser` then
+  throws `dependency_violation`. The login stays retired. Two things cause it, as measured:
+  - The login owns something in a database the cleanup did not reach, because the manager
+    cannot connect to it.
+  - Someone other than the manager granted the login a privilege directly, such as
+    `GRANT CONNECT ON DATABASE`. `DROP OWNED` run by the manager leaves a privilege whose
+    grantor's privileges the manager does not hold. The grantor has to revoke it.
+
 - `list` returns, for a target, its grantable roles (`type: "role"`) or its databases that are
   not templates (`type: "database"`), each as `{ key, value }` with the name in both.
 
@@ -164,14 +207,14 @@ each primitive reads the state again and ends in the same place.
 A grant login is in exactly one state. The connector reads it from `pg_roles` on each call
 (`rolcanlogin` and `rolconnlimit`) and stores it nowhere else.
 
-| State    | In PostgreSQL                                      | `getUser`                                                 | `createUser`                               | `setPoliciesForUser` with policies |
-| -------- | -------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------ | ---------------------------------- |
-| absent   | No role of that name.                              | `null`.                                                   | Creates the login, prepared.               | Refuses: `object_not_found`.       |
-| prepared | The role exists, `NOLOGIN`, connection limit `-1`. | The login when its grant secret has a value, else `null`. | Sets a new password, deadline and comment. | Grants, then activates.            |
-| active   | The role exists, `LOGIN`.                          | The login.                                                | Refuses: `dependency_violation`.           | Grants, and sets the deadline.     |
-| retired  | The role exists, `NOLOGIN`, connection limit `0`.  | The login.                                                | Refuses: `dependency_violation`.           | Refuses: `dependency_violation`.   |
+| State    | In PostgreSQL                                      | `getUser`                                                 | `createUser`                               | `setPoliciesForUser` with policies | `setPoliciesForUser` with no policies  | `deleteUser`                                  |
+| -------- | -------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------ | ---------------------------------- | -------------------------------------- | --------------------------------------------- |
+| absent   | No role of that name.                              | `null`.                                                   | Creates the login, prepared.               | Refuses: `object_not_found`.       | Does nothing.                          | Deletes the grant secret, if there is one.    |
+| prepared | The role exists, `NOLOGIN`, connection limit `-1`. | The login when its grant secret has a value, else `null`. | Sets a new password, deadline and comment. | Grants, then activates.            | Cuts off. The login is retired.        | Refuses: `dependency_violation`.              |
+| active   | The role exists, `LOGIN`.                          | The login.                                                | Refuses: `dependency_violation`.           | Grants, and sets the deadline.     | Cuts off. The login is retired.        | Refuses: `dependency_violation`.              |
+| retired  | The role exists, `NOLOGIN`, connection limit `0`.  | The login.                                                | Refuses: `dependency_violation`.           | Refuses: `dependency_violation`.   | Cuts off again, which changes nothing. | Cleans up. The login and its secret are gone. |
 
-`CONNECTION LIMIT 0` is the mark of a retired login. The database cutoff is to set it. Nothing
+`CONNECTION LIMIT 0` is the mark of a retired login. Only the database cutoff sets it. Nothing
 the connector runs clears it, so a retired login is never activated and never given a password.
 A role that cannot log in and has any other connection limit also counts as retired: only a
 login as `createUser` leaves it is prepared.
@@ -180,9 +223,10 @@ login as `createUser` leaves it is prepared.
 
 The connector puts no value into SQL itself (`src/postgres/statement.ts`):
 
-- A catalog query takes its values as bindings.
-- `CREATE ROLE`, `ALTER ROLE`, `COMMENT`, `GRANT`, `REVOKE` and `REASSIGN OWNED` take no
-  bindings, so PostgreSQL builds each one. The connector runs
+- A catalog query takes its values as bindings. So do the statements that end and count a
+  login's sessions.
+- `CREATE ROLE`, `ALTER ROLE`, `COMMENT`, `GRANT`, `REVOKE`, `REASSIGN OWNED`, `DROP OWNED`
+  and `DROP ROLE` take no bindings, so PostgreSQL builds each one. The connector runs
   `SELECT format(<template>, <bindings>)` with a template that is a constant in the code, `%I`
   for a name and `%L` for a literal, then runs the text that comes back. A name must also be
   one a policy can hold. See [Contract](#contract).
@@ -203,8 +247,8 @@ at the first that fails (`PG_VAULTED_INSTALL_STEPS`):
 4. `signal_backend`: the manager can end other logins' sessions. It has the privileges of
    `pg_signal_backend` or is superuser.
 5. `reassign_owned`: the manager can hand a grant login's objects to a grantable role. The
-   connector creates a probe role named like a grant login, runs the statements under
-   [What the connector grants itself](#what-the-connector-grants-itself) to reassign what the
+   connector creates a probe role named like a grant login, grants it to the manager as under
+   [What the connector grants itself](#what-the-connector-grants-itself), reassigns what the
    probe role owns to the first grantable role, and rolls the transaction back. With no
    grantable role, the check passes once the probe role is created.
 
@@ -289,15 +333,30 @@ hold:
     the grantable roles the same way on every version. This is a limit the connector keeps,
     not one PostgreSQL enforces before 16.
   - A superuser manager can grant every such role.
+- The manager can hand a grant login's objects to it, which is what `REASSIGN OWNED` asks of
+  the new owner:
+  - From PostgreSQL 16, the manager can `SET ROLE` to the role
+    (`pg_has_role(current_user, role, 'SET')`). A role granted to the manager `WITH SET FALSE`
+    is not grantable.
+  - Before PostgreSQL 16, the manager holds the role's privileges
+    (`pg_has_role(current_user, role, 'USAGE')`). A role the manager reaches only through a
+    `NOINHERIT` role is not grantable, and no role is for a `NOINHERIT` manager.
+  - A superuser manager can hand objects to every role.
+
+The last rule is there so that the connector never has to grant the manager a role. The cleanup
+reassigns a grant login's objects to an approved role, and an approved role is a grantable
+role, so the manager already holds what the reassign needs.
 
 `setPoliciesForUser` checks each policy's role by the same rule, with the name as a binding
-(`IS_GRANTABLE_ROLE_SQL`), so a grant never reaches a role `list` would not offer.
+(`IS_GRANTABLE_ROLE_SQL`), so a grant never reaches a role `list` would not offer. `deleteUser`
+checks `objectOwner` by it too.
 
 ### The manager's grants
 
 `setPoliciesForUser` revokes only a membership the manager granted
 (`MANAGER_GRANTED_ROLES_SQL`): one whose grantor is the manager, or a role whose privileges the
-manager holds.
+manager holds. With policies it revokes the ones no policy names, and with no policies it
+revokes them all. A membership someone else granted the login stays until the login is dropped.
 
 - From PostgreSQL 16, a membership's grantor is the role whose `ADMIN OPTION` the `GRANT` used.
   When the manager holds `ADMIN OPTION` on `reporting` only through `it_group`, its grant of
@@ -305,6 +364,36 @@ manager holds.
   PostgreSQL 16.16 refused the manager's `REVOKE` of a membership a superuser granted.
 - Before PostgreSQL 16, the grantor is the login that ran the `GRANT`. PostgreSQL 14.25 let
   the manager revoke a membership a superuser granted. The connector does not try.
+
+### Sessions
+
+The database cutoff ends a login's sessions with `pg_terminate_backend`, as a manager that is
+not superuser and holds `pg_signal_backend`. As measured on PostgreSQL 14.25, 16.16 and 17.12,
+on one machine, with the connector's statements run by hand:
+
+- The manager sees every session's `pid` and `usename` in `pg_stat_activity`, and
+  `pg_terminate_backend` returned `true` for each session of the login.
+- A session that was ended stays in `pg_stat_activity` until its backend has exited. An idle
+  session and one idle in a transaction were gone within 5 ms, one in `pg_sleep` within 10 ms,
+  and one in a CPU-bound query within 135 ms.
+- An idle client sees its connection die with SQLSTATE `57P01`.
+- A sign-in with the old password after the cutoff is refused with `28P01`, because the
+  password is cleared.
+- The commit does not stop every sign-in at once. PostgreSQL lets a sign-in in before its
+  session shows in `pg_stat_activity`, so one that got in just before the commit shows after
+  it. With 30 sign-ins racing each cutoff on PostgreSQL 14.25 and 16.16, ending the sessions
+  once and trusting the first count of 0 left a session of the login alive after 4 of 700
+  cutoffs on 14.25 and 8 of 700 on 16.16. Where it was timed, such a session first showed 5 to
+  12 ms after the commit returned. Ending the sessions on every count, and never trusting the
+  first, left none in 300 cutoffs on each version.
+- PostgreSQL drops a role that still has an open session, and the session goes on, with no
+  `usename`, where no later call can find it. So the cleanup refuses a login that has not been
+  cut off, and ends the login's sessions once more just before it drops the login.
+
+The wait between two counts is a margin, not a proof. A sign-in that took longer than 200 ms
+to show after the commit, and showed only after a count of 0, would outlive the cutoff. The
+cleanup is a later call, so by then such a session shows, and the cleanup ends it before the
+login is dropped.
 
 ### Manager privileges
 
@@ -321,51 +410,73 @@ GRANT analyst TO p0_manager WITH ADMIN OPTION;
 What each version needs, as measured on PostgreSQL 14.25, 16.16 and 17.12. The connector treats
 every version before 16 as 14, and every later version as 16.
 
-| The manager needs                    | PostgreSQL 14                                                                                                   | PostgreSQL 16 and 17                                                                                                                                |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CREATEROLE`                         | Required.                                                                                                       | Required.                                                                                                                                           |
-| `pg_signal_backend`                  | Required.                                                                                                       | Required, and not `WITH INHERIT FALSE`: a membership the manager does not inherit cannot signal a backend.                                          |
-| The `INHERIT` attribute, the default | Required. A `NOINHERIT` manager can use neither `pg_signal_backend` nor the privileges `REASSIGN OWNED` needs.  | Not required, but a grant to a `NOINHERIT` manager is `INHERIT FALSE` unless it says `WITH INHERIT TRUE`, and `pg_signal_backend` needs it.         |
-| `ADMIN OPTION` on each approved role | Required by the connector, which offers no other role. PostgreSQL itself would let `CREATEROLE` grant the role. | Required. `WITH ADMIN OPTION, INHERIT FALSE, SET FALSE` is enough: the manager can then hand out the role, and holds none of the role's privileges. |
+| The manager needs                     | PostgreSQL 14                                                                                                   | PostgreSQL 16 and 17                                                                                                                        |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CREATEROLE`                          | Required.                                                                                                       | Required.                                                                                                                                   |
+| `pg_signal_backend`                   | Required.                                                                                                       | Required, and not `WITH INHERIT FALSE`: a membership the manager does not inherit cannot signal a backend.                                  |
+| The `INHERIT` attribute, the default  | Required. A `NOINHERIT` manager can use neither `pg_signal_backend` nor the privileges `REASSIGN OWNED` needs.  | Not required, but a grant to a `NOINHERIT` manager is `INHERIT FALSE` unless it says `WITH INHERIT TRUE`, and `pg_signal_backend` needs it. |
+| `ADMIN OPTION` on each approved role  | Required by the connector, which offers no other role. PostgreSQL itself would let `CREATEROLE` grant the role. | Required.                                                                                                                                   |
+| To hand objects to each approved role | The role's privileges, which the grant above gives a manager that has `INHERIT`.                                | `SET ROLE` to the role, which the grant above gives unless it says `SET FALSE`. `WITH ADMIN OPTION, INHERIT FALSE` is enough.               |
+
+A manager that holds an approved role's privileges also cleans up better. `DROP OWNED` run by
+the manager takes a privilege from the grant login only when the manager holds the privileges
+of the role that granted it. A grant login can give itself a privilege on a table its approved
+role owns. On PostgreSQL 16.16 and 17.12, with the approved role granted to the manager
+`WITH ADMIN OPTION, INHERIT FALSE`, `DROP OWNED` left that privilege and `DROP ROLE` then
+failed. With the grant as written above, it took the privilege and the login was dropped.
 
 #### What the connector grants itself
 
-`REASSIGN OWNED BY <grant login> TO <owner>` needs more than the grants above, so the manager
-grants itself the rest first (`reassignOwnedStatements` in `src/postgres/catalog.ts`). Install
-validation is the only caller so far. It runs the statements on its probe role, in the
-transaction it rolls back. PostgreSQL puts in each name, quoted where it needs to be. See
-[Statements](#statements).
+The connector makes one grant to the manager: the grant login itself. `REASSIGN OWNED` and
+`DROP OWNED` need the manager to hold the login's privileges, and creating a role does not give
+them from PostgreSQL 16 (`takePrivilegesStatement` in `src/postgres/catalog.ts`). PostgreSQL
+puts in the name, quoted where it needs to be. See [Statements](#statements).
 
-| Statement                         | PostgreSQL 14                                | PostgreSQL 16 and 17                                    |
-| --------------------------------- | -------------------------------------------- | ------------------------------------------------------- |
-| Take the grant login's privileges | `GRANT <grant login> TO current_user`        | `GRANT <grant login> TO current_user WITH INHERIT TRUE` |
-| Take the right to hand to `owner` | `GRANT <owner> TO current_user`              | `GRANT <owner> TO current_user WITH SET TRUE`           |
-| Reassign                          | `REASSIGN OWNED BY <grant login> TO <owner>` | `REASSIGN OWNED BY <grant login> TO <owner>`            |
+| Statement                         | PostgreSQL 14                         | PostgreSQL 16 and 17                                    |
+| --------------------------------- | ------------------------------------- | ------------------------------------------------------- |
+| Take the grant login's privileges | `GRANT <grant login> TO current_user` | `GRANT <grant login> TO current_user WITH INHERIT TRUE` |
 
-Both grants make the manager a member of another role. Neither is a membership of the grant
-login, so `setPoliciesForUser` neither sees nor revokes them.
+- The cleanup runs it on the retired login and commits it, because every database needs it.
+  The grant goes when the login is dropped. A cleanup that stops between the two leaves the
+  manager a member of a retired login, which can do nothing, until the next call drops it.
+- Install validation runs it on its probe role, in the transaction it rolls back.
+- It is not a membership of the grant login, so `setPoliciesForUser` neither sees nor revokes
+  it.
 
-Each grant is there because a measured setup fails without it. Each setup ran as the manager,
-between `BEGIN` and `ROLLBACK`, on the `postgres:14`, `postgres:16` and `postgres:17` Docker
-images. In every row the manager has `CREATEROLE` and has just created the probe role with
-`CREATE ROLE "p0v_<32 hex digits>" NOLOGIN`:
+The connector grants the manager nothing else. In particular it does not grant the manager an
+approved role in order to reassign to it. That grant would stay, and would let the manager act
+as the approved role from then on. A role the manager cannot hand objects to is instead not a
+[grantable role](#grantable-roles). After a grant and its revoke, the manager's memberships and
+every other role's are exactly what they were before, which the integration tests check on
+PostgreSQL 14 and 16.
 
-| Setup                                                                             | PostgreSQL 14                                                               | PostgreSQL 16 and 17                                                                     |
-| --------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
-| No grant of the probe role to the manager                                         | `permission denied to reassign objects`                                     | `permission denied to reassign objects`                                                  |
-| `GRANT <probe> TO current_user`                                                   | Passes.                                                                     | Passes, but fails as above for a `NOINHERIT` manager.                                    |
-| `GRANT <probe> TO current_user WITH INHERIT TRUE`                                 | Syntax error.                                                               | Passes, for a `NOINHERIT` manager too. `SET FALSE` does not matter.                      |
-| `GRANT <probe> TO current_user WITH INHERIT FALSE, SET TRUE`                      | Syntax error.                                                               | `permission denied to reassign objects`                                                  |
-| The manager holds no `ADMIN OPTION` on `owner`                                    | The role is not grantable.                                                  | The role is not grantable.                                                               |
-| `owner` was granted to the manager `WITH ADMIN OPTION`                            | Passes.                                                                     | Passes.                                                                                  |
-| `owner` was granted `WITH ADMIN OPTION, SET FALSE`, with or without `INHERIT`     | Syntax error.                                                               | `must be able to SET ROLE "<owner>"`. Passes after the grant of `owner` `WITH SET TRUE`. |
-| `ADMIN OPTION` on `owner` only through a `NOINHERIT` role the manager is in       | `permission denied to reassign objects`. Passes after the grant of `owner`. | Not applicable: inheritance is set on each grant.                                        |
-| `ADMIN OPTION` on `owner` only through a grant the manager does not inherit       | Not applicable: no grant sets inheritance.                                  | `permission denied to grant role "<owner>"`, so the role is not grantable.               |
-| The login owns a table. The manager reassigns, then `DROP OWNED` and `DROP ROLE`. | The table's owner is `owner`, and the login is gone.                        | The table's owner is `owner`, and the login is gone.                                     |
+What `REASSIGN OWNED BY <grant login> TO <owner>` needs, as measured. Each setup ran as a
+manager that is not superuser, has `CREATEROLE`, and created the login, on the `postgres:14`,
+`postgres:16` and `postgres:17` Docker images (14.25, 16.16 and 17.12). The first four rows
+ran on install validation's probe role, between `BEGIN` and `ROLLBACK`. The others ran on a
+login that owned a table, with the grant of the login to the manager already made. "Grantable"
+is what `IS_GRANTABLE_ROLE_SQL` answered for `owner`:
 
-With these grants, a manager that passes `create_role` and `signal_backend` has passed
-`reassign_owned` on every setup measured. The check stays because it runs the real statements
-on the real target, which no catalog query stands in for.
+| Setup                                                                             | PostgreSQL 14                                          | PostgreSQL 16 and 17                                                |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------------------- |
+| No grant of the login to the manager                                              | `permission denied to reassign objects`                | `permission denied to reassign objects`                             |
+| `GRANT <login> TO current_user`                                                   | Passes.                                                | Passes, but fails as above for a `NOINHERIT` manager.               |
+| `GRANT <login> TO current_user WITH INHERIT TRUE`                                 | Syntax error.                                          | Passes, for a `NOINHERIT` manager too. `SET FALSE` does not matter. |
+| `GRANT <login> TO current_user WITH INHERIT FALSE, SET TRUE`                      | Syntax error.                                          | `permission denied to reassign objects`                             |
+| `owner` was granted to the manager `WITH ADMIN OPTION`                            | Grantable. Passes.                                     | Grantable. Passes, for a `NOINHERIT` manager too.                   |
+| The same, and the manager is `NOINHERIT`                                          | Not grantable. `permission denied to reassign objects` | Grantable. Passes.                                                  |
+| `owner` was granted `WITH ADMIN OPTION, INHERIT FALSE`                            | Syntax error.                                          | Grantable. Passes, for a `NOINHERIT` manager too.                   |
+| `owner` was granted `WITH ADMIN OPTION, SET FALSE`, with or without `INHERIT`     | Syntax error.                                          | Not grantable. `must be able to SET ROLE "<owner>"`                 |
+| `ADMIN OPTION` on `owner` only through a `NOINHERIT` role the manager is in       | Not grantable. `permission denied to reassign objects` | Grantable. Passes: inheritance is set on each grant.                |
+| `ADMIN OPTION` on `owner` only through a role the manager is in and inherits      | Grantable. Passes.                                     | Grantable. Passes.                                                  |
+| `ADMIN OPTION` on `owner` only through a role granted to the manager `SET FALSE`  | Syntax error.                                          | Not grantable. `must be able to SET ROLE "<owner>"`                 |
+| `ADMIN OPTION` on `owner` only through a role the manager does not inherit        | Not applicable: no grant sets inheritance.             | Not grantable, because `GRANT` is refused. The reassign passes.     |
+| The manager holds no grant of `owner`                                             | Not grantable. `permission denied to reassign objects` | Not grantable. `must be able to SET ROLE "<owner>"`                 |
+| The login owns a table. The manager reassigns, then `DROP OWNED` and `DROP ROLE`. | The table's owner is `owner`, and the login is gone.   | The table's owner is `owner`, and the login is gone.                |
+
+In every setup measured, the reassign passed for a grantable `owner`. The `reassign_owned`
+check stays because it runs the real statements on the real target, which no catalog query
+stands in for.
 
 ## IAM
 
@@ -375,8 +486,8 @@ The connector's execution role needs:
 - `secretsmanager:CreateSecret`, `secretsmanager:PutSecretValue` and
   `secretsmanager:DescribeSecret` on secrets under `p0/postgres-ai/<vpc id>/`. A grant makes
   all three calls, in the region the request names.
-- `secretsmanager:DeleteSecret` on the same secrets, for the cleanup, which is not implemented
-  yet.
+- `secretsmanager:DeleteSecret` on the same secrets. The cleanup deletes a grant secret with
+  `ForceDeleteWithoutRecovery`, in the region the request names.
 
 It must not be able to read a secret under `p0/postgres-ai/<vpc id>/`. The connector has no
 code that reads one.
@@ -386,10 +497,12 @@ code that reads one.
 The unit tests run with the repository's `yarn :test`. They reach Secrets Manager and
 PostgreSQL through fakes that the routers take as `dependencies`.
 
-The integration tests (`src/**/*.integration.test.ts`) run install validation, `list` and the
-grant path against PostgreSQL 14 and 16 in Docker, as a manager that is not superuser. They
-sign in as the grant login with the password the connector stored, which the images check by
-SCRAM-SHA-256. CI does not run them. To run them, from this directory:
+The integration tests (`src/**/*.integration.test.ts`) run install validation, `list`, the
+grant path and the revoke path against PostgreSQL 14 and 16 in Docker, as a manager that is
+not superuser. They sign in as the grant login with the password the connector stored, which
+the images check by SCRAM-SHA-256, and hold sessions open across a cutoff. Secrets Manager is
+the fake. CI does not run them. They also passed once against the `postgres:17` image
+(17.12), which `integration-db.sh` does not start. To run them, from this directory:
 
 ```sh
 ./scripts/integration-db.sh up
@@ -403,12 +516,20 @@ driver's TLS, which no request can take.
 
 ## Not implemented yet
 
-- `setPoliciesForUser` with no policies and `deleteUser` throw
-  `pg-vaulted <operation> is not implemented`. Only the request parsing and the user namespace
-  check run before they do. So the connector cannot revoke: it performs no database cutoff,
-  deletes no grant secret and drops no grant login.
-- Until the cutoff exists, a grant ends only when its deadline passes. `VALID UNTIL` then
-  refuses a new sign-in with the password. It does not end a session that is already open.
-- `deleteUser` is to run the statements under
-  [What the connector grants itself](#what-the-connector-grants-itself) outside a transaction
-  that is rolled back. Whether it takes the two grants back afterwards is not decided.
+Every primitive is implemented. What is not done, or not measured:
+
+- Nothing has run against RDS or Aurora. The measurements here are from the `postgres` Docker
+  images, where the manager's setup was done by a real superuser. On RDS the installer is
+  `rds_superuser`, which is not superuser, and RDS adds its own roles, sessions and the
+  `rdsadmin` database.
+- Nothing has run against AWS Secrets Manager. The tests use a fake of the shared client and of
+  `DescribeSecret`. The IAM actions above are from the calls the code makes, not from a policy
+  that was tried.
+- The Lambda container image, its Terraform, and the P0 control plane's side of the contract
+  are not in this package.
+- The database cutoff has no proof that a sign-in cannot outlive it. See
+  [Sessions](#sessions).
+- The cleanup cannot take a privilege that a role whose privileges the manager does not hold
+  granted the login, and cannot reach a database the manager cannot connect to. In both cases
+  `deleteUser` throws `dependency_violation` on every call until someone with the privilege
+  steps in. Nothing tells the customer which object it is: the error holds only the SQLSTATE.

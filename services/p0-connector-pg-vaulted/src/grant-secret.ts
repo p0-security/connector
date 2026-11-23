@@ -5,6 +5,7 @@ import {
 import { ConnectorError } from "@p0security/connector-core";
 import {
   SecretAlreadyExistsError,
+  SecretNotFoundError,
   type SecretRef,
   UnauthorizedError,
   createSecretManagerClient,
@@ -16,7 +17,7 @@ import type { ConnectSecretManager, Dependencies } from "./dependencies.ts";
  * connector never reads a grant secret's value. */
 type GrantSecretWriter = Pick<
   Awaited<ReturnType<ConnectSecretManager>>,
-  "createSecret" | "createSecretVersion"
+  "createSecret" | "createSecretVersion" | "deleteSecret"
 >;
 
 // Secrets Manager takes a secret's name where it takes its ARN. The shared
@@ -57,6 +58,7 @@ const CALLS = {
     actions: "secretsmanager:CreateSecret and secretsmanager:DescribeSecret",
   },
   write: { words: "write", actions: "secretsmanager:PutSecretValue" },
+  remove: { words: "delete", actions: "secretsmanager:DeleteSecret" },
 };
 
 /**
@@ -100,13 +102,16 @@ export type GrantSecretStore = {
   findOrCreate: (name: string) => Promise<void>;
   /** Makes `value` the named grant secret's current value. */
   write: (name: string, value: string) => Promise<void>;
+  /** Deletes the named grant secret with its value, at once. A secret that
+   * is already gone is deleted. */
+  remove: (name: string) => Promise<void>;
 };
 
 // modelled on `newSecretStore` in services/p0-connector-aws-ssm-ai/src/secrets.ts
 /**
  * The grant secrets: AWS Secrets Manager in `region`, as the connector's own
- * execution role. It creates, describes and writes a secret, and has no way
- * to read one.
+ * execution role. It creates, describes, writes and deletes a secret, and
+ * has no way to read one.
  */
 export const newGrantSecretStore = (
   region: string,
@@ -171,6 +176,16 @@ export const newGrantSecretStore = (
           type: "value",
           value: Buffer.from(value),
         });
+      }),
+    remove: (name) =>
+      at("remove", async () => {
+        const secrets = await writer();
+        try {
+          await secrets.deleteSecret({ ref: refOf(name) });
+        } catch (error) {
+          // An earlier try stopped after it deleted the secret.
+          if (!(error instanceof SecretNotFoundError)) throw error;
+        }
       }),
   };
 };
