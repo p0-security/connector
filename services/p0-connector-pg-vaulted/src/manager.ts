@@ -1,8 +1,6 @@
 import { ConnectorError, type Logger } from "@p0security/connector-core";
 import {
-  type SecretManagerProviderConfig,
   SecretNotFoundError,
-  type SecretPayload,
   type SecretRef,
   UnauthorizedError,
   createSecretManagerClient,
@@ -10,8 +8,8 @@ import {
 import { z } from "zod";
 
 import type { Target } from "./context.ts";
+import type { ConnectSecretManager, Dependencies } from "./dependencies.ts";
 import {
-  type Connect,
   type PgSession,
   connect as connectWithTls,
   withSession,
@@ -19,24 +17,6 @@ import {
 
 /** The environment variable that holds the manager mapping. */
 const MANAGER_SECRET_ARNS = "MANAGER_SECRET_ARNS";
-
-/** Opens the shared secret manager client, of which the connector only
- * reads a secret's value. */
-export type ConnectSecretManager = (
-  config: SecretManagerProviderConfig
-) => Promise<{
-  getSecretValue: (params: {
-    ref: SecretRef;
-  }) => Promise<{ value: SecretPayload }>;
-}>;
-
-/** What stands in for the connector's environment, AWS and PostgreSQL in
- * tests. */
-export type ManagerDependencies = {
-  env?: NodeJS.ProcessEnv;
-  connectSecretManager?: ConnectSecretManager;
-  connect?: Connect;
-};
 
 // Closed, so that the mapping can't send the connector's calls to an
 // endpoint outside AWS's regional ones. The region has the shape of `region`
@@ -179,7 +159,7 @@ const readManagerCredential = async (
 export const withManager = async <T>(
   target: Target,
   secret: ManagerSecret,
-  dependencies: ManagerDependencies,
+  dependencies: Dependencies,
   logger: Logger,
   run: (session: PgSession) => Promise<T>
 ): Promise<T> => {

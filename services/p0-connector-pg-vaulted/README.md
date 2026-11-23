@@ -1,12 +1,13 @@
 # p0-connector-pg-vaulted
 
-> **Partly implemented.** The connector signs in as the manager, validates an install and lists
-> a target's grantable roles and databases. Every operation that creates, changes or removes a
-> grant login is a stub that throws. See [Not implemented yet](#not-implemented-yet).
+> **Partly implemented.** The connector signs in as the manager, validates an install, lists a
+> target's grantable roles and databases, and grants: it prepares a grant login, stores its
+> password and activates it. It cannot revoke yet. The database cutoff and the cleanup are stubs
+> that throw. See [Not implemented yet](#not-implemented-yet).
 
 Vaulted PostgreSQL connector, for PostgreSQL on AWS RDS that does not use IAM database
-authentication. For each access grant, the connector is to create a PostgreSQL login of the
-grant's own and store its password in the customer's AWS Secrets Manager.
+authentication. For each access grant, the connector creates a PostgreSQL login of the grant's
+own and stores its password in the customer's AWS Secrets Manager.
 
 It will ship only as an AWS Lambda container image. Each connector belongs to one VPC, whose id
 scopes the secrets it can write.
@@ -28,7 +29,8 @@ scopes the secrets it can write.
 - **Grant login**: a login role the connector creates for exactly one grant, named
   `p0v_<grant key>`.
 - **Grant secret**: the Secrets Manager entry that holds one grant login's password and nothing
-  else. Only the connector writes it, and the connector cannot read it back.
+  else. Only the connector writes it, and the connector cannot read it back. The value is
+  binary (`SecretBinary`): the password's ASCII bytes.
 - **Deadline**: the moment a grant's access ends.
 - **Prepared login**: a grant login that exists and cannot log in yet.
 - **Activation**: turning a prepared login into one that can log in.
@@ -89,32 +91,105 @@ it refuses a login whose grant secret is another login's. With the connector's I
 
 ### Lifecycle
 
-Only `validation` and `list` are implemented. The other resource-root primitives are to map to
-a grant's lifecycle like this:
+`validation`, `list` and the grant path are implemented: `getUser`, `createUser`, and
+`setPoliciesForUser` with policies. The revoke path is not: `setPoliciesForUser` with no
+policies and `deleteUser` throw. The resource-root primitives map to a grant's lifecycle like
+this:
 
 - `validation` namespaces the user: the connector acts only on a login that matches
   `GRANT_LOGIN_PATTERN` and whose grant secret is the one in the context, by id and by body.
-- `getUser` finds the grant login. It returns the login only when both the login and its grant
-  secret exist, so that `createUser` finishes a half-prepared login.
-- `createUser` prepares the grant login. It creates the login unable to log in, with a random
-  password, `VALID UNTIL` the deadline, and the comment. Then it creates the grant secret and
-  writes the password to it. It may reset the password of a prepared login, because nobody can
-  have used it.
-- `setPoliciesForUser` with policies grants each approved role, then activates the login. It
-  is idempotent, and does not change the password of an activated login.
-- `setPoliciesForUser` with no policies is the revoke path. It performs the database cutoff: it
-  disables the login, clears its password, ends its sessions and verifies that none remain. It
-  throws when the cutoff cannot be confirmed, so that P0 keeps retrying.
-- `deleteUser` cleans up after the database cutoff. It deletes the grant secret, hands what the
-  login owns to `objectOwner` in every database of the target, and drops the login. It refuses a
-  login that has not been cut off, and a login that is already gone is a success.
+- `getUser` finds the grant login, by its [state](#grant-login-states):
+  - An active or a retired login is found, whatever became of its grant secret. P0's revoke
+    skips the database cutoff and the cleanup when it finds no login, so a login that was ever
+    activated must always be found.
+  - A prepared login is found only when its grant secret has a value. Otherwise `getUser`
+    returns `null`, so that `createUser` finishes a grant that stopped half way.
+  - With no login it returns `null`.
+- `createUser` prepares the grant login, in this order:
+  1. It creates the grant secret with no value, or finds it. A refusal by Secrets Manager
+     leaves the database untouched.
+  2. It makes a password: 32 random bytes as base64url.
+  3. In one transaction, it creates the login unable to log in, with the password,
+     `VALID UNTIL` the deadline, and the comment. A prepared login gets a new password,
+     deadline and comment instead, because nobody can have used the old password. It refuses
+     an active or a retired login with `dependency_violation`, and changes neither. `getUser`
+     finds those, so `createUser` meets one only when another call got there first.
+  4. It writes the password to the grant secret. For a new login it does so before it commits
+     the transaction, and for a prepared login after.
+
+  The order of step 4 is what makes a failed call safe to repeat. A new login's grant secret
+  may hold a value from an earlier try. If the login were committed first and the write then
+  failed, the next `getUser` would take that old value for the login's password. So a new
+  login exists only once its password is stored. A prepared login reaches `createUser` only
+  when its secret has no value, so a write that fails after the commit leaves the secret
+  without one.
+
+  A call that fails part way therefore leaves no login, or a prepared login whose grant secret
+  has no value. Either way the next `getUser` finds nothing, and the next `createUser` starts
+  again from step 1.
+
+- `setPoliciesForUser` with policies grants the approved roles, then activates the login, in
+  one transaction:
+  1. It refuses a login that does not exist with `object_not_found`, and a retired login with
+     `dependency_violation`.
+  2. It refuses, with `validation_error`, a policy whose role is not a
+     [grantable role](#grantable-roles) at that moment.
+  3. It makes the roles the manager granted the login equal the policies: it grants the ones
+     that are missing and revokes the others. It leaves a membership the manager did not
+     grant. See [The manager's grants](#the-managers-grants).
+  4. It sets the login to `LOGIN`, `VALID UNTIL` the deadline.
+
+  It never changes a password, and running it again changes nothing.
+
+- `setPoliciesForUser` with no policies is the revoke path, which is not implemented. It is to
+  perform the database cutoff: it disables the login, clears its password, ends its sessions
+  and verifies that none remain. It is to throw when the cutoff cannot be confirmed, so that P0
+  keeps retrying.
+- `deleteUser` is not implemented. It is to clean up after the database cutoff: delete the
+  grant secret, hand what the login owns to `objectOwner` in every database of the target, and
+  drop the login, in that order. `getUser` finds a retired login without its secret, so a
+  cleanup that stops after the secret is deleted is found and finished by the next call. It is to refuse a login that has not been cut off, and a login that is
+  already gone is a success.
 - `list` returns, for a target, its grantable roles (`type: "role"`) or its databases that are
   not templates (`type: "database"`), each as `{ key, value }` with the name in both.
 
 The perimeter's `provisionUser` is `getUser`, then `createUser` when no login is found, and its
 `identifyUser` is `getUser`.
 
-The P0 control plane must serialize calls for the same grant login.
+The P0 control plane must serialize calls for the same grant login. It may repeat any call:
+each primitive reads the state again and ends in the same place.
+
+### Grant login states
+
+A grant login is in exactly one state. The connector reads it from `pg_roles` on each call
+(`rolcanlogin` and `rolconnlimit`) and stores it nowhere else.
+
+| State    | In PostgreSQL                                      | `getUser`                                                 | `createUser`                               | `setPoliciesForUser` with policies |
+| -------- | -------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------ | ---------------------------------- |
+| absent   | No role of that name.                              | `null`.                                                   | Creates the login, prepared.               | Refuses: `object_not_found`.       |
+| prepared | The role exists, `NOLOGIN`, connection limit `-1`. | The login when its grant secret has a value, else `null`. | Sets a new password, deadline and comment. | Grants, then activates.            |
+| active   | The role exists, `LOGIN`.                          | The login.                                                | Refuses: `dependency_violation`.           | Grants, and sets the deadline.     |
+| retired  | The role exists, `NOLOGIN`, connection limit `0`.  | The login.                                                | Refuses: `dependency_violation`.           | Refuses: `dependency_violation`.   |
+
+`CONNECTION LIMIT 0` is the mark of a retired login. The database cutoff is to set it. Nothing
+the connector runs clears it, so a retired login is never activated and never given a password.
+A role that cannot log in and has any other connection limit also counts as retired: only a
+login as `createUser` leaves it is prepared.
+
+### Statements
+
+The connector puts no value into SQL itself (`src/postgres/statement.ts`):
+
+- A catalog query takes its values as bindings.
+- `CREATE ROLE`, `ALTER ROLE`, `COMMENT`, `GRANT`, `REVOKE` and `REASSIGN OWNED` take no
+  bindings, so PostgreSQL builds each one. The connector runs
+  `SELECT format(<template>, <bindings>)` with a template that is a constant in the code, `%I`
+  for a name and `%L` for a literal, then runs the text that comes back. A name must also be
+  one a policy can hold. See [Contract](#contract).
+- The password never reaches PostgreSQL. The connector computes its SCRAM-SHA-256 verifier
+  (`src/postgres/scram.ts`) and sends that as the `PASSWORD`, which PostgreSQL stores as it is.
+  So the password is in no server log and no `pg_stat_statements` row. The verifier is in the
+  statement's text, so the connector never logs a statement, and no error it throws holds one.
 
 ### Install validation
 
@@ -191,6 +266,9 @@ The connector opens one connection per call, as the manager, to the request's
   certificate authorities (`aws-ssl-profiles`). No request field and no environment variable
   turns TLS off.
 - The connection timeout is 10 seconds and the statement timeout is 15 seconds.
+- The driver is `pg`, which sends a statement's text as it is. A statement that PostgreSQL
+  built can hold any character in a literal, and a query builder that rewrites `?` would
+  change it.
 
 ### Grantable roles
 
@@ -211,6 +289,22 @@ hold:
     the grantable roles the same way on every version. This is a limit the connector keeps,
     not one PostgreSQL enforces before 16.
   - A superuser manager can grant every such role.
+
+`setPoliciesForUser` checks each policy's role by the same rule, with the name as a binding
+(`IS_GRANTABLE_ROLE_SQL`), so a grant never reaches a role `list` would not offer.
+
+### The manager's grants
+
+`setPoliciesForUser` revokes only a membership the manager granted
+(`MANAGER_GRANTED_ROLES_SQL`): one whose grantor is the manager, or a role whose privileges the
+manager holds.
+
+- From PostgreSQL 16, a membership's grantor is the role whose `ADMIN OPTION` the `GRANT` used.
+  When the manager holds `ADMIN OPTION` on `reporting` only through `it_group`, its grant of
+  `reporting` is recorded as granted by `it_group`, and the manager's `REVOKE` removes it.
+  PostgreSQL 16.16 refused the manager's `REVOKE` of a membership a superuser granted.
+- Before PostgreSQL 16, the grantor is the login that ran the `GRANT`. PostgreSQL 14.25 let
+  the manager revoke a membership a superuser granted. The connector does not try.
 
 ### Manager privileges
 
@@ -239,13 +333,17 @@ every version before 16 as 14, and every later version as 16.
 `REASSIGN OWNED BY <grant login> TO <owner>` needs more than the grants above, so the manager
 grants itself the rest first (`reassignOwnedStatements` in `src/postgres/catalog.ts`). Install
 validation is the only caller so far. It runs the statements on its probe role, in the
-transaction it rolls back.
+transaction it rolls back. PostgreSQL puts in each name, quoted where it needs to be. See
+[Statements](#statements).
 
-| Statement                         | PostgreSQL 14                                    | PostgreSQL 16 and 17                                      |
-| --------------------------------- | ------------------------------------------------ | --------------------------------------------------------- |
-| Take the grant login's privileges | `GRANT "<grant login>" TO current_user`          | `GRANT "<grant login>" TO current_user WITH INHERIT TRUE` |
-| Take the right to hand to `owner` | `GRANT "<owner>" TO current_user`                | `GRANT "<owner>" TO current_user WITH SET TRUE`           |
-| Reassign                          | `REASSIGN OWNED BY "<grant login>" TO "<owner>"` | `REASSIGN OWNED BY "<grant login>" TO "<owner>"`          |
+| Statement                         | PostgreSQL 14                                | PostgreSQL 16 and 17                                    |
+| --------------------------------- | -------------------------------------------- | ------------------------------------------------------- |
+| Take the grant login's privileges | `GRANT <grant login> TO current_user`        | `GRANT <grant login> TO current_user WITH INHERIT TRUE` |
+| Take the right to hand to `owner` | `GRANT <owner> TO current_user`              | `GRANT <owner> TO current_user WITH SET TRUE`           |
+| Reassign                          | `REASSIGN OWNED BY <grant login> TO <owner>` | `REASSIGN OWNED BY <grant login> TO <owner>`            |
+
+Both grants make the manager a member of another role. Neither is a membership of the grant
+login, so `setPoliciesForUser` neither sees nor revokes them.
 
 Each grant is there because a measured setup fails without it. Each setup ran as the manager,
 between `BEGIN` and `ROLLBACK`, on the `postgres:14`, `postgres:16` and `postgres:17` Docker
@@ -271,23 +369,27 @@ on the real target, which no catalog query stands in for.
 
 ## IAM
 
-The connector's execution role will need:
+The connector's execution role needs:
 
 - `secretsmanager:GetSecretValue` on the manager's secrets, and on no other secret.
-- `secretsmanager:CreateSecret`, `secretsmanager:PutSecretValue`,
-  `secretsmanager:DescribeSecret` and `secretsmanager:DeleteSecret` on secrets under
-  `p0/postgres-ai/<vpc id>/`.
+- `secretsmanager:CreateSecret`, `secretsmanager:PutSecretValue` and
+  `secretsmanager:DescribeSecret` on secrets under `p0/postgres-ai/<vpc id>/`. A grant makes
+  all three calls, in the region the request names.
+- `secretsmanager:DeleteSecret` on the same secrets, for the cleanup, which is not implemented
+  yet.
 
-It must not be able to read a secret under `p0/postgres-ai/<vpc id>/`.
+It must not be able to read a secret under `p0/postgres-ai/<vpc id>/`. The connector has no
+code that reads one.
 
 ## Tests
 
 The unit tests run with the repository's `yarn :test`. They reach Secrets Manager and
 PostgreSQL through fakes that the routers take as `dependencies`.
 
-The integration tests (`src/**/*.integration.test.ts`) run install validation and `list`
-against PostgreSQL 14 and 16 in Docker, as a manager that is not superuser. CI does not run
-them. To run them, from this directory:
+The integration tests (`src/**/*.integration.test.ts`) run install validation, `list` and the
+grant path against PostgreSQL 14 and 16 in Docker, as a manager that is not superuser. They
+sign in as the grant login with the password the connector stored, which the images check by
+SCRAM-SHA-256. CI does not run them. To run them, from this directory:
 
 ```sh
 ./scripts/integration-db.sh up
@@ -301,10 +403,12 @@ driver's TLS, which no request can take.
 
 ## Not implemented yet
 
-- `getUser`, `createUser`, `setPoliciesForUser` and `deleteUser` throw
+- `setPoliciesForUser` with no policies and `deleteUser` throw
   `pg-vaulted <operation> is not implemented`. Only the request parsing and the user namespace
-  check run before they do.
-- The connector writes no grant secret, and creates, changes and drops no grant login.
+  check run before they do. So the connector cannot revoke: it performs no database cutoff,
+  deletes no grant secret and drops no grant login.
+- Until the cutoff exists, a grant ends only when its deadline passes. `VALID UNTIL` then
+  refuses a new sign-in with the password. It does not end a session that is already open.
 - `deleteUser` is to run the statements under
   [What the connector grants itself](#what-the-connector-grants-itself) outside a transaction
   that is rolled back. Whether it takes the two grants back afterwards is not decided.

@@ -6,12 +6,8 @@ import {
 import { randomBytes } from "node:crypto";
 
 import { installContext } from "../context.ts";
-import { ident } from "../identifier.ts";
-import {
-  type ManagerDependencies,
-  managerSecretFor,
-  withManager,
-} from "../manager.ts";
+import type { Dependencies } from "../dependencies.ts";
+import { managerSecretFor, withManager } from "../manager.ts";
 import {
   CAN_CREATE_ROLE_SQL,
   CAN_SIGNAL_BACKEND_SQL,
@@ -22,6 +18,7 @@ import {
   reassignOwnedStatements,
 } from "../postgres/catalog.ts";
 import type { PgSession } from "../postgres/client.ts";
+import { execute } from "../postgres/statement.ts";
 import type { InstallValidation, PgVaultedInstallStep } from "./definition.ts";
 
 // copy of `at` in services/p0-connector-snowflake-ai/src/install/handler.ts
@@ -94,7 +91,10 @@ const checkManager = async (
       // Named like a grant login, so the probe meets whatever a grant login
       // would.
       const probe = `p0v_${randomBytes(16).toString("hex")}`;
-      await inTransaction(`CREATE ROLE ${ident(probe)} NOLOGIN`);
+      await execute(inTransaction, {
+        template: "CREATE ROLE %I NOLOGIN",
+        args: [probe],
+      });
       const [owner] = grantableRoles;
       if (owner === undefined) return;
       for (const statement of reassignOwnedStatements(
@@ -102,7 +102,7 @@ const checkManager = async (
         owner,
         hasGrantOptions
       )) {
-        await inTransaction(statement);
+        await execute(inTransaction, statement);
       }
     });
     return { grantableRoles };
@@ -117,7 +117,7 @@ const checkManager = async (
  */
 export const router = (
   t: AnyConnectorTRPCInstance,
-  dependencies: ManagerDependencies = {}
+  dependencies: Dependencies = {}
 ) => {
   const procedure = withRouteLogging(t.procedure);
 

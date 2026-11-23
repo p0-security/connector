@@ -1,7 +1,8 @@
 import { z } from "zod";
 
-import { ident, isIdentifier } from "../identifier.ts";
+import { isIdentifier } from "../identifier.ts";
 import type { PgQuery } from "./client.ts";
+import type { Statement } from "./statement.ts";
 
 /** The trivial statement that proves a sign-in. */
 export const PING_SQL = "SELECT 1";
@@ -25,9 +26,9 @@ export const HAS_GRANT_OPTIONS_SQL = `SELECT
   current_setting('server_version_num')::int >= 160000 AS allowed`;
 
 /**
- * The grantable roles: the roles that cannot log in, are not superuser, are
- * not PostgreSQL's or RDS's own (`pg_*`, `rds*`), are not grant logins
- * (`p0v_*`), and that the manager holds `ADMIN OPTION` on.
+ * What makes a role `r` grantable: it cannot log in, is not superuser, is
+ * not PostgreSQL's or RDS's own (`pg_*`, `rds*`), is not a grant login
+ * (`p0v_*`), and the manager holds `ADMIN OPTION` on it.
  *
  * From PostgreSQL 16 the manager can use an `ADMIN OPTION` that it, or a role
  * whose privileges it inherits, holds. `pg_has_role(..., 'MEMBER WITH ADMIN
@@ -39,8 +40,7 @@ export const HAS_GRANT_OPTIONS_SQL = `SELECT
  * the grantable roles the same way on every version. A superuser can grant
  * any role.
  */
-export const GRANTABLE_ROLES_SQL = `SELECT r.rolname AS name
-  FROM pg_roles r,
+const GRANTABLE_ROLE = `FROM pg_roles r,
     (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) me
   WHERE NOT r.rolcanlogin
     AND NOT r.rolsuper
@@ -54,7 +54,39 @@ export const GRANTABLE_ROLES_SQL = `SELECT r.rolname AS name
             AND pg_has_role(current_user, m.member, 'USAGE'))
         ELSE pg_has_role(current_user, r.oid, 'MEMBER WITH ADMIN OPTION')
         END
-    )
+    )`;
+
+/** The grantable roles. */
+export const GRANTABLE_ROLES_SQL = `SELECT r.rolname AS name
+  ${GRANTABLE_ROLE}
+  ORDER BY r.rolname COLLATE "C"`;
+
+/** Whether the role named `$1` is grantable, by the rule `list` offers
+ * roles by. */
+export const IS_GRANTABLE_ROLE_SQL = `SELECT EXISTS (
+  SELECT 1 ${GRANTABLE_ROLE}
+    AND r.rolname = $1) AS allowed`;
+
+/** What tells a grant login's state: whether the role named `$1` can log
+ * in, and its connection limit. No row when there is no such role. */
+export const LOGIN_SQL = `SELECT rolcanlogin AS "canLogin",
+    rolconnlimit AS "connectionLimit"
+  FROM pg_roles WHERE rolname = $1`;
+
+/**
+ * The roles that the role named `$1` is a member of by the manager's grant.
+ * From PostgreSQL 16 a membership's grantor is the role whose `ADMIN OPTION`
+ * the `GRANT` used: the manager, or a role whose privileges the manager
+ * inherits. Those are the memberships a `REVOKE` by the manager removes, and
+ * no other. Before 16 the grantor is the login that ran the `GRANT`.
+ */
+export const MANAGER_GRANTED_ROLES_SQL = `SELECT r.rolname AS name
+  FROM pg_auth_members m
+    JOIN pg_roles r ON r.oid = m.roleid
+    JOIN pg_roles member ON member.oid = m.member
+  WHERE member.rolname = $1
+    AND pg_has_role(current_user, m.grantor, 'USAGE')
+  GROUP BY r.rolname
   ORDER BY r.rolname COLLATE "C"`;
 
 // copy of `listDatabases` in services/p0-connector-pg/src/accesses/common/handler.ts,
@@ -66,8 +98,11 @@ const names = z.array(z.object({ name: z.string() }));
 const answer = z.tuple([z.object({ allowed: z.boolean() })]);
 
 /** The answer to one of the yes-or-no statements above. */
-export const holds = async (query: PgQuery, sql: string) =>
-  answer.parse(await query(sql))[0].allowed;
+export const holds = async (
+  query: PgQuery,
+  sql: string,
+  bindings?: readonly string[]
+) => answer.parse(await query(sql, bindings))[0].allowed;
 
 /**
  * The grantable roles, by name. A role whose name is not one a policy can
@@ -83,6 +118,26 @@ export const listDatabases = async (query: PgQuery) =>
   names.parse(await query(DATABASES_SQL)).map(({ name }) => name);
 
 /**
+ * The roles `login` is a member of by the manager's grant. A role whose
+ * name is not one a policy can hold is left out: the connector grants no
+ * such role, so the membership is not the connector's to take away.
+ */
+export const listManagerGrantedRoles = async (query: PgQuery, login: string) =>
+  names
+    .parse(await query(MANAGER_GRANTED_ROLES_SQL, [login]))
+    .map(({ name }) => name)
+    .filter(isIdentifier);
+
+const loginRows = z
+  .array(z.object({ canLogin: z.boolean(), connectionLimit: z.number().int() }))
+  .max(1);
+
+/** Whether the role named `login` can log in, and its connection limit, or
+ * `undefined` when there is no such role. */
+export const findLogin = async (query: PgQuery, login: string) =>
+  loginRows.parse(await query(LOGIN_SQL, [login]))[0];
+
+/**
  * The statements that hand what `login` owns in the connected database to
  * `owner`. `REASSIGN OWNED` needs the manager to hold the privileges of
  * `login`, and those of `owner` (before PostgreSQL 16) or the right to
@@ -94,8 +149,18 @@ export const reassignOwnedStatements = (
   login: string,
   owner: string,
   hasGrantOptions: boolean
-) => [
-  `GRANT ${ident(login)} TO current_user${hasGrantOptions ? " WITH INHERIT TRUE" : ""}`,
-  `GRANT ${ident(owner)} TO current_user${hasGrantOptions ? " WITH SET TRUE" : ""}`,
-  `REASSIGN OWNED BY ${ident(login)} TO ${ident(owner)}`,
+): Statement[] => [
+  {
+    template: hasGrantOptions
+      ? "GRANT %I TO current_user WITH INHERIT TRUE"
+      : "GRANT %I TO current_user",
+    args: [login],
+  },
+  {
+    template: hasGrantOptions
+      ? "GRANT %I TO current_user WITH SET TRUE"
+      : "GRANT %I TO current_user",
+    args: [owner],
+  },
+  { template: "REASSIGN OWNED BY %I TO %I", args: [login, owner] },
 ];

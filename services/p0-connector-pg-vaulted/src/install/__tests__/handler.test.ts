@@ -16,7 +16,7 @@ import {
   withoutProbeName,
 } from "../../__tests__/fakes.ts";
 import { target } from "../../__tests__/fixtures.ts";
-import type { ManagerDependencies } from "../../manager.ts";
+import type { Dependencies } from "../../dependencies.ts";
 import { t } from "../../router.ts";
 import { installValidation } from "../definition.ts";
 import { router } from "../handler.ts";
@@ -33,7 +33,7 @@ beforeEach(() => {
   log = capturingLogger();
 });
 
-const validation = (overrides: ManagerDependencies = {}) =>
+const validation = (overrides: Dependencies = {}) =>
   router(t, {
     env,
     connectSecretManager: vault.connectSecretManager,
@@ -41,7 +41,7 @@ const validation = (overrides: ManagerDependencies = {}) =>
     ...overrides,
   }).createCaller({ logger: log.logger });
 
-const validate = (overrides: ManagerDependencies = {}) =>
+const validate = (overrides: Dependencies = {}) =>
   validation(overrides).get({ target });
 
 const mappingOf = (mapping: unknown) => ({
@@ -104,10 +104,14 @@ describe("install validation", () => {
       "grantableRoles",
       "hasGrantOptions",
       "BEGIN",
-      'CREATE ROLE "<probe>" NOLOGIN',
-      'GRANT "<probe>" TO current_user WITH INHERIT TRUE',
-      'GRANT "analyst" TO current_user WITH SET TRUE',
-      'REASSIGN OWNED BY "<probe>" TO "analyst"',
+      ["format", "CREATE ROLE %I NOLOGIN", "<probe>"],
+      "CREATE ROLE <probe> NOLOGIN",
+      ["format", "GRANT %I TO current_user WITH INHERIT TRUE", "<probe>"],
+      "GRANT <probe> TO current_user WITH INHERIT TRUE",
+      ["format", "GRANT %I TO current_user WITH SET TRUE", "analyst"],
+      "GRANT analyst TO current_user WITH SET TRUE",
+      ["format", "REASSIGN OWNED BY %I TO %I", "<probe>", "analyst"],
+      "REASSIGN OWNED BY <probe> TO analyst",
       "ROLLBACK",
       "close",
     ]);
@@ -119,12 +123,16 @@ describe("install validation", () => {
 
     await validate();
 
-    expect(withoutProbeName(db.calls).slice(5, 11)).toEqual([
+    expect(withoutProbeName(db.calls).slice(5, 15)).toEqual([
       "BEGIN",
-      'CREATE ROLE "<probe>" NOLOGIN',
-      'GRANT "<probe>" TO current_user',
-      'GRANT "analyst" TO current_user',
-      'REASSIGN OWNED BY "<probe>" TO "analyst"',
+      ["format", "CREATE ROLE %I NOLOGIN", "<probe>"],
+      "CREATE ROLE <probe> NOLOGIN",
+      ["format", "GRANT %I TO current_user", "<probe>"],
+      "GRANT <probe> TO current_user",
+      ["format", "GRANT %I TO current_user", "analyst"],
+      "GRANT analyst TO current_user",
+      ["format", "REASSIGN OWNED BY %I TO %I", "<probe>", "analyst"],
+      "REASSIGN OWNED BY <probe> TO analyst",
       "ROLLBACK",
     ]);
   });
@@ -135,7 +143,8 @@ describe("install validation", () => {
     await expect(validate()).resolves.toEqual({ grantableRoles: [] });
     expect(withoutProbeName(db.calls).slice(5)).toEqual([
       "BEGIN",
-      'CREATE ROLE "<probe>" NOLOGIN',
+      ["format", "CREATE ROLE %I NOLOGIN", "<probe>"],
+      "CREATE ROLE <probe> NOLOGIN",
       "ROLLBACK",
       "close",
     ]);
@@ -147,7 +156,7 @@ describe("install validation", () => {
 
     await expect(validate()).resolves.toEqual({ grantableRoles: ["analyst"] });
     expect(withoutProbeName(db.calls)).toContain(
-      'REASSIGN OWNED BY "<probe>" TO "analyst"'
+      "REASSIGN OWNED BY <probe> TO analyst"
     );
   });
 });
@@ -398,7 +407,7 @@ describe("the privilege checks", () => {
     });
   });
 
-  it.each(["CREATE ROLE", 'GRANT "p0v_', 'GRANT "analyst"', "REASSIGN OWNED"])(
+  it.each(["CREATE ROLE", "GRANT p0v_", "GRANT analyst", "REASSIGN OWNED"])(
     "fails at reassign_owned when PostgreSQL refuses %j, and leaves no role behind",
     async (statement) => {
       db.failOn(statement, pgError("42501"));

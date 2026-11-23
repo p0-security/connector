@@ -1,7 +1,4 @@
-import {
-  buildResourceRootSecurityPerimeter,
-  createLogger,
-} from "@p0security/connector-core";
+import { buildResourceRootSecurityPerimeter } from "@p0security/connector-core";
 import { inspect } from "node:util";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -13,12 +10,13 @@ import {
   env,
   errorOf,
   fakeDatabase,
+  fakeRandomBytes,
   fakeSecretStore,
   networkError,
   pgError,
 } from "../../__tests__/fakes.ts";
 import { LOGIN, context, target } from "../../__tests__/fixtures.ts";
-import type { ManagerDependencies } from "../../manager.ts";
+import type { Dependencies } from "../../dependencies.ts";
 import { t } from "../../router.ts";
 import { spec } from "../role/definition.ts";
 import { newRolePrimitives, router } from "../role/handler.ts";
@@ -33,13 +31,17 @@ beforeEach(() => {
   log = capturingLogger();
 });
 
-const role = (overrides: ManagerDependencies = {}) =>
-  router(t, {
-    env,
-    connectSecretManager: vault.connectSecretManager,
-    connect: db.connect,
-    ...overrides,
-  }).createCaller({ logger: log.logger });
+const dependencies = (overrides: Dependencies = {}): Dependencies => ({
+  env,
+  connectSecretManager: vault.connectSecretManager,
+  secretsManagerSdk: vault.secretsManagerSdk,
+  connect: db.connect,
+  randomBytes: fakeRandomBytes(),
+  ...overrides,
+});
+
+const role = (overrides?: Dependencies) =>
+  router(t, dependencies(overrides)).createCaller({ logger: log.logger });
 
 const approved = [{ type: "role" as const, rolename: "analyst" }];
 
@@ -107,16 +109,17 @@ describe("request parsing", () => {
 // The parsers already refuse a login outside the namespace, so the
 // perimeter's own check is reached only without them.
 describe("user namespace", () => {
-  const perimeter = buildResourceRootSecurityPerimeter(
-    newRolePrimitives({ logger: createLogger() })
-  );
+  const perimeter = () =>
+    buildResourceRootSecurityPerimeter(
+      newRolePrimitives({ logger: log.logger }, dependencies())
+    );
 
   it("refuses to provision or identify a login outside the namespace", async () => {
     await expect(
-      perimeter.provisionUser({ userBody: "postgres", context })
+      perimeter().provisionUser({ userBody: "postgres", context })
     ).rejects.toThrow('Username "postgres" is not namespaced');
     await expect(
-      perimeter.identifyUser({ userBody: "postgres", context })
+      perimeter().identifyUser({ userBody: "postgres", context })
     ).rejects.toThrow('Username "postgres" is not namespaced');
   });
 
@@ -124,7 +127,7 @@ describe("user namespace", () => {
     "%s refuses a login outside the namespace, by id and by body",
     async (method) => {
       await expect(
-        perimeter[method]({
+        perimeter()[method]({
           userId: "postgres",
           userBody: LOGIN,
           policies: approved,
@@ -132,7 +135,7 @@ describe("user namespace", () => {
         })
       ).rejects.toThrow("Resource postgres is not namespaced");
       await expect(
-        perimeter[method]({
+        perimeter()[method]({
           userId: LOGIN,
           userBody: "postgres",
           policies: approved,
@@ -144,10 +147,10 @@ describe("user namespace", () => {
 
   it("refuses a login whose grant secret is another login's", async () => {
     await expect(
-      perimeter.provisionUser({ userBody: OTHER_LOGIN, context })
+      perimeter().provisionUser({ userBody: OTHER_LOGIN, context })
     ).rejects.toThrow(`Username "${OTHER_LOGIN}" is not namespaced`);
     await expect(
-      perimeter.deleteUser({
+      perimeter().deleteUser({
         userId: OTHER_LOGIN,
         userBody: OTHER_LOGIN,
         context,
@@ -155,38 +158,45 @@ describe("user namespace", () => {
     ).rejects.toThrow(`Resource ${OTHER_LOGIN} is not namespaced`);
   });
 
-  it("lets a grant login through to the primitive", async () => {
+  it("refuses every login before it reaches Secrets Manager or PostgreSQL", async () => {
     await expect(
-      perimeter.provisionUser({ userBody: LOGIN, context })
-    ).rejects.toThrow("pg-vaulted getUser is not implemented");
+      perimeter().provisionUser({ userBody: OTHER_LOGIN, context })
+    ).rejects.toThrow("is not namespaced");
+
+    expect(vault.regions).toEqual([]);
+    expect(db.signIns).toEqual([]);
+  });
+
+  it("lets a grant login through to the primitives", async () => {
+    await expect(
+      perimeter().provisionUser({ userBody: LOGIN, context })
+    ).resolves.toBe(LOGIN);
+    expect([...db.roles.keys()]).toEqual([LOGIN]);
   });
 });
 
+// The revoke path. The grant path is in ./grant.test.ts.
 describe("stubbed primitives", () => {
   const user = { userId: LOGIN, userBody: LOGIN, context };
 
   it.each([
-    ["getUser", () => role().provisionUser({ userBody: LOGIN, context })],
-    ["getUser", () => role().identifyUser({ userBody: LOGIN, context })],
-    [
-      "setPoliciesForUser",
-      () => role().setPoliciesForUser({ ...user, policies: approved }),
-    ],
     [
       "setPoliciesForUser",
       () => role().setPoliciesForUser({ ...user, policies: [] }),
     ],
     ["deleteUser", () => role().deleteUser(user)],
-  ])("rejects at %s", async (operation, call) => {
+  ])("rejects at %s, and reaches nothing", async (operation, call) => {
     await expect(call()).rejects.toThrow(
       `pg-vaulted ${operation} is not implemented`
     );
+    expect(vault.reads).toEqual([]);
+    expect(vault.regions).toEqual([]);
     expect(db.signIns).toEqual([]);
   });
 });
 
 describe("list", () => {
-  const list = (type: "database" | "role", overrides?: ManagerDependencies) =>
+  const list = (type: "database" | "role", overrides?: Dependencies) =>
     role(overrides).list({ query: { type, context: target } });
 
   it("lists the grantable roles as the manager, then closes the connection", async () => {

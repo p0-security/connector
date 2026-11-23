@@ -1,19 +1,25 @@
+import { DescribeSecretCommand } from "@aws-sdk/client-secrets-manager";
 import { ConnectorError, type Logger } from "@p0security/connector-core";
 import {
+  SecretAlreadyExistsError,
   type SecretManagerProviderConfig,
   SecretNotFoundError,
   type SecretPayload,
+  type SecretRef,
 } from "@p0security/connector-secret-manager-client";
 import { Writable } from "node:stream";
 import { pino } from "pino";
 
-import type { ConnectSecretManager } from "../manager.ts";
+import type { ConnectSecretManager, Dependencies } from "../dependencies.ts";
 import {
   CAN_CREATE_ROLE_SQL,
   CAN_SIGNAL_BACKEND_SQL,
   DATABASES_SQL,
   GRANTABLE_ROLES_SQL,
   HAS_GRANT_OPTIONS_SQL,
+  IS_GRANTABLE_ROLE_SQL,
+  LOGIN_SQL,
+  MANAGER_GRANTED_ROLES_SQL,
   PING_SQL,
 } from "../postgres/catalog.ts";
 import type {
@@ -73,31 +79,174 @@ export const capturingLogger = () => {
 };
 
 /**
- * Secrets Manager in memory, by ARN. It holds the fixture manager's secret
- * unless given other values, and keeps every read's region and ARN.
+ * Every call the fakes got, in order, when they share one journal: a secret
+ * call as `<operation> <secret>`, and a database call as the database's own
+ * `calls` have it.
+ */
+export type Journal = (string[] | string)[];
+
+/**
+ * Randomness that repeats: the nth draw is bytes of value n. The passwords
+ * and verifiers it leads to are `FIRST_PASSWORD` and `SECOND_PASSWORD` in ./fixtures.ts.
+ */
+export const fakeRandomBytes = () => {
+  let draws = 0;
+  return (size: number) => Buffer.alloc(size, ++draws);
+};
+
+// copy of `Command` and `sdkError` in services/p0-connector-aws-ssm-ai/src/__tests__/fakes.ts
+/** An SDK command as a fake AWS client gets it: its class and its input. */
+type Command = {
+  constructor: { name: string };
+  input: Record<string, unknown>;
+};
+
+/** An SDK failure, which the SDK names by `name`. */
+export const sdkError = (name: string, message = name) =>
+  Object.assign(new Error(message), { name });
+
+type FakeGrantSecret = {
+  values: Buffer[];
+  /** Set while AWS deletes the secret in the background. */
+  deletedDate?: Date;
+  /** No version has a staging label, so the secret serves no value. */
+  unstaged?: boolean;
+};
+
+type FakeSecretStoreState = {
+  /** Every read throws this. */
+  fail?: Error;
+  /** Every describe throws this. */
+  failDescribe?: Error;
+  /** The next create throws this. */
+  failNextCreate?: Error;
+  /** The next write throws what this returns, given the value to write. */
+  failNextWrite?: (value: Buffer) => Error;
+};
+
+// The shared client's refs are a brand on a string, which only a cast makes.
+const refOf = (ref: string) => ref as SecretRef;
+
+// modelled on `fakeSecretsManager` in services/p0-connector-aws-ssm-ai/src/__tests__/fakes.ts
+/**
+ * Secrets Manager in memory: the shared client the connector reads a manager
+ * secret with and creates and writes a grant secret with, and the SDK client
+ * it describes a grant secret with.
+ *
+ * The readable values are by ARN, and hold the fixture manager's secret
+ * unless given others. A grant secret is by name, in `secrets`, and is
+ * created with no value, as the real client creates it. Every read is kept,
+ * of whatever secret.
  */
 export const fakeSecretStore = (
   values: Record<string, SecretPayload> = {
     [MANAGER_SECRET_ARN]: JSON.stringify(MANAGER),
-  }
+  },
+  journal: Journal = []
 ) => {
   const reads: { config: SecretManagerProviderConfig; ref: string }[] = [];
-  /** Every read throws `fail`. */
-  const state: { fail?: Error } = {};
-  const connectSecretManager: ConnectSecretManager = async (config) => ({
-    getSecretValue: async ({ ref }) => {
-      reads.push({ config, ref });
-      if (state.fail) throw state.fail;
-      const value = values[ref];
-      if (value === undefined) throw new SecretNotFoundError(ref);
-      return { value };
+  /** Grant secret name to secret. */
+  const secrets = new Map<string, FakeGrantSecret>();
+  /** The region of every call but a read, in order. */
+  const regions: string[] = [];
+  const state: FakeSecretStoreState = {};
+
+  const connectSecretManager: ConnectSecretManager = async (config) => {
+    const called = (operation: string, secret: string) => {
+      journal.push(`${operation} ${secret}`);
+      if (operation !== "getSecretValue" && config.provider === "aws") {
+        regions.push(config.region);
+      }
+    };
+    return {
+      getSecretValue: async ({ ref }) => {
+        called("getSecretValue", ref);
+        reads.push({ config, ref });
+        if (state.fail) throw state.fail;
+        const value = values[ref] ?? secrets.get(ref)?.values.at(-1);
+        if (value === undefined) throw new SecretNotFoundError(ref);
+        return { value };
+      },
+      createSecret: async ({ name }) => {
+        called("createSecret", name);
+        const { failNextCreate } = state;
+        if (failNextCreate) {
+          state.failNextCreate = undefined;
+          throw failNextCreate;
+        }
+        const existing = secrets.get(name);
+        if (existing?.deletedDate) {
+          throw sdkError(
+            "InvalidRequestException",
+            "You can't create this secret because a secret with this name is already scheduled for deletion."
+          );
+        }
+        if (existing) throw new SecretAlreadyExistsError(name);
+        secrets.set(name, { values: [] });
+      },
+      createSecretVersion: async ({ ref, value }) => {
+        called("createSecretVersion", ref);
+        const secret = secrets.get(ref);
+        if (!secret) throw new SecretNotFoundError(refOf(ref));
+        const { failNextWrite } = state;
+        if (failNextWrite) {
+          state.failNextWrite = undefined;
+          throw failNextWrite(value);
+        }
+        secret.values.push(value);
+      },
+    };
+  };
+
+  const secretsManagerSdk: Dependencies["secretsManagerSdk"] = (region) => ({
+    send: async (command: Command) => {
+      if (!(command instanceof DescribeSecretCommand)) {
+        throw new Error(`the store doesn't send ${command.constructor.name}`);
+      }
+      const name = command.input.SecretId ?? "";
+      journal.push(`describeSecret ${name}`);
+      regions.push(region);
+      if (state.failDescribe) throw state.failDescribe;
+      const secret = secrets.get(name);
+      if (!secret) {
+        throw sdkError(
+          "ResourceNotFoundException",
+          "Secrets Manager can't find the specified secret."
+        );
+      }
+      const { values: written, deletedDate, unstaged } = secret;
+      return {
+        Name: name,
+        DeletedDate: deletedDate,
+        VersionIdsToStages:
+          written.length > 0
+            ? { [`v${written.length}`]: unstaged ? [] : ["AWSCURRENT"] }
+            : {},
+      };
     },
   });
-  return { connectSecretManager, reads, state };
+
+  return {
+    connectSecretManager,
+    secretsManagerSdk,
+    reads,
+    secrets,
+    regions,
+    state,
+    /** The current value of the named grant secret, as text. */
+    valueOf: (name: string) => secrets.get(name)?.values.at(-1)?.toString(),
+    /** Leaves a grant secret as an earlier call did: with `value`, or
+     * created and never written. */
+    holding: (name: string, value?: string) => {
+      secrets.set(name, {
+        values: value === undefined ? [] : [Buffer.from(value)],
+      });
+    },
+  };
 };
 
 /** An error as the driver throws it for a server's answer. Its message
- * quotes the statement, as knex's does. */
+ * quotes the statement, as the server's can. */
 export const pgError = (sqlState: string, statement = "select 1") =>
   Object.assign(new Error(`${statement} - the server's own message`), {
     code: sqlState,
@@ -107,6 +256,23 @@ export const pgError = (sqlState: string, statement = "select 1") =>
 /** An error as the driver throws it when the network fails. */
 export const networkError = (code: string) =>
   Object.assign(new Error(`connect ${code} 10.0.0.7:5432`), { code });
+
+/** A role as the fake target keeps it. */
+export type FakeRole = {
+  canLogin: boolean;
+  connectionLimit: number;
+  /** What `PASSWORD` was given, which is a verifier. */
+  password?: string;
+  validUntil?: string;
+  comment?: string;
+};
+
+/** One role's membership in another, and whether the manager granted it. */
+export type FakeMembership = {
+  role: string;
+  member: string;
+  byManager: boolean;
+};
 
 /** What the manager can do, and what the target holds. */
 type FakeTarget = {
@@ -118,12 +284,148 @@ type FakeTarget = {
   databases: string[];
 };
 
+/** What a statement changes, which a rolled-back transaction puts back. */
+type FakeCatalog = {
+  roles: Map<string, FakeRole>;
+  memberships: FakeMembership[];
+};
+
+/** The error a failing statement throws, or what makes it from the
+ * statement and its bindings, which a driver's error can quote. */
+type Failure = Error | ((sql: string, bindings: readonly string[]) => Error);
+
+// As `quote_ident` and `quote_literal` write them. `quote_ident` also
+// quotes a keyword, which no name in the tests is.
+const quoteIdent = (name: string) =>
+  /^[a-z_][a-z0-9_]*$/.test(name) ? name : `"${name.replaceAll('"', '""')}"`;
+const quoteLiteral = (text: string) => {
+  const quoted = `'${text.replaceAll("'", "''")}'`;
+  return text.includes("\\") ? `E${quoted.replaceAll("\\", "\\\\")}` : quoted;
+};
+
+/** PostgreSQL's `format()`, for `%I` and `%L`. */
+const format = (template: string, args: readonly string[]) => {
+  let next = 0;
+  return template.replace(/%[IL]/g, (spec) => {
+    const arg = args[next++] ?? "";
+    return spec === "%I" ? quoteIdent(arg) : quoteLiteral(arg);
+  });
+};
+
+const nameOf = (quoted = "") =>
+  quoted.startsWith('"') ? quoted.slice(1, -1).replaceAll('""', '"') : quoted;
+const textOf = (literal = "") =>
+  literal.startsWith("E")
+    ? literal.slice(2, -1).replaceAll("''", "'").replaceAll("\\\\", "\\")
+    : literal.slice(1, -1).replaceAll("''", "'");
+
+const NAME = `("(?:[^"]|"")+"|[a-z_][a-z0-9_]*)`;
+const LITERAL = `(E?'(?:[^']|'')*')`;
+const FORMAT_SQL =
+  /^SELECT format\(\$\d+::text(?:, \$\d+::text)*\) AS statement$/;
+
+/** The named role, or the error PostgreSQL answers with when there is
+ * none. */
+const existing = ({ roles }: FakeCatalog, quoted?: string) => {
+  const role = roles.get(nameOf(quoted));
+  if (!role) throw pgError("42704");
+  return role;
+};
+
+/** Each statement the connector runs: its shape, and what it does to the
+ * catalog, given the names and literals the shape captured, as written. */
+const STATEMENTS: {
+  shape: RegExp;
+  run: (catalog: FakeCatalog, captured: (string | undefined)[]) => void;
+}[] = [
+  {
+    shape: new RegExp(
+      `^CREATE ROLE ${NAME} NOLOGIN(?: PASSWORD ${LITERAL} VALID UNTIL ${LITERAL})?$`
+    ),
+    run: ({ roles }, [name, password, validUntil]) => {
+      if (roles.has(nameOf(name))) throw pgError("42710");
+      roles.set(nameOf(name), {
+        canLogin: false,
+        connectionLimit: -1,
+        ...(password === undefined
+          ? {}
+          : { password: textOf(password), validUntil: textOf(validUntil) }),
+      });
+    },
+  },
+  {
+    shape: new RegExp(
+      `^ALTER ROLE ${NAME} PASSWORD ${LITERAL} VALID UNTIL ${LITERAL}$`
+    ),
+    run: (catalog, [name, password, validUntil]) => {
+      Object.assign(existing(catalog, name), {
+        password: textOf(password),
+        validUntil: textOf(validUntil),
+      });
+    },
+  },
+  {
+    shape: new RegExp(`^ALTER ROLE ${NAME} LOGIN VALID UNTIL ${LITERAL}$`),
+    run: (catalog, [name, validUntil]) => {
+      Object.assign(existing(catalog, name), {
+        canLogin: true,
+        validUntil: textOf(validUntil),
+      });
+    },
+  },
+  {
+    shape: new RegExp(`^COMMENT ON ROLE ${NAME} IS ${LITERAL}$`),
+    run: (catalog, [name, comment]) => {
+      existing(catalog, name).comment = textOf(comment);
+    },
+  },
+  // The manager's grants to itself, which the fake does not keep.
+  {
+    shape: new RegExp(
+      `^GRANT ${NAME} TO current_user(?: WITH (?:INHERIT|SET) TRUE)?$`
+    ),
+    run: () => {},
+  },
+  {
+    shape: new RegExp(`^REASSIGN OWNED BY ${NAME} TO ${NAME}$`),
+    run: () => {},
+  },
+  {
+    shape: new RegExp(`^GRANT ${NAME} TO ${NAME}$`),
+    run: (catalog, [quotedRole, quotedMember]) => {
+      existing(catalog, quotedMember);
+      const [role, member] = [nameOf(quotedRole), nameOf(quotedMember)];
+      const { memberships } = catalog;
+      if (!memberships.some((m) => m.role === role && m.member === member)) {
+        memberships.push({ role, member, byManager: true });
+      }
+    },
+  },
+  {
+    shape: new RegExp(`^REVOKE ${NAME} FROM ${NAME}$`),
+    run: (catalog, [quotedRole, quotedMember]) => {
+      existing(catalog, quotedMember);
+      const [role, member] = [nameOf(quotedRole), nameOf(quotedMember)];
+      const { memberships } = catalog;
+      const at = memberships.findIndex(
+        (m) => m.role === role && m.member === member && m.byManager
+      );
+      if (at >= 0) memberships.splice(at, 1);
+    },
+  },
+];
+
 /**
  * A PostgreSQL target behind the driver. It answers the connector's catalog
- * statements from `is`, keeps the roles a statement creates, and forgets
- * those a rolled-back transaction created.
+ * statements from `is`, `roles` and `memberships`, builds a statement as
+ * `format()` does, runs each statement the connector is known to run, and
+ * refuses any other as a syntax error. A rolled-back transaction leaves
+ * `roles` and `memberships` as they were when it began.
  */
-export const fakeDatabase = (overrides: Partial<FakeTarget> = {}) => {
+export const fakeDatabase = (
+  overrides: Partial<FakeTarget> = {},
+  journal: Journal = []
+) => {
   const is: FakeTarget = {
     canCreateRole: true,
     canSignalBackend: true,
@@ -132,8 +434,12 @@ export const fakeDatabase = (overrides: Partial<FakeTarget> = {}) => {
     databases: ["orders", "postgres"],
     ...overrides,
   };
+  const catalog: FakeCatalog = { roles: new Map(), memberships: [] };
   const named = (names: string[]) => names.map((name) => ({ name }));
-  const catalog: Record<string, { call: string; rows: () => unknown[] }> = {
+  const answers: Record<
+    string,
+    { call: string; rows: (bindings: readonly string[]) => unknown[] }
+  > = {
     [PING_SQL]: { call: "ping", rows: () => [{ "?column?": 1 }] },
     [CAN_CREATE_ROLE_SQL]: {
       call: "canCreateRole",
@@ -152,48 +458,97 @@ export const fakeDatabase = (overrides: Partial<FakeTarget> = {}) => {
       rows: () => named(is.grantableRoles),
     },
     [DATABASES_SQL]: { call: "databases", rows: () => named(is.databases) },
+    [IS_GRANTABLE_ROLE_SQL]: {
+      call: "isGrantableRole",
+      rows: ([role = ""]) => [{ allowed: is.grantableRoles.includes(role) }],
+    },
+    [LOGIN_SQL]: {
+      call: "login",
+      rows: ([login = ""]) => {
+        const role = catalog.roles.get(login);
+        return role
+          ? [{ canLogin: role.canLogin, connectionLimit: role.connectionLimit }]
+          : [];
+      },
+    },
+    [MANAGER_GRANTED_ROLES_SQL]: {
+      call: "managerGrantedRoles",
+      rows: ([login]) =>
+        named(
+          catalog.memberships
+            .filter(({ member, byManager }) => member === login && byManager)
+            .map(({ role }) => role)
+            .sort()
+        ),
+    },
   };
 
   const signIns: ManagerSignIn[] = [];
-  /** Every statement in order: a catalog statement by its name, any other
-   * as its text, and `close` when the driver closes. */
-  const calls: string[] = [];
-  /** The roles that statements created and no rollback undid. */
-  const roles = new Set<string>();
-  const failures: { prefix: string; error: unknown }[] = [];
+  /** Every statement in order: a catalog statement by its name, followed by
+   * its bindings when it has any, `format` and its bindings for a statement
+   * the target builds, any other as its text, and `close` when the driver
+   * closes. */
+  const calls: Journal = [];
+  const failures: { prefix: string; failure: Failure }[] = [];
 
-  const queryInto =
-    (created: string[]): PgQuery =>
-    async (sql) => {
-      const answer = catalog[sql];
-      const call = answer?.call ?? sql;
-      calls.push(call);
-      const failure = failures.find(({ prefix }) => call.startsWith(prefix));
-      if (failure) throw failure.error;
-      if (answer) return answer.rows();
-      const [, role] = /^CREATE ROLE "([^"]+)"/.exec(sql) ?? [];
-      if (role) {
-        roles.add(role);
-        created.push(role);
-      }
+  const record = (call: string[] | string) => {
+    calls.push(call);
+    journal.push(call);
+  };
+
+  const run = (sql: string) => {
+    for (const { shape, run: change } of STATEMENTS) {
+      const [matched, ...captured] = shape.exec(sql) ?? [];
+      if (matched === undefined) continue;
+      change(catalog, captured);
       return [];
-    };
+    }
+    throw pgError("42601", sql);
+  };
+
+  /** Records a call, and throws when it is one that is set to fail. */
+  const called = (name: string, sql: string, bindings: readonly string[]) => {
+    record(bindings.length > 0 ? [name, ...bindings] : name);
+    const failed = failures.find(({ prefix }) => name.startsWith(prefix));
+    if (!failed) return;
+    const { failure } = failed;
+    throw typeof failure === "function" ? failure(sql, bindings) : failure;
+  };
+
+  const query: PgQuery = async (sql, bindings = []) => {
+    const answer = answers[sql];
+    const name = answer?.call ?? (FORMAT_SQL.test(sql) ? "format" : sql);
+    called(name, sql, bindings);
+    if (answer) return answer.rows(bindings);
+    if (name === "format") {
+      const [template = "", ...args] = bindings;
+      return [{ statement: format(template, args) }];
+    }
+    return run(sql);
+  };
 
   const driver: PgDriver = {
-    query: queryInto([]),
+    query,
     begin: async () => {
-      calls.push("BEGIN");
-      const created: string[] = [];
+      called("BEGIN", "BEGIN", []);
+      const before = structuredClone(catalog);
       return {
-        query: queryInto(created),
+        query,
+        commit: async () => {
+          called("COMMIT", "COMMIT", []);
+        },
         rollback: async () => {
-          calls.push("ROLLBACK");
-          for (const role of created) roles.delete(role);
+          called("ROLLBACK", "ROLLBACK", []);
+          catalog.roles.clear();
+          for (const [name, role] of before.roles) {
+            catalog.roles.set(name, role);
+          }
+          catalog.memberships.splice(0, Infinity, ...before.memberships);
         },
       };
     },
     close: async () => {
-      calls.push("close");
+      record("close");
     },
   };
 
@@ -207,15 +562,27 @@ export const fakeDatabase = (overrides: Partial<FakeTarget> = {}) => {
     is,
     signIns,
     calls,
-    roles,
-    /** The statement whose call starts with `prefix` throws `error`. */
-    failOn: (prefix: string, error: unknown) => {
-      failures.push({ prefix, error });
+    /** The roles that statements created or changed and no rollback undid,
+     * by name. A test sets one to start from a state. */
+    roles: catalog.roles,
+    memberships: catalog.memberships,
+    /** The statement whose call starts with `prefix` throws `failure`, until
+     * the function this returns is called. */
+    failOn: (prefix: string, failure: Failure) => {
+      const entry = { prefix, failure };
+      failures.push(entry);
+      return () => {
+        failures.splice(failures.indexOf(entry), 1);
+      };
     },
   };
 };
 
 /** `calls` with the probe role's random name replaced, so a test can state
  * them. Only a name that is a grant login's is replaced. */
-export const withoutProbeName = (calls: string[]) =>
-  calls.map((call) => call.replace(/p0v_[0-9a-f]{32}/g, "<probe>"));
+export const withoutProbeName = (calls: Journal) => {
+  const named = (text: string) => text.replace(/p0v_[0-9a-f]{32}/g, "<probe>");
+  return calls.map((call) =>
+    typeof call === "string" ? named(call) : call.map(named)
+  );
+};
