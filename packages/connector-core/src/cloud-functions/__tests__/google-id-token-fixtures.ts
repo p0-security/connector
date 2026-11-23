@@ -107,6 +107,25 @@ const withServer = async <R>(
   }
 };
 
+/** A router with one query, `ping`, that answers `"pong"`. */
+export const pingRouter = t.router({
+  ping: t.procedure.query(() => "pong"),
+});
+
+/**
+ * Calls the `ping` query on the app the runner would serve, sending only
+ * `headers`.
+ */
+export const fetchPing = (
+  routes: Record<string, Router>,
+  middlewares: RequestHandler[],
+  headers: HeadersInit = {}
+) =>
+  withServer(createExpressApp("test", routes, middlewares), async (baseUrl) => {
+    const response = await fetch(`${baseUrl}/trpc/ping`, { headers });
+    return { status: response.status, body: await response.json() };
+  });
+
 /** Fetches `GET /health` without a token from the app the runner would serve. */
 export const fetchHealth = (
   moduleName: string,

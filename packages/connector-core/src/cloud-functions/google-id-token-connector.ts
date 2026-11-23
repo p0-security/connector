@@ -1,16 +1,10 @@
-import type { AnyRouter } from "@trpc/server";
-import {
-  type CreateExpressContextOptions,
-  createExpressMiddleware,
-} from "@trpc/server/adapters/express";
-import { type RequestHandler, Router } from "express";
 import { OAuth2Client } from "google-auth-library";
 
-import { bearerAuthzMiddleware, runExpressApp } from "../http/index.ts";
+import type { TokenVerifier } from "../http/middlewares/bearer.ts";
 
 /**
- * Shared by `runCloudRunConnector` and `runHttpConnector`. Not exported from
- * the package index.
+ * The Google ID token verifier used by `runCloudRunConnector` and
+ * `runHttpConnector`. Not exported from the package index.
  */
 
 /**
@@ -20,7 +14,7 @@ import { bearerAuthzMiddleware, runExpressApp } from "../http/index.ts";
  *
  * Throws if `INVOKER_SA_EMAIL` is unset or empty.
  */
-export const newGoogleIdTokenVerifier = (audience?: string) => {
+export const newGoogleIdTokenVerifier = (audience?: string): TokenVerifier => {
   const client = new OAuth2Client();
   const invokerSAEmail = process.env.INVOKER_SA_EMAIL ?? "";
   if (!invokerSAEmail) {
@@ -37,23 +31,4 @@ export const newGoogleIdTokenVerifier = (audience?: string) => {
     const { email } = payload;
     return invokerSAEmail.toLocaleLowerCase() === email.toLowerCase();
   };
-};
-
-/**
- * Serves `router` at `/trpc` behind `verify`, plus `GET /health` without a
- * token.
- */
-export const serveGoogleIdTokenConnector = <T>(
-  moduleName: string,
-  router: AnyRouter,
-  createContext:
-    ((opts: CreateExpressContextOptions) => Promise<T>) | undefined,
-  verify: (token: string) => Promise<boolean>
-) => {
-  const trpcRouter = Router();
-  trpcRouter.use(createExpressMiddleware({ router, createContext }));
-
-  const middlewares: RequestHandler[] = [bearerAuthzMiddleware(verify)];
-
-  return runExpressApp(moduleName, { "/trpc": trpcRouter }, middlewares);
 };

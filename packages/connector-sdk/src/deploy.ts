@@ -77,6 +77,8 @@ export const newCustomAppCloudRunServer = (
  * The server requires `CONNECTOR_AUDIENCE` and rejects a token whose `aud`
  * differs. It speaks plain HTTP on `$PORT`, so put it behind something that
  * terminates TLS.
+ * Behind a trusted proxy, `CONNECTOR_AUTH=trusted-proxy` checks P0's identity
+ * token in `X-P0-Authorization` instead; see the README.
  * @category Deployment
  */
 export const newCustomAppHttpServer = (
