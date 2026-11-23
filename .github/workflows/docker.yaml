@@ -26,6 +26,10 @@ jobs:
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-pg"
             context: .
+          - image: p0-connector-pg-vaulted
+            dockerfile: docker/connector/lambda/Dockerfile
+            WORKSPACE: "@p0security/p0-connector-pg-vaulted"
+            context: .
           - image: p0-connector-mysql
             dockerfile: docker/connector/lambda/Dockerfile
             WORKSPACE: "@p0security/p0-connector-mysql"

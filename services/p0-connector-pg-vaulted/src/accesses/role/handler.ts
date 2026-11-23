@@ -1,12 +1,22 @@
 import {
   type AnyConnectorTRPCInstance,
+  type ConnectorContext,
   type ResourceRootConnectorPrimitives,
   newResourceRootRouter,
 } from "@p0security/connector-core";
 
 import { GRANT_LOGIN_PATTERN, isGrantSecretOfLogin } from "../../context.ts";
+import {
+  type ManagerDependencies,
+  managerSecretFor,
+  withManager,
+} from "../../manager.ts";
 import { newNotImplementedError } from "../../not-implemented.ts";
+import { listDatabases, listGrantableRoles } from "../../postgres/catalog.ts";
 import { type RoleSchema, spec } from "./definition.ts";
+
+/** What `list` returns for each type of its query, by name. */
+const LISTERS = { role: listGrantableRoles, database: listDatabases };
 
 /**
  * The grant login lifecycle, as resource-root primitives. The resource-root
@@ -15,44 +25,59 @@ import { type RoleSchema, spec } from "./definition.ts";
  * and refuses a grant secret that is another login's.
  *
  * What each primitive is to do is in the README, under Lifecycle. Only
- * `validation` is implemented. Every other primitive throws
+ * `validation` and `list` are implemented. Every other primitive throws
  * {@link newNotImplementedError}.
  */
-export const newRolePrimitives =
-  (): ResourceRootConnectorPrimitives<RoleSchema> => ({
-    validation: ({ secretName }) => {
-      const isGrantLoginOfSecret = async (login: string) =>
-        GRANT_LOGIN_PATTERN.test(login) &&
-        isGrantSecretOfLogin(secretName, login);
+export const newRolePrimitives = (
+  ctx: ConnectorContext,
+  dependencies: ManagerDependencies = {}
+): ResourceRootConnectorPrimitives<RoleSchema> => ({
+  validation: ({ secretName }) => {
+    const isGrantLoginOfSecret = async (login: string) =>
+      GRANT_LOGIN_PATTERN.test(login) &&
+      isGrantSecretOfLogin(secretName, login);
 
-      return {
-        user: {
-          userIsNamespacedByBody: isGrantLoginOfSecret,
-          userIsNamespacedById: isGrantLoginOfSecret,
-        },
-      };
-    },
+    return {
+      user: {
+        userIsNamespacedByBody: isGrantLoginOfSecret,
+        userIsNamespacedById: isGrantLoginOfSecret,
+      },
+    };
+  },
 
-    getUser: async () => {
-      throw newNotImplementedError("getUser");
-    },
+  getUser: async () => {
+    throw newNotImplementedError("getUser");
+  },
 
-    createUser: async () => {
-      throw newNotImplementedError("createUser");
-    },
+  createUser: async () => {
+    throw newNotImplementedError("createUser");
+  },
 
-    deleteUser: async () => {
-      throw newNotImplementedError("deleteUser");
-    },
+  deleteUser: async () => {
+    throw newNotImplementedError("deleteUser");
+  },
 
-    setPoliciesForUser: async () => {
-      throw newNotImplementedError("setPoliciesForUser");
-    },
+  setPoliciesForUser: async () => {
+    throw newNotImplementedError("setPoliciesForUser");
+  },
 
-    list: async () => {
-      throw newNotImplementedError("list");
-    },
-  });
+  list: async ({ type, context: target }) => {
+    const { host, port, database } = target;
+    const logger = ctx.logger.child({ host, port, database, type });
+    const names = await withManager(
+      target,
+      managerSecretFor(host, dependencies.env),
+      dependencies,
+      logger,
+      ({ query }) => LISTERS[type](query)
+    );
+    logger.info({ count: names.length }, "listed from the PostgreSQL target");
+    return names.map((name) => ({ key: name, value: name }));
+  },
+});
 
-export const router = (t: AnyConnectorTRPCInstance) =>
-  newResourceRootRouter(t, spec, newRolePrimitives);
+export const router = (
+  t: AnyConnectorTRPCInstance,
+  dependencies: ManagerDependencies = {}
+) =>
+  newResourceRootRouter(t, spec, (ctx) => newRolePrimitives(ctx, dependencies));
