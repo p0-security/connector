@@ -76,6 +76,23 @@ gh workflow run release.yaml -f tag-prefix=connector -f version=1.1.0 -f commit=
 
 It creates no GitHub Release.
 
+### When a release fails
+
+Nothing is final until the tag exists, so most failures are fixed and run again with the same
+version. To run again, open the Release run and choose **Re-run failed jobs**, or start a new run.
+
+| Fails at                   | Cause                                                                                | Fix                                                                                |
+| -------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Check the release          | The run did not start from `main`                                                    | Start it again from `main`. **commit** can still name an older `main` commit.      |
+| Check the release          | A `package.json` is wrong, or the version is not above the last tag with that prefix | Fix it in a pull request, then release the new merge commit with the same version. |
+| Lint or test               | A bug at that commit                                                                 | Merge a fix, then release the new merge commit with the same version.              |
+| Check the connector images | The commit's Deploy run failed, or a later merge cancelled it                        | Release a later `main` commit whose Deploy run finished, with the same version.    |
+| Publish to NPM             | One package published and the other did not                                          | Re-run failed jobs. A version already on NPM is skipped.                           |
+| Publish to NPM             | The fix changes a package that is already on NPM                                     | NPM versions cannot be replaced. Set the next version in a pull request.           |
+| Tag the release            | The push failed                                                                      | Re-run failed jobs. A tag already on the same commit counts as done.               |
+
+Once a tag is pushed, never move or delete it. Fix a released bug in the next version.
+
 ### Repository settings
 
 - The `NPM_AUTH_TOKEN` repository secret: an npm automation token with publish rights to the
