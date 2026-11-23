@@ -1,6 +1,6 @@
 {
   "name": "@p0security/p0-connector-cloudsql",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "P0 CloudSQL connector (GCP Cloud Run only)",
   "type": "module",
   "exports": {

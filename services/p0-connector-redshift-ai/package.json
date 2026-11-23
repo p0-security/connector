@@ -1,6 +1,6 @@
 {
   "name": "@p0security/p0-connector-redshift-ai",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "P0 Redshift (AI) connector (AWS Lambda)",
   "type": "module",
   "exports": {
