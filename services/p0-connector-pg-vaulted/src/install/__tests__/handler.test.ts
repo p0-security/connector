@@ -14,6 +14,12 @@ describe("install validation", () => {
     await expect(validation().get({})).rejects.toThrow("target");
   });
 
+  it.each([0, 65536, 5432.5])("refuses the port %j", async (port) => {
+    await expect(
+      validation().get({ target: { ...target, port } })
+    ).rejects.toThrow("port");
+  });
+
   it("rejects as not implemented", async () => {
     await expect(validation().get({ target })).rejects.toThrow(
       "pg-vaulted install.validation.get is not implemented"
