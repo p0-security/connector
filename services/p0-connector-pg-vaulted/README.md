@@ -256,7 +256,8 @@ login as `createUser` leaves it is prepared.
 The connector puts no value into SQL itself (`src/postgres/statement.ts`):
 
 - A catalog query takes its values as bindings. So do the statements that end and count a
-  login's sessions.
+  login's sessions, and the one that sets the cutoff's lock timeout (`set_config`, because `SET`
+  takes no binding).
 - `CREATE ROLE`, `ALTER ROLE`, `COMMENT`, `GRANT`, `REVOKE`, `REASSIGN OWNED`, `DROP OWNED`
   and `DROP ROLE` take no bindings, so PostgreSQL builds each one. The connector runs
   `SELECT format(<template>, <bindings>)` with a template that is a constant in the code, `%I`
@@ -626,6 +627,9 @@ Every primitive is implemented. What is not done, or not measured:
 - The Lambda container image, its Terraform, and the P0 control plane's side of the contract
   are not in this package.
 - The database cutoff has no proof that a sign-in cannot outlive it. See
+  [Sessions](#sessions).
+- The cutoff ends the sessions of the instance the connector is connected to, and no other. On
+  Aurora the grant login can also sign in to the readers, where nothing ends its sessions. See
   [Sessions](#sessions).
 - The cleanup cannot take a privilege that a role whose privileges the manager does not hold
   granted the login, and cannot reach a database the manager cannot connect to. In both cases
