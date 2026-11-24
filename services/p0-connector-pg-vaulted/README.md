@@ -19,8 +19,8 @@ scopes the secrets it can write.
   never reaches P0.
 - **Manager secret**: the Secrets Manager entry that holds one target's manager username and
   password. The connector only reads it.
-- **Manager mapping**: the connector's own list of each target's manager secret, by the target's
-  host.
+- **Manager mapping**: the connector's own list of each target's manager secret and target id,
+  by the target's host.
 - **Approved role**: an existing customer-owned database role a grant was approved for. The
   connector grants it, and never creates or alters it.
 - **Grantable role**: a role a grant can be approved for. It cannot log in, is not the
@@ -73,7 +73,9 @@ Every access call carries this context (`src/context.ts`):
 
 The context does not name the manager secret. The connector looks it up by `target.host` in
 the [manager mapping](#manager-mapping), which Terraform sets in the connector's own
-environment, so the P0 control plane cannot point the connector at another secret or host.
+environment, so the P0 control plane cannot point the connector at another secret or host. The
+mapping also holds the target's id. A grant call is refused unless the `<target id>`
+segment of `secretName` is that id (see [Names](#names)).
 
 Revoke parses the same context as grant, so the parser accepts a past `deadline` and truncates
 a `comment` over 1000 characters.
@@ -91,6 +93,13 @@ The last segment of a grant secret's name is the grant login. The schema cannot 
 because the login arrives as the user, outside the context, so the user namespace check does:
 it refuses a login whose grant secret is another login's. With the connector's IAM scoped to
 `p0/postgres-ai/<its vpc>/`, that keeps one grant's secret from being another's.
+
+The `<target id>` segment is the same kind of claim: the schema cannot tie it to the target in
+`target.host`. The [manager mapping](#manager-mapping) does. It holds each host's target id,
+and a grant call whose `secretName` names another target, `getUser`, `createUser` and
+`setPoliciesForUser` alike, is refused with `validation_error` and a payload of `{ host }`,
+before any call to Secrets Manager or PostgreSQL. That keeps a request for
+one target from writing a grant secret that belongs under another.
 
 ### Lifecycle
 
@@ -139,8 +148,9 @@ a grant's lifecycle like this:
   2. It refuses, with `validation_error`, a policy whose role is not a
      [grantable role](#grantable-roles) at that moment.
   3. It makes the roles the manager granted the login equal the policies: it grants the ones
-     that are missing and revokes the others. It leaves a membership the manager did not
-     grant. See [The manager's grants](#the-managers-grants).
+     that are missing and revokes the others, then reads the memberships again and throws
+     `dependency_violation`, with `{ login }`, when a role it revoked is still held. It leaves
+     a membership the manager did not grant. See [The manager's grants](#the-managers-grants).
   4. It sets the login to `LOGIN`, `VALID UNTIL` the deadline.
 
   It never changes a password, and running it again changes nothing.
@@ -272,19 +282,27 @@ network or TLS failure has the error's code in `code`. The error's type is one o
 ### Manager mapping
 
 The connector reads the manager mapping from the environment variable `MANAGER_SECRET_ARNS`: a
-JSON object from each target's host to the ARN of that target's manager secret.
+JSON object from each target's host to an object with the ARN of that target's manager secret
+(`arn`) and the target's id (`targetId`).
 
 ```json
 {
-  "orders.cluster-abc.us-east-1.rds.amazonaws.com": "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf"
+  "orders.cluster-abc.us-east-1.rds.amazonaws.com": {
+    "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+    "targetId": "orders-prod"
+  }
 }
 ```
 
 - The connector reads the variable on each call, so a mapping that is not set or does not parse
   fails the call at `manager_mapping`, not the Lambda's start.
 - The host lookup ignores case.
-- Each value must be a full Secrets Manager ARN in the `aws`, `aws-cn` or `aws-us-gov`
+- Each `arn` must be a full Secrets Manager ARN in the `aws`, `aws-cn` or `aws-us-gov`
   partition. A secret's name alone is refused.
+- Each `targetId` is a target id as a grant secret's name holds it:
+  `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`. It is the `<target id>` segment that this target's grant
+  secrets must have. See [Names](#names).
+- A value that is a string, such as an ARN alone, is refused.
 - The connector reads the secret in the region its ARN names.
 
 ### Manager secret
@@ -357,13 +375,31 @@ checks `objectOwner` by it too.
 (`MANAGER_GRANTED_ROLES_SQL`): one whose grantor is the manager, or a role whose privileges the
 manager holds. With policies it revokes the ones no policy names, and with no policies it
 revokes them all. A membership someone else granted the login stays until the login is dropped.
+The query returns one row for each role and grantor.
 
 - From PostgreSQL 16, a membership's grantor is the role whose `ADMIN OPTION` the `GRANT` used.
   When the manager holds `ADMIN OPTION` on `reporting` only through `it_group`, its grant of
-  `reporting` is recorded as granted by `it_group`, and the manager's `REVOKE` removes it.
-  PostgreSQL 16.16 refused the manager's `REVOKE` of a membership a superuser granted.
-- Before PostgreSQL 16, the grantor is the login that ran the `GRANT`. PostgreSQL 14.25 let
-  the manager revoke a membership a superuser granted. The connector does not try.
+  `reporting` is recorded as granted by `it_group`. A role can be held through several
+  grantors at once. PostgreSQL 16.16 refused the manager's `REVOKE` of a membership a superuser
+  granted.
+- From PostgreSQL 16, a `REVOKE` without `GRANTED BY` removes only the membership whose
+  grantor PostgreSQL infers when it runs, and when none matches it prints a `WARNING` and
+  removes nothing, with no error. As measured on 16.16, that happens when the manager's path
+  to the role changed since the grant: the connector granted `reporting` through `it_group`,
+  and the customer later granted `reporting` to the manager `WITH ADMIN OPTION`. The manager's
+  `REVOKE reporting FROM <login>` then left the membership recorded as granted by `it_group`.
+  So from 16 the connector revokes each membership as its recorded grantor,
+  `REVOKE <role> FROM <login> GRANTED BY <grantor>`. As measured on 16.16, a manager that is
+  not superuser can do that when the grantor is itself, or a role whose privileges it
+  inherits, whether or not it can `SET ROLE` to it. For a grantor whose privileges it does not
+  inherit, PostgreSQL refused it, and the query does not return such a membership.
+- Before PostgreSQL 16, the grantor is the login that ran the `GRANT`, and a role is held
+  once. As measured on 14.25, a plain `REVOKE` by the manager removed the membership whatever
+  its grantor, and `GRANTED BY` made no difference. The connector revokes without it.
+- Either way, the connector reads the manager-granted memberships again after the revokes. A
+  role it revoked and that is still held fails the call with `dependency_violation`, so that
+  a revoke that removed nothing is never taken for one that did. A membership whose grantor's
+  name is not one a statement can hold is not revoked, and fails the same way.
 
 ### Sessions
 

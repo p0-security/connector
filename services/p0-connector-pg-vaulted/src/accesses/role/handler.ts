@@ -1,6 +1,7 @@
 import {
   type AnyConnectorTRPCInstance,
   type ConnectorContext,
+  ConnectorError,
   type ResourceRootConnectorPrimitives,
   newResourceRootRouter,
 } from "@p0security/connector-core";
@@ -26,6 +27,7 @@ import {
 import { newGrantSecretStore } from "../../grant-secret.ts";
 import {
   type InDatabase,
+  isGrantSecretOfManagerTarget,
   managerSecretFor,
   withManager,
 } from "../../manager.ts";
@@ -62,25 +64,30 @@ export const newRolePrimitives = (
   ctx: ConnectorContext,
   dependencies: Dependencies = {}
 ): ResourceRootConnectorPrimitives<RoleSchema> => {
-  /** The call's logger, its grant secrets, and a way to run as the target's
-   * manager. */
+  /**
+   * The call's logger, its grant secrets, and a way to run as the target's
+   * manager. It refuses a grant secret that belongs to another target than
+   * the request's, before the call reaches Secrets Manager or PostgreSQL.
+   */
   const forGrant = (context: RequestContext, login: string) => {
-    const { requestId, target, secrets } = context;
+    const { requestId, target, secrets, secretName } = context;
     const { host, port, database } = target;
+    const secret = managerSecretFor(host, dependencies.env);
+    if (!isGrantSecretOfManagerTarget(secretName, secret)) {
+      throw new ConnectorError({
+        type: "validation_error",
+        message:
+          "The grant secret's name is for another target than the request's. Its target id must be the one the connector's manager mapping holds for the target's host.",
+        payload: { host },
+      });
+    }
     const logger = ctx.logger.child({ requestId, host, port, database, login });
     return {
       logger,
       grantSecrets: newGrantSecretStore(secrets.region, dependencies),
       asManager: <T>(
         run: (session: PgSession, inDatabase: InDatabase) => Promise<T>
-      ) =>
-        withManager(
-          target,
-          managerSecretFor(host, dependencies.env),
-          dependencies,
-          logger,
-          run
-        ),
+      ) => withManager(target, secret, dependencies, logger, run),
     };
   };
 

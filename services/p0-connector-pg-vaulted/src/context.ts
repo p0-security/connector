@@ -42,9 +42,20 @@ const region = z.string().regex(/^[a-z]{2}(-[a-z]+)+-\d{1,2}$/);
  * `manager` is the secret manager, not the manager login. */
 const secrets = z.object({ manager: z.literal("aws"), region });
 
+const TARGET_ID = "[A-Za-z0-9][A-Za-z0-9-]{0,62}";
+
+/** A target id, the `<target id>` segment of a grant secret's name. */
+export const TARGET_ID_PATTERN = new RegExp(`^${TARGET_ID}$`);
+
 /** A grant secret's name: `p0/postgres-ai/<vpc id>/<target id>/<grant login>`. */
-export const GRANT_SECRET_NAME_PATTERN =
-  /^p0\/postgres-ai\/vpc-[0-9a-f]{8,17}\/[A-Za-z0-9][A-Za-z0-9-]{0,62}\/p0v_[0-9a-f]{32}$/;
+export const GRANT_SECRET_NAME_PATTERN = new RegExp(
+  `^p0/postgres-ai/vpc-[0-9a-f]{8,17}/${TARGET_ID}/p0v_[0-9a-f]{32}$`
+);
+
+/** The `<target id>` segment of a name that matches
+ * {@link GRANT_SECRET_NAME_PATTERN}. */
+export const targetIdOfGrantSecret = (secretName: string) =>
+  secretName.split("/")[3];
 
 /**
  * Whether `secretName` is the grant secret of `login`: its last segment is

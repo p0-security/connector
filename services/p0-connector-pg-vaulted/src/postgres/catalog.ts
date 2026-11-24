@@ -83,20 +83,27 @@ export const LOGIN_SQL = `SELECT rolcanlogin AS "canLogin",
   FROM pg_roles WHERE rolname = $1`;
 
 /**
- * The roles that the role named `$1` is a member of by the manager's grant.
- * From PostgreSQL 16 a membership's grantor is the role whose `ADMIN OPTION`
- * the `GRANT` used: the manager, or a role whose privileges the manager
- * inherits. Those are the memberships a `REVOKE` by the manager removes, and
- * no other. Before 16 the grantor is the login that ran the `GRANT`.
+ * The memberships of the role named `$1` that the manager granted, one row
+ * for each role and grantor. From PostgreSQL 16 a membership's grantor is
+ * the role whose `ADMIN OPTION` the `GRANT` used: the manager, or a role
+ * whose privileges the manager inherits. Those are the memberships a
+ * `REVOKE` by the manager removes, and no other. A role can be held through
+ * several grantors at once, and a `REVOKE` that does not name the grantor
+ * removes only the one PostgreSQL infers when it runs. That is not always
+ * the one that exists: it only prints a warning and removes nothing.
+ * `grantor` is therefore there from 16. Before 16 a role is held once,
+ * whoever granted it, a plain `REVOKE` removes it, and `grantor` is `NULL`.
  */
-export const MANAGER_GRANTED_ROLES_SQL = `SELECT r.rolname AS name
+export const MANAGER_GRANTED_ROLES_SQL = `SELECT r.rolname AS name,
+    CASE WHEN current_setting('server_version_num')::int >= 160000
+      THEN grantor.rolname END AS grantor
   FROM pg_auth_members m
     JOIN pg_roles r ON r.oid = m.roleid
     JOIN pg_roles member ON member.oid = m.member
+    JOIN pg_roles grantor ON grantor.oid = m.grantor
   WHERE member.rolname = $1
     AND pg_has_role(current_user, m.grantor, 'USAGE')
-  GROUP BY r.rolname
-  ORDER BY r.rolname COLLATE "C"`;
+  ORDER BY r.rolname COLLATE "C", grantor.rolname COLLATE "C"`;
 
 // copy of `listDatabases` in services/p0-connector-pg/src/accesses/common/handler.ts,
 // in a fixed order
@@ -167,16 +174,27 @@ export const endSessions = async (query: PgQuery, login: string) =>
 export const countSessions = async (query: PgQuery, login: string) =>
   sessionCount.parse(await query(COUNT_SESSIONS_SQL, [login]))[0].sessions;
 
+const managerGrants = z.array(
+  z.object({ name: z.string(), grantor: z.string().nullable() })
+);
+
+/** A membership the manager granted: the role, and from PostgreSQL 16 the
+ * role recorded as granting it. */
+export type ManagerGrant = { role: string; grantor: string | null };
+
 /**
- * The roles `login` is a member of by the manager's grant. A role whose
- * name is not one a policy can hold is left out: the connector grants no
- * such role, so the membership is not the connector's to take away.
+ * The memberships of `login` that the manager granted. A role whose name is
+ * not one a policy can hold is left out: the connector grants no such role,
+ * so the membership is not the connector's to take away.
  */
-export const listManagerGrantedRoles = async (query: PgQuery, login: string) =>
-  names
+export const listManagerGrants = async (
+  query: PgQuery,
+  login: string
+): Promise<ManagerGrant[]> =>
+  managerGrants
     .parse(await query(MANAGER_GRANTED_ROLES_SQL, [login]))
-    .map(({ name }) => name)
-    .filter(isIdentifier);
+    .filter(({ name }) => isIdentifier(name))
+    .map(({ name, grantor }) => ({ role: name, grantor }));
 
 const loginRows = z
   .array(z.object({ canLogin: z.boolean(), connectionLimit: z.number().int() }))

@@ -838,7 +838,12 @@ describe("a grant's whole life, from provisionUser to deleteUser", () => {
     db.sessions.push({ usename: LOGIN });
     db.objects.push(owned("orders", "orders.public.drafts"));
     expect(db.memberships).toEqual([
-      { role: "analyst", member: LOGIN, byManager: true },
+      {
+        role: "analyst",
+        member: LOGIN,
+        byManager: true,
+        grantor: "p0_manager",
+      },
     ]);
 
     await revoke();

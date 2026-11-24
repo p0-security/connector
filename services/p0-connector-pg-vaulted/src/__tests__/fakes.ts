@@ -36,6 +36,9 @@ import { target } from "./fixtures.ts";
 export const MANAGER_SECRET_ARN =
   "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf";
 
+/** The target id of the fixture target, as its grant secrets name it. */
+export const MANAGER_TARGET_ID = "orders-prod";
+
 export const MANAGER = {
   username: "p0_manager",
   password: "correct-horse-battery-staple",
@@ -43,7 +46,9 @@ export const MANAGER = {
 
 /** The connector's environment, with the fixture target's manager secret. */
 export const env = {
-  MANAGER_SECRET_ARNS: JSON.stringify({ [target.host]: MANAGER_SECRET_ARN }),
+  MANAGER_SECRET_ARNS: JSON.stringify({
+    [target.host]: { arn: MANAGER_SECRET_ARN, targetId: MANAGER_TARGET_ID },
+  }),
 };
 
 // copy of `errorOf`, `connectorErrorOf` and `dataOf` in services/p0-connector-aws-ssm-ai/src/__tests__/fakes.ts
@@ -286,11 +291,14 @@ export type FakeRole = {
   comment?: string;
 };
 
-/** One role's membership in another, and whether the manager granted it. */
+/** One role's membership in another, and whether the manager granted it:
+ * the manager is, or holds the privileges of, the grantor. The grantor is
+ * the manager unless it says otherwise, and PostgreSQL 16 and later keep it. */
 export type FakeMembership = {
   role: string;
   member: string;
   byManager: boolean;
+  grantor?: string;
 };
 
 /** Something in one database that depends on roles: its owner, and the
@@ -316,6 +324,9 @@ type FakeTarget = {
   canSignalBackend: boolean;
   /** PostgreSQL 16 or later. */
   hasGrantOptions: boolean;
+  /** A `REVOKE` prints a warning and removes nothing, as PostgreSQL 16's
+   * does when it infers another grantor than the recorded one. */
+  ignoresRevoke: boolean;
   grantableRoles: string[];
   databases: string[];
   /** The databases the manager cannot connect to. */
@@ -525,20 +536,37 @@ const STATEMENTS: {
       const [role, member] = [nameOf(quotedRole), nameOf(quotedMember)];
       const { memberships } = catalog;
       if (!memberships.some((m) => m.role === role && m.member === member)) {
-        memberships.push({ role, member, byManager: true });
+        memberships.push({
+          role,
+          member,
+          byManager: true,
+          grantor: MANAGER.username,
+        });
       }
     },
   },
   {
-    shape: new RegExp(`^REVOKE ${NAME} FROM ${NAME}$`),
-    run: (catalog, [quotedRole, quotedMember]) => {
+    shape: new RegExp(`^REVOKE ${NAME} FROM ${NAME}(?: GRANTED BY ${NAME})?$`),
+    run: (catalog, [quotedRole, quotedMember, quotedGrantor], { is }) => {
       existing(catalog, quotedMember);
       const [role, member] = [nameOf(quotedRole), nameOf(quotedMember)];
       const { memberships } = catalog;
+      // PostgreSQL 16 removes the membership of the grantor it names, or
+      // else of the one it infers, which here is the manager. Before 16 the
+      // membership is removed whoever granted it.
+      const grantor = quotedGrantor
+        ? nameOf(quotedGrantor)
+        : is.hasGrantOptions
+          ? MANAGER.username
+          : undefined;
       const at = memberships.findIndex(
-        (m) => m.role === role && m.member === member && m.byManager
+        (m) =>
+          m.role === role &&
+          m.member === member &&
+          m.byManager &&
+          (grantor === undefined || (m.grantor ?? MANAGER.username) === grantor)
       );
-      if (at >= 0) memberships.splice(at, 1);
+      if (at >= 0 && !is.ignoresRevoke) memberships.splice(at, 1);
     },
   },
 ];
@@ -562,6 +590,7 @@ export const fakeDatabase = (
     canCreateRole: true,
     canSignalBackend: true,
     hasGrantOptions: true,
+    ignoresRevoke: false,
     grantableRoles: ["analyst", "reporting"],
     databases: ["orders", "postgres"],
     closedDatabases: [],
@@ -654,12 +683,14 @@ export const fakeDatabase = (
     [MANAGER_GRANTED_ROLES_SQL]: {
       call: "managerGrantedRoles",
       rows: ([login]) =>
-        named(
-          catalog.memberships
-            .filter(({ member, byManager }) => member === login && byManager)
-            .map(({ role }) => role)
-            .sort()
-        ),
+        catalog.memberships
+          .filter(({ member, byManager }) => member === login && byManager)
+          .map(({ role, grantor = MANAGER.username }) => ({
+            name: role,
+            grantor: is.hasGrantOptions ? grantor : null,
+          }))
+          // As `COLLATE "C"` sorts.
+          .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
     },
   };
 

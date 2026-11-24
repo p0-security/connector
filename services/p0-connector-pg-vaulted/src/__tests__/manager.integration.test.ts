@@ -139,7 +139,11 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
 
   let vault = fakeSecretStore({ [ARN]: JSON.stringify(MANAGER) });
   const dependencies = (): Dependencies => ({
-    env: { MANAGER_SECRET_ARNS: JSON.stringify({ [HOST]: ARN }) },
+    env: {
+      MANAGER_SECRET_ARNS: JSON.stringify({
+        [HOST]: { arn: ARN, targetId: "it-target" },
+      }),
+    },
     connectSecretManager: vault.connectSecretManager,
     secretsManagerSdk: vault.secretsManagerSdk,
     connect: connectWith(false),
@@ -626,6 +630,31 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
       ]);
     });
 
+    it("takes back a role the manager reaches another way since the grant, whose grantor is no longer the one PostgreSQL infers", async () => {
+      await asSuperuser(
+        `REVOKE reporting FROM ${MANAGER.username}`,
+        "GRANT reporting TO it_group WITH ADMIN OPTION",
+        `GRANT it_group TO ${MANAGER.username}`
+      );
+      const grantor = version >= 16 ? "it_group" : "it_manager";
+      await provision();
+      await approve(["reporting"]);
+      expect((await grantLogin()).memberships).toEqual([
+        `reporting by ${grantor}`,
+      ]);
+      // A plain REVOKE by the manager now only prints a warning on
+      // PostgreSQL 16 and later, and leaves the membership of it_group.
+      await asSuperuser(
+        `GRANT reporting TO ${MANAGER.username} WITH ADMIN OPTION`
+      );
+
+      await approve(["analyst"]);
+
+      expect((await grantLogin()).memberships).toEqual([
+        "analyst by it_manager",
+      ]);
+    });
+
     describe("and its revoke", () => {
       const user = { userId: GRANTED_LOGIN, userBody: GRANTED_LOGIN };
 
@@ -977,7 +1006,11 @@ describe("a target nothing listens on", () => {
 
     const data = await dataOf(
       validationRouter(t, {
-        env: { MANAGER_SECRET_ARNS: JSON.stringify({ [HOST]: ARN }) },
+        env: {
+          MANAGER_SECRET_ARNS: JSON.stringify({
+            [HOST]: { arn: ARN, targetId: "it-target" },
+          }),
+        },
         connectSecretManager: vault.connectSecretManager,
         connect: connectWith(false),
       })
