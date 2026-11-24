@@ -33,7 +33,7 @@ const GRANT_LOGIN = `p0v_${"a".repeat(32)}`;
 
 /** The grant login the grant tests prepare, which no fixture creates. */
 const GRANTED_LOGIN = `p0v_${"b".repeat(32)}`;
-const GRANT_SECRET = `p0/postgres-ai/vpc-0a1b2c3d4e5f67890/it-target/${GRANTED_LOGIN}`;
+const GRANT_SECRET = `p0/secrets/postgres/vpc-0a1b2c3d4e5f67890/it-target/${GRANTED_LOGIN}`;
 // With an offset, and far enough ahead that the login can sign in.
 const DEADLINE = "2099-01-01T00:00:00+02:00";
 const COMMENT = "request it-1, requestor x@example.com";

@@ -12,6 +12,7 @@ import {
   type RequestContext,
   isGrantSecretOfLogin,
   isGrantSecretOfTarget,
+  isManagerSecretOfTarget,
 } from "../../context.ts";
 import type { Dependencies } from "../../dependencies.ts";
 import {
@@ -52,8 +53,9 @@ export const newRolePrimitives = (
 ): ResourceRootConnectorPrimitives<RoleSchema> => {
   /**
    * The call's logger, its grant secrets, and a way to run as the target's
-   * manager. It refuses a grant secret that belongs to another target than
-   * the request's, before the call reaches Secrets Manager or PostgreSQL.
+   * manager. It refuses a grant secret, or a manager secret P0 names, that
+   * belongs to another target than the request's, before the call reaches
+   * Secrets Manager or PostgreSQL.
    */
   const forGrant = (context: RequestContext, login: string) => {
     const { requestId, target, secrets, secretName } = context;
@@ -63,6 +65,14 @@ export const newRolePrimitives = (
         type: "validation_error",
         message:
           "The grant secret's name is for another target than the request's. Its target id must be the request's targetId.",
+        payload: { host },
+      });
+    }
+    if (!isManagerSecretOfTarget(target.managerSecret, context)) {
+      throw new ConnectorError({
+        type: "validation_error",
+        message:
+          "The manager secret's name is for another target than the request's. Its vpc id must be the grant secret's, and its target id the request's targetId.",
         payload: { host },
       });
     }

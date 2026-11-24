@@ -106,16 +106,14 @@ because the login arrives as the user, outside the context, so the user namespac
 it refuses a login whose grant secret is another login's. With the connector's IAM scoped to
 `p0/secrets/postgres/<its vpc>/`, that keeps one grant's secret from being another's.
 
-The `<target id>` segment must be the request's `targetId`. A grant call whose `secretName`
-names another target, `getUser`, `createUser` and `setPoliciesForUser` alike, is refused with
-`validation_error` and a payload of `{ host }`, before any call to Secrets Manager or
-PostgreSQL. That catches a request that pairs one target with another target's grant secret by
-mistake. It cannot stop a control plane that sends both wrong together: both fields come from
-the same request, so a request that names another target in `targetId` and in `secretName`
-passes the check.
-
-The grant path is to refuse, the same way, a manager secret P0 names whose `<vpc id>` is not
-`secretName`'s, or whose `<target id>` is not `targetId`. A secret RDS manages names no target,
+The `<target id>` segment must be the request's `targetId`. When `target.managerSecret` is a
+secret P0 names, its `<vpc id>` must be `secretName`'s and its `<target id>` must be `targetId`.
+A grant call that breaks either rule, `getUser`, `createUser` and `setPoliciesForUser` alike, is
+refused with `validation_error` and a payload of `{ host }`, before any call to Secrets Manager
+or PostgreSQL. That catches a request that pairs one target with another target's grant secret
+or manager secret by mistake. It cannot stop a control plane that sends them all wrong together:
+the fields come from the same request, so a request that names another target in `targetId`, in
+`secretName` and in the manager secret passes the checks. A secret RDS manages names no target,
 so nothing ties it to one. Install validation and `list` take a target with no `targetId` or
 `secretName`, so only the manager secret's pattern applies there.
 
