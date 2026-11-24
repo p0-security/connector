@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 
 import { target } from "../../__tests__/fixtures.ts";
 import { t } from "../../router.ts";
-import { installValidation } from "../definition.ts";
 import { router } from "../handler.ts";
 
 const validation = () => router(t).createCaller({ logger: createLogger() });
@@ -26,9 +25,42 @@ describe("install validation", () => {
     );
   });
 
-  it("the result schema accepts grantable roles", () => {
-    const validated = { grantableRoles: ["analyst", "reporting"] };
+  it.each([
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+    "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:orders-manager-AbCdEf",
+    "arn:aws-us-gov:secretsmanager:us-gov-west-1:123456789012:secret:orders-manager-AbCdEf",
+  ])("accepts the manager secret %s", async (managerSecretArn) => {
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).rejects.toThrow("pg-vaulted install.validation.get is not implemented");
+  });
 
-    expect(installValidation.parse(validated)).toEqual(validated);
+  it.each([
+    ["a name alone", "orders-manager"],
+    [
+      "an ARN with no account",
+      "arn:aws:secretsmanager:us-east-1::secret:orders-manager-AbCdEf",
+    ],
+    [
+      "an ARN of another service",
+      "arn:aws:ssm:us-east-1:123456789012:parameter/orders-manager",
+    ],
+    [
+      "an ARN in an unknown partition",
+      "arn:aws-iso:secretsmanager:us-iso-east-1:123456789012:secret:orders-manager-AbCdEf",
+    ],
+  ])("refuses %s as the manager secret", async (_, managerSecretArn) => {
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).rejects.toThrow("managerSecretArn");
+  });
+
+  it("refuses a grant secret as the manager secret", async () => {
+    const managerSecretArn =
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:p0/postgres-ai/vpc-0abc1234/orders-prod/p0v_0123456789abcdef0123456789abcdef-AbCdEf";
+
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).rejects.toThrow("managerSecretArn must not name a grant secret");
   });
 });

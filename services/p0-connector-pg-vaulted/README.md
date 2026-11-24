@@ -16,6 +16,8 @@ scopes the secrets it can write.
 - **Target**: one PostgreSQL instance or cluster P0 manages. Its id in P0 is the target id.
 - **Manager**: the database login the connector uses for management operations. Its credential
   never reaches P0.
+- **Manager secret**: the AWS Secrets Manager secret that holds one target's manager username
+  and password. The connector only reads it.
 - **Approved role**: an existing customer-owned database role a grant was approved for. The
   connector grants it, and never creates or alters it.
 - **Grantable role**: a role the manager holds `ADMIN OPTION` on, so one a grant can be approved
@@ -55,16 +57,20 @@ Every access call carries this context (`src/context.ts`):
 | Field         | Value                                                                                                                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `requestId`   | The P0 request, a non-empty string.                                                                                                                                                               |
-| `target`      | `{ host, port, database }`: the target, and the database the manager connects to.                                                                                                                 |
+| `target`      | `{ host, port, database, managerSecretArn }`: the target, the database the manager connects to, and the full ARN of the target's manager secret.                                                  |
 | `secrets`     | `{ manager: "aws", region }`: where the grant secret is written. `manager` here is the secret manager, not the manager login.                                                                     |
 | `secretName`  | The grant secret's name. See [Names](#names).                                                                                                                                                     |
 | `deadline`    | An ISO 8601 date and time with `Z` or an offset. It becomes the grant login's `VALID UNTIL`. A deadline in the past is accepted.                                                                  |
 | `comment`     | Who asked and for which request. Written with `COMMENT ON ROLE`, so the customer's own database audit resolves the grant login without P0.                                                        |
 | `objectOwner` | The role that takes over what the grant login owns before the login is dropped. P0 sends exactly one policy, and this is its `rolename`, repeated here because `deleteUser` receives no policies. |
 
-The context does not name the manager's secret. The connector is to look it up by `target.host`
-in its own environment, in a mapping that Terraform sets, so the P0 control plane cannot point
-the connector at another secret or host.
+The P0 control plane names the manager secret, as it names the private key secret of the
+Snowflake (AI) and GitHub (AI) connectors. The connector's IAM, which the install's Terraform
+writes, limits which secrets the connector can read, so a request can name only a secret the
+customer gave the connector. `managerSecretArn` must be a full Secrets Manager ARN in the `aws`,
+`aws-cn` or `aws-us-gov` partition, and a secret's name alone is refused. An ARN whose secret
+name starts with `p0/postgres-ai/` is refused too: that is where grant secrets live, which the
+connector writes and never reads.
 
 Revoke parses the same context as grant, so the parser accepts a past `deadline` and truncates
 a `comment` over 1000 characters.
@@ -114,11 +120,11 @@ The P0 control plane must serialize calls for the same grant login.
 
 ### Install validation
 
-`pg-vaulted.install.validation.get` takes `{ target }` and is to write nothing. It is to run
-these checks in order, and a failure names its check in `payload.step`
-(`PG_VAULTED_INSTALL_STEPS`):
+`pg-vaulted.install.validation.get` takes `{ target }`, the same `target` as the request
+context's, and is to write nothing. It is to run these checks in order, and a failure names its
+check in `payload.step` (`PG_VAULTED_INSTALL_STEPS`):
 
-1. `manager_mapping`: the target's host is in the connector's manager mapping.
+1. `manager_secret`: the connector reads the manager secret, and its value parses.
 2. `sign_in`: the manager authenticates to the target.
 3. `create_role`: the manager can create roles (`CREATEROLE`).
 4. `signal_backend`: the manager can end other logins' sessions (`pg_signal_backend`).
@@ -143,7 +149,6 @@ It must not be able to read a secret under `p0/postgres-ai/<vpc id>/`.
   `pg-vaulted <operation> is not implemented`. Only the request parsing and the user namespace
   check run before they do.
 - `install.validation.get` parses its input and then throws the same error.
-- The manager mapping has no format yet: neither the environment variable that holds it nor the
-  shape of its value is defined.
+- The manager secret's value has no format yet.
 - The package depends on no PostgreSQL driver and no Secrets Manager client.
 - No image is built: the service is not in `.github/workflows/docker.yaml`.
