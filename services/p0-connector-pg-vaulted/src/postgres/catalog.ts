@@ -122,6 +122,10 @@ export const CONNECTABLE_DATABASES_SQL = `SELECT datname AS name
     AND datname <> 'rdsadmin'
   ORDER BY datname COLLATE "C"`;
 
+/** Sets, for the transaction, how long a statement waits for a lock: `$1`
+ * is the duration, as `2000ms`. `SET` takes no binding, `set_config` does. */
+export const SET_LOCK_TIMEOUT_SQL = `SELECT set_config('lock_timeout', $1, true)`;
+
 /** Ends every session of the login named `$1`: one row for each session it
  * signalled, with the session's backend. The connector's own session is the
  * manager's. */

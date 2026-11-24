@@ -632,6 +632,7 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
 
     it("takes back a role the manager reaches another way since the grant, whose grantor is no longer the one PostgreSQL infers", async () => {
       await asSuperuser(
+        "ALTER ROLE it_group INHERIT",
         `REVOKE reporting FROM ${MANAGER.username}`,
         "GRANT reporting TO it_group WITH ADMIN OPTION",
         `GRANT it_group TO ${MANAGER.username}`
@@ -758,6 +759,54 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
         await expect(signIn(password)).resolves.toBe("28P01");
         expect(vault.valueOf(GRANT_SECRET)).toBe(password);
         await expect(identify()).resolves.toBe(GRANTED_LOGIN);
+      });
+
+      it("cuts off a login whose session holds the lock on its own row, by ending its sessions and trying again", async () => {
+        await provision();
+        await approve(["analyst"]);
+        // The login changes its own password and keeps the transaction open,
+        // which makes any ALTER ROLE of the login wait.
+        const holder = await openSession();
+        await holder.client.query("BEGIN");
+        await holder.client.query("ALTER ROLE CURRENT_USER PASSWORD 'held'");
+        const started = Date.now();
+
+        await expect(cutOff()).resolves.toBe(null);
+
+        // The lock timeout is two seconds, and the statement timeout fifteen.
+        expect(Date.now() - started).toBeLessThan(10_000);
+        await expect(holder.died()).resolves.toBe("57P01");
+        expect(await sessionsOfTheLogin()).toEqual([{ sessions: 0 }]);
+        expect(await grantLogin()).toMatchObject({
+          rolcanlogin: false,
+          rolconnlimit: 0,
+          rolpassword: null,
+          memberships: null,
+        });
+        await expect(cleanUp()).resolves.toBe(null);
+        await expect(identify()).resolves.toBe(null);
+      });
+
+      it("takes back a role the manager reaches another way since the grant, whose grantor is no longer the one PostgreSQL infers", async () => {
+        await asSuperuser(
+          "ALTER ROLE it_group INHERIT",
+          `REVOKE reporting FROM ${MANAGER.username}`,
+          "GRANT reporting TO it_group WITH ADMIN OPTION",
+          `GRANT it_group TO ${MANAGER.username}`
+        );
+        await provision();
+        await approve(["reporting"]);
+        await asSuperuser(
+          `GRANT reporting TO ${MANAGER.username} WITH ADMIN OPTION`
+        );
+
+        await expect(cutOff()).resolves.toBe(null);
+
+        expect(await grantLogin()).toMatchObject({
+          rolcanlogin: false,
+          rolconnlimit: 0,
+          memberships: null,
+        });
       });
 
       it("cuts off a login that was prepared and never activated", async () => {

@@ -24,6 +24,7 @@ import {
   LOGIN_SQL,
   MANAGER_GRANTED_ROLES_SQL,
   PING_SQL,
+  SET_LOCK_TIMEOUT_SQL,
 } from "../postgres/catalog.ts";
 import type {
   Connect,
@@ -637,6 +638,10 @@ export const fakeDatabase = (
       call: "connectableDatabases",
       rows: () =>
         named(is.databases.filter((d) => !is.closedDatabases.includes(d))),
+    },
+    [SET_LOCK_TIMEOUT_SQL]: {
+      call: "setLockTimeout",
+      rows: ([timeout]) => [{ set_config: timeout }],
     },
     [END_SESSIONS_SQL]: {
       call: "endSessions",

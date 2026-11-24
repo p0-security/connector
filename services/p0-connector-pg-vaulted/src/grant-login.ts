@@ -7,6 +7,7 @@ import { isIdentifier } from "./identifier.ts";
 import {
   HAS_GRANT_OPTIONS_SQL,
   IS_GRANTABLE_ROLE_SQL,
+  SET_LOCK_TIMEOUT_SQL,
   countSessions,
   endSessions,
   findLogin,
@@ -79,8 +80,6 @@ const NOT_CUT_OFF: Refusal = {
 };
 
 const ACTIVATE = "ALTER ROLE %I LOGIN VALID UNTIL %L";
-
-const REVOKE = "REVOKE %I FROM %I";
 
 const RETIRE = "ALTER ROLE %I NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL";
 
@@ -289,15 +288,38 @@ export const endGrantLoginSessions = async (
 };
 
 /**
+ * How long the cutoff's `ALTER ROLE` waits for the login's row, which a
+ * session of the login can hold: a login may `ALTER ROLE` itself, and keep
+ * the transaction open. Well under the statement timeout, so that a stalled
+ * cutoff has time left to end the login's sessions and try again before the
+ * call is cancelled.
+ */
+const RETIRE_LOCK_TIMEOUT_MS = 2000;
+
+/** Whether `error` is a lock timeout, or another cancelled or shut down
+ * statement: SQLSTATE class 55 or 57. Ending the login's sessions can
+ * clear what caused it. */
+const isStalled = (error: unknown) =>
+  error instanceof ConnectorError &&
+  typeof error.data.payload.sqlState === "string" &&
+  /^5[57]/.test(error.data.payload.sqlState);
+
+/**
  * The database cutoff of the grant login. Each step is safe to repeat:
  *
- * 1. In one transaction, the login is retired, which disables it and clears
- *    its password, and loses every membership the manager granted it.
- * 2. Its sessions are ended. The transaction is committed first, so that
- *    PostgreSQL refuses a new sign-in while the old sessions go.
- * 3. Its sessions are counted, as {@link endGrantLoginSessions} does. When
- *    some outlive the last count, it throws, so that the cutoff is tried
- *    again. The login stays retired.
+ * 1. In a transaction of its own, the login is retired, which disables it
+ *    and clears its password. A session of the login can hold a lock on its
+ *    row, so the statement waits for the lock only so long. When it fails
+ *    for want of the lock, or is cancelled, the login's sessions are ended
+ *    once and the statement is tried once more.
+ * 2. In a second transaction, the memberships the manager granted the login
+ *    are revoked, and read again to be sure none is left. A failure here
+ *    leaves the login retired.
+ * 3. Its sessions are ended and counted, as {@link endGrantLoginSessions}
+ *    does, whether or not step 2 failed. The commit of step 1 comes first,
+ *    so that PostgreSQL refuses a new sign-in while the old sessions go.
+ *    When some outlive the last count, it throws, so that the cutoff is
+ *    tried again. The login stays retired.
  *
  * Returns the state the login was in, the roles it lost and how many
  * sessions it ended. With no login it changes nothing.
@@ -311,17 +333,27 @@ export const retireGrantLogin = async (
   const step = LIFECYCLE[from].retire;
   if (step === NOTHING) return { from, revoked: [], sessionsEnded: 0 };
   const template = templateOf(step, from, login);
-  const revoked = await committed(async (inTransaction) => {
-    await execute(inTransaction, { template, args: [login] });
-    const held = (await listManagerGrants(inTransaction, login)).map(
-      ({ role }) => role
-    );
-    for (const role of held) {
-      await execute(inTransaction, { template: REVOKE, args: [role, login] });
-    }
-    return held;
+  const retire = () =>
+    committed(async (inTransaction) => {
+      await inTransaction(SET_LOCK_TIMEOUT_SQL, [
+        `${RETIRE_LOCK_TIMEOUT_MS}ms`,
+      ]);
+      await execute(inTransaction, { template, args: [login] });
+    });
+  await retire().catch(async (error: unknown) => {
+    if (!isStalled(error)) throw error;
+    await endSessions(query, login);
+    await retire();
   });
-  const sessionsEnded = await endGrantLoginSessions(query, login, wait);
+  let revoked: string[];
+  let sessionsEnded: number;
+  try {
+    revoked = await committed((inTransaction) =>
+      revokeManagerGrants(inTransaction, login, () => true)
+    );
+  } finally {
+    sessionsEnded = await endGrantLoginSessions(query, login, wait);
+  }
   return { from, revoked, sessionsEnded };
 };
 

@@ -244,6 +244,7 @@ describe("list", () => {
     ["08006", "upstream_unavailable"],
     ["53300", "upstream_unavailable"],
     ["57014", "upstream_unavailable"],
+    ["55P03", "upstream_unavailable"],
     ["57P03", "upstream_unavailable"],
     ["23505", "unknown"],
     ["XX000", "unknown"],

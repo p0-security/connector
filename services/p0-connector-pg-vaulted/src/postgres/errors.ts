@@ -56,6 +56,8 @@ const FAILURES: Record<string, Failure> = {
     message:
       "PostgreSQL refused the operation because other objects depend on the role.",
   },
+  // A statement that waited longer for a lock than `lock_timeout`.
+  "55P03": UNAVAILABLE,
   // Connection exceptions.
   "08": UNAVAILABLE,
   // Out of resources, such as connection slots.
