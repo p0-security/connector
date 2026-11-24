@@ -359,6 +359,11 @@ its ARN names.
 - The ARN must be in the `aws`, `aws-cn` or `aws-us-gov` partition, with a region and a 12-digit
   account. A secret's name alone is refused, and so is an ARN whose secret name starts with
   `p0/postgres-ai/`, where grant secrets live.
+- The connector calls Secrets Manager in the manager secret's region, and writes grant secrets
+  in `secrets.region`. Both regions must be reachable from the connector's VPC. From a VPC with
+  no NAT, only the region of its Secrets Manager interface endpoint is reachable, since an
+  endpoint's private DNS covers only its own region. P0 sends the database's own region for
+  both.
 - Nothing ties the secret to `target.host`. A request that pairs one target's host with another
   target's manager secret signs in to that host with the other target's credential, which the
   host refuses unless both targets share the login.
@@ -625,7 +630,8 @@ stands in for.
 
 The connector's execution role needs:
 
-- `secretsmanager:GetSecretValue` on the manager's secrets, and on no other secret.
+- `secretsmanager:GetSecretValue` on the manager's secrets, and on no other secret. A manager
+  secret encrypted with a customer-managed KMS key also needs `kms:Decrypt` on that key.
 - `secretsmanager:CreateSecret`, `secretsmanager:PutSecretValue` and
   `secretsmanager:DescribeSecret` on secrets under `p0/postgres-ai/<vpc id>/`. A grant makes
   all three calls, in the region the request names.
@@ -634,6 +640,11 @@ The connector's execution role needs:
 
 It must not be able to read a secret under `p0/postgres-ai/<vpc id>/`. The connector has no
 code that reads one.
+
+A manager secret must be in the connector's account. A secret in another account is readable only
+with a resource policy on the secret that lets the connector's role read it, and only when a
+customer-managed KMS key encrypts it, since `aws/secretsmanager` cannot be used from another
+account.
 
 ## Tests
 

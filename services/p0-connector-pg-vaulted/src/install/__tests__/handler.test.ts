@@ -190,6 +190,14 @@ describe("manager_secret", () => {
       "arn:aws-us-gov:secretsmanager:us-gov-west-1:123456789012:secret:p0/orders-manager-AbCdEf",
       "us-gov-west-1",
     ],
+    [
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+      "us-east-1",
+    ],
+    [
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!cluster-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+      "us-east-1",
+    ],
   ])("reads %s in %s", async (managerSecretArn, region) => {
     vault = fakeSecretStore({ [managerSecretArn]: JSON.stringify(MANAGER) });
 
