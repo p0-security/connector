@@ -87,9 +87,15 @@ const FIXTURE_ROLES = [
 /**
  * A manager that is not superuser, set up as the README's Manager privileges
  * says, and one role for each rule a grantable role must meet: `analyst` and
- * `reporting` meet them all, `unshared` and `it_group` are not granted to the
- * manager, and each of the others breaks one rule. `analyst` can create
- * tables in the schema `it_work`.
+ * `reporting` meet them all, and `unshared` and `it_group` are not granted to
+ * the manager. Every role the manager holds `ADMIN OPTION` on but `analyst`
+ * and `reporting` breaks one other rule, so that deleting any rule of the
+ * predicate changes the exact list: `app_login` can log in, `it_superuser` is
+ * superuser, `pg_read_all_data` and `rds_superuser` have a name the connector
+ * keeps back, `Sales Team` has a name a policy cannot hold, and the grant
+ * login's name is one the connector keeps back too. `pg_read_all_data` is
+ * built in, so no teardown drops it: its grant goes with the manager.
+ * `analyst` can create tables in the schema `it_work`.
  */
 const FIXTURE = [
   `CREATE ROLE ${MANAGER.username} LOGIN PASSWORD '${MANAGER.password}' CREATEROLE`,
@@ -103,7 +109,7 @@ const FIXTURE = [
   'CREATE ROLE "Sales Team" NOLOGIN',
   "CREATE ROLE it_group NOLOGIN NOINHERIT",
   `CREATE ROLE "${GRANT_LOGIN}" NOLOGIN`,
-  `GRANT analyst, reporting, app_login, rds_superuser, "Sales Team", "${GRANT_LOGIN}" TO ${MANAGER.username} WITH ADMIN OPTION`,
+  `GRANT analyst, reporting, app_login, rds_superuser, it_superuser, pg_read_all_data, "Sales Team", "${GRANT_LOGIN}" TO ${MANAGER.username} WITH ADMIN OPTION`,
   ...WORK_SCHEMA,
 ];
 
@@ -584,6 +590,24 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
 
       expect(await grantLogin()).toEqual(prepared);
     });
+
+    it.each(["it_superuser", "pg_read_all_data"])(
+      "refuses %s, which the manager holds ADMIN OPTION on, and changes nothing",
+      async (rolename) => {
+        await provision();
+        const prepared = await grantLogin();
+        const before = await rolesAndMemberships();
+
+        await expect(dataOf(approve(["analyst", rolename]))).resolves.toEqual({
+          type: "validation_error",
+          message: `The role ${rolename} is not a grantable role of this target.`,
+          payload: { login: GRANTED_LOGIN, rolename },
+        });
+
+        expect(await grantLogin()).toEqual(prepared);
+        expect(await rolesAndMemberships()).toEqual(before);
+      }
+    );
 
     it("keeps the statement and the verifier out of the error and the log when PostgreSQL refuses to create the login", async () => {
       await asSuperuser(`ALTER ROLE ${MANAGER.username} NOCREATEROLE`);

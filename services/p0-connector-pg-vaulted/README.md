@@ -619,8 +619,12 @@ The integration tests (`src/**/*.integration.test.ts`) run install validation, `
 grant path and the revoke path against PostgreSQL 14 and 16 in Docker, as a manager that is
 not superuser. They sign in as the grant login with the password the connector stored, which
 the images check by SCRAM-SHA-256, and hold sessions open across a cutoff. Secrets Manager is
-the fake. CI does not run them. They also passed once against the `postgres:17` image
-(17.12), which `integration-db.sh` does not start. To run them, from this directory:
+the fake. They also passed once against the `postgres:17` image (17.12), which
+`integration-db.sh` does not start. CI runs them in
+`.github/workflows/test-pg-vaulted-integration.yaml`, on a pull request that changes this
+service, `connector-core` or `secret-manager-client`. The unit tests' fake answers a catalog
+query by the identity of its SQL constant, so only these tests run the SQL. To run them
+yourself, from this directory:
 
 ```sh
 ./scripts/integration-db.sh up
