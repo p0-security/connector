@@ -55,6 +55,11 @@ const refusal = z.object({ code: z.string() });
 /** A second database of the target, which only the tests that need one
  * create. */
 const SECOND_DATABASE = "it_second";
+const UNREACHABLE_DATABASES = [
+  "it_no_connect",
+  "it_no_connections",
+  "rdsadmin",
+];
 
 /** A schema the approved role may create tables in, so that a grant login
  * can own one. */
@@ -167,6 +172,9 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
     await asSuperuser(
       // What a grant login of an earlier test may still own or be granted.
       `DROP DATABASE IF EXISTS ${SECOND_DATABASE} WITH (FORCE)`,
+      ...UNREACHABLE_DATABASES.map(
+        (database) => `DROP DATABASE IF EXISTS ${database} WITH (FORCE)`
+      ),
       "DROP SCHEMA IF EXISTS it_work CASCADE",
       `DO $$ BEGIN
         IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${GRANTED_LOGIN}')
@@ -193,6 +201,21 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
       GRANTABLE.map((role) => ({ key: role, value: role }))
     );
     await expect(list("database")).resolves.toEqual([
+      { key: "postgres", value: "postgres" },
+    ]);
+  });
+
+  it("lists only the databases the manager can connect to, and never rdsadmin", async () => {
+    await asSuperuser(
+      `CREATE DATABASE ${SECOND_DATABASE}`,
+      "CREATE DATABASE it_no_connect",
+      "REVOKE CONNECT ON DATABASE it_no_connect FROM PUBLIC",
+      "CREATE DATABASE it_no_connections ALLOW_CONNECTIONS false",
+      "CREATE DATABASE rdsadmin"
+    );
+
+    await expect(list("database")).resolves.toEqual([
+      { key: SECOND_DATABASE, value: SECOND_DATABASE },
       { key: "postgres", value: "postgres" },
     ]);
   });

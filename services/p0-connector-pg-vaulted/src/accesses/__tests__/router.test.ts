@@ -209,7 +209,19 @@ describe("list", () => {
       { key: "orders", value: "orders" },
       { key: "postgres", value: "postgres" },
     ]);
-    expect(db.calls).toEqual(["databases", "close"]);
+    expect(db.calls).toEqual(["connectableDatabases", "close"]);
+  });
+
+  it("lists only the databases the manager can connect to", async () => {
+    db = fakeDatabase({
+      databases: ["billing", "orders", "postgres"],
+      closedDatabases: ["billing"],
+    });
+
+    await expect(list("database")).resolves.toEqual([
+      { key: "orders", value: "orders" },
+      { key: "postgres", value: "postgres" },
+    ]);
   });
 
   it("fails as not found for a target that has no manager secret", async () => {
@@ -272,7 +284,7 @@ describe("list", () => {
       "SELF_SIGNED_CERT_IN_CHAIN",
     ],
   ])("maps %s to unavailable, with its code", async (_, error, code) => {
-    db.failOn("databases", error);
+    db.failOn("connectableDatabases", error);
 
     const data = await dataOf(list("database"));
 
@@ -281,7 +293,7 @@ describe("list", () => {
   });
 
   it("maps a timeout that has no code to unavailable", async () => {
-    db.failOn("databases", new Error("timeout expired"));
+    db.failOn("connectableDatabases", new Error("timeout expired"));
 
     const data = await dataOf(list("database"));
 
@@ -312,7 +324,7 @@ describe("list", () => {
 
     it("is in no error and no log line when the network error quotes it", async () => {
       db.failOn(
-        "databases",
+        "connectableDatabases",
         Object.assign(new Error(`connect failed for ${MANAGER.password}`), {
           code: "ECONNRESET",
         })

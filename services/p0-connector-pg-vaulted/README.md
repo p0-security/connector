@@ -222,8 +222,11 @@ a grant's lifecycle like this:
     `GRANT CONNECT ON DATABASE`. `DROP OWNED` run by the manager leaves a privilege whose
     grantor's privileges the manager does not hold. The grantor has to revoke it.
 
-- `list` returns, for a target, its grantable roles (`type: "role"`) or its databases that are
-  not templates (`type: "database"`), each as `{ key, value }` with the name in both.
+- `list` returns, for a target, its grantable roles (`type: "role"`) or the databases the
+  manager can connect to (`type: "database"`), each as `{ key, value }` with the name in both.
+  The databases are the ones the cleanup reaches: not templates, allowing connections, giving
+  the manager `CONNECT`, and never `rdsadmin`. A database the manager cannot connect to is not
+  offered, so that nobody picks one that no grant can work in.
 
 The perimeter's `provisionUser` is `getUser`, then `createUser` when no login is found, and its
 `identifyUser` is `getUser`.

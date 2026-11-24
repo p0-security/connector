@@ -16,7 +16,6 @@ import {
   CAN_SIGNAL_BACKEND_SQL,
   CONNECTABLE_DATABASES_SQL,
   COUNT_SESSIONS_SQL,
-  DATABASES_SQL,
   END_SESSIONS_SQL,
   GRANTABLE_ROLES_SQL,
   HAS_GRANT_OPTIONS_SQL,
@@ -638,7 +637,6 @@ export const fakeDatabase = (
       call: "grantableRoles",
       rows: () => named(is.grantableRoles),
     },
-    [DATABASES_SQL]: { call: "databases", rows: () => named(is.databases) },
     [CONNECTABLE_DATABASES_SQL]: {
       call: "connectableDatabases",
       rows: () =>

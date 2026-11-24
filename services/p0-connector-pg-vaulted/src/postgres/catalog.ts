@@ -105,14 +105,10 @@ export const MANAGER_GRANTED_ROLES_SQL = `SELECT r.rolname AS name,
     AND pg_has_role(current_user, m.grantor, 'USAGE')
   ORDER BY r.rolname COLLATE "C", grantor.rolname COLLATE "C"`;
 
-// copy of `listDatabases` in services/p0-connector-pg/src/accesses/common/handler.ts,
-// in a fixed order
-export const DATABASES_SQL = `SELECT datname AS name FROM pg_database
-  WHERE datistemplate = false ORDER BY datname COLLATE "C"`;
-
 /**
- * The databases the cleanup hands a grant login's objects over in: every
- * one the manager can connect to. Never `rdsadmin`, which is RDS's own.
+ * The databases the manager can connect to: what `list` offers a database
+ * from, and where the cleanup hands a grant login's objects over. Never
+ * `rdsadmin`, which is RDS's own.
  */
 export const CONNECTABLE_DATABASES_SQL = `SELECT datname AS name
   FROM pg_database
@@ -181,9 +177,6 @@ export const listGrantableRoles = async (query: PgQuery) =>
     .parse(await query(GRANTABLE_ROLES_SQL))
     .map(({ name }) => name)
     .filter(isIdentifier);
-
-export const listDatabases = async (query: PgQuery) =>
-  names.parse(await query(DATABASES_SQL)).map(({ name }) => name);
 
 export const listConnectableDatabases = async (query: PgQuery) =>
   names.parse(await query(CONNECTABLE_DATABASES_SQL)).map(({ name }) => name);

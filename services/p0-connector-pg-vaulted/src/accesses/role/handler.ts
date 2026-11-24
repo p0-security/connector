@@ -33,7 +33,6 @@ import {
 } from "../../manager.ts";
 import {
   listConnectableDatabases,
-  listDatabases,
   listGrantableRoles,
 } from "../../postgres/catalog.ts";
 import type { PgSession } from "../../postgres/client.ts";
@@ -42,7 +41,10 @@ import { execute } from "../../postgres/statement.ts";
 import { type RoleSchema, spec } from "./definition.ts";
 
 /** What `list` returns for each type of its query, by name. */
-const LISTERS = { role: listGrantableRoles, database: listDatabases };
+const LISTERS = {
+  role: listGrantableRoles,
+  database: listConnectableDatabases,
+};
 
 /** A grant login's password is this many random bytes, as base64url. */
 const PASSWORD_BYTES = 32;
