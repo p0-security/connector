@@ -29,6 +29,8 @@ describe("install validation", () => {
     "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
     "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:orders-manager-AbCdEf",
     "arn:aws-us-gov:secretsmanager:us-gov-west-1:123456789012:secret:orders-manager-AbCdEf",
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!cluster-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
   ])("accepts the manager secret %s", async (managerSecretArn) => {
     await expect(
       validation().get({ target: { ...target, managerSecretArn } })

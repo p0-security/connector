@@ -9,9 +9,10 @@ const REGION = "[a-z]{2}(-[a-z]+)+-\\d{1,2}";
 const GRANT_SECRET_PREFIX = "p0/postgres-ai/";
 
 /** A Secrets Manager secret's full ARN, in the `aws`, `aws-cn` or
- * `aws-us-gov` partition. A secret's name alone is refused. */
+ * `aws-us-gov` partition. A secret's name alone is refused. `!` is for the
+ * secrets RDS manages, which it names `rds!db-<id>` and `rds!cluster-<id>`. */
 const MANAGER_SECRET_ARN_PATTERN = new RegExp(
-  `^arn:aws(-cn|-us-gov)?:secretsmanager:${REGION}:\\d{12}:secret:[A-Za-z0-9/_+=.@-]{1,512}$`
+  `^arn:aws(-cn|-us-gov)?:secretsmanager:${REGION}:\\d{12}:secret:[A-Za-z0-9/_+=.@!-]{1,512}$`
 );
 
 /** The secret's name, with the suffix Secrets Manager adds, from an ARN that
