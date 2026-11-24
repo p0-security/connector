@@ -42,12 +42,14 @@ describe("composeInsightsQuery", () => {
     expect(query).toContain('eventSource in ["ec2.amazonaws.com"]');
   });
 
-  it("matches an IAM user by ARN", () => {
+  it("matches an IAM user by name and account", () => {
     expect(composeInsightsQuery(iamUserQuery)).toBe(
       [
         "fields @timestamp, @message",
         `| filter recipientAccountId = "${ACCOUNT}"`,
-        `| filter userIdentity.arn = "arn:aws:iam::${ACCOUNT}:user/p0-carol"`,
+        '| filter userIdentity.type = "IAMUser"',
+        `| filter userIdentity.accountId = "${ACCOUNT}"`,
+        '| filter userIdentity.userName = "p0-carol"',
         "| limit 10000",
       ].join("\n")
     );

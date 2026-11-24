@@ -1,7 +1,7 @@
 import type { CloudTrailLogQuery, LogEntry } from "@p0security/connector-core";
 
 import { matchesAnyGlob } from "../patterns.ts";
-import { sessionArnSource } from "./query.ts";
+import { iamUserName, sessionArnSource } from "./query.ts";
 import { eventActions } from "./services.ts";
 
 /** The fields of a CloudTrail event the connector reads. */
@@ -15,6 +15,8 @@ export type CloudTrailEvent = {
   userIdentity?: {
     type?: string;
     arn?: string;
+    accountId?: string;
+    userName?: string;
     principalId?: string;
     sessionContext?: { sourceIdentity?: string; [field: string]: unknown };
     [field: string]: unknown;
@@ -129,7 +131,11 @@ const identityMatches = (query: CloudTrailLogQuery, event: CloudTrailEvent) => {
         event.userIdentity?.sessionContext?.sourceIdentity === identity.value
       );
     case "iam-user":
-      return arn === identity.userArn;
+      return (
+        event.userIdentity?.type === "IAMUser" &&
+        event.userIdentity.accountId === query.accountId &&
+        event.userIdentity.userName === iamUserName(identity.userArn)
+      );
   }
 };
 
