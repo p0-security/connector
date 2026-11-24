@@ -7,7 +7,11 @@ import {
 } from "@p0security/connector-secret-manager-client";
 import { z } from "zod";
 
-import type { Target } from "./context.ts";
+import {
+  TARGET_ID_PATTERN,
+  type Target,
+  targetIdOfGrantSecret,
+} from "./context.ts";
 import type { ConnectSecretManager, Dependencies } from "./dependencies.ts";
 import {
   type PgSession,
@@ -25,18 +29,21 @@ const MANAGER_SECRET_ARN =
   /^arn:aws(-cn|-us-gov)?:secretsmanager:[a-z]{2}(-[a-z]+)+-\d{1,2}:\d{12}:secret:[A-Za-z0-9/_+=.@-]{1,512}$/;
 
 const managerSecret = z
-  .string()
-  .regex(MANAGER_SECRET_ARN)
-  .transform((arn) => {
+  .object({
+    arn: z.string().regex(MANAGER_SECRET_ARN),
+    targetId: z.string().regex(TARGET_ID_PATTERN),
+  })
+  .transform(({ arn, targetId }) => {
     const [, , , region = ""] = arn.split(":");
-    return { arn, region };
+    return { arn, region, targetId };
   });
 
-/** A manager's secret, and the region its ARN names. */
-type ManagerSecret = z.infer<typeof managerSecret>;
+/** A manager's secret, the region its ARN names, and the id of the target
+ * whose grant secrets it may be used for. */
+export type ManagerSecret = z.infer<typeof managerSecret>;
 
 /** The manager mapping: target host to the ARN of that target's manager
- * secret. */
+ * secret, and to the target id that the target's grant secrets name. */
 const managerMapping = z.record(z.string().min(1), managerSecret);
 
 /** The secret's value, in the shape AWS writes for a database credential.
@@ -69,7 +76,7 @@ export const managerSecretFor = (
   if (!text) {
     throw new ConnectorError({
       type: "validation_error",
-      message: `The connector's ${MANAGER_SECRET_ARNS} environment variable is not set. Set it to a JSON object from each target's host to the ARN of its manager secret.`,
+      message: `The connector's ${MANAGER_SECRET_ARNS} environment variable is not set. Set it to a JSON object from each target's host to the ARN of its manager secret and its target id.`,
       payload: { host },
     });
   }
@@ -77,7 +84,7 @@ export const managerSecretFor = (
   if (!mapping.success) {
     throw new ConnectorError({
       type: "validation_error",
-      message: `The connector's ${MANAGER_SECRET_ARNS} environment variable is not a JSON object from each target's host to the ARN of a Secrets Manager secret.`,
+      message: `The connector's ${MANAGER_SECRET_ARNS} environment variable is not a JSON object from each target's host to the ARN of a Secrets Manager secret and a target id.`,
       payload: { host },
     });
   }
@@ -93,6 +100,18 @@ export const managerSecretFor = (
   }
   return entry[1];
 };
+
+/**
+ * Whether `secretName`, a name that matches `GRANT_SECRET_NAME_PATTERN`, is a
+ * grant secret of the target that `secret` is the manager secret of. Nothing
+ * else ties a grant secret's `<target id>` segment to the target the request
+ * names, so the grant path checks this before it calls Secrets Manager or the
+ * database.
+ */
+export const isGrantSecretOfManagerTarget = (
+  secretName: string,
+  secret: ManagerSecret
+) => targetIdOfGrantSecret(secretName) === secret.targetId;
 
 // The shared client's refs are a brand on a string, which only a cast makes.
 const refOf = (arn: string) => arn as SecretRef;

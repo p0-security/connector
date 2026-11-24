@@ -19,8 +19,8 @@ scopes the secrets it can write.
   never reaches P0.
 - **Manager secret**: the Secrets Manager entry that holds one target's manager username and
   password. The connector only reads it.
-- **Manager mapping**: the connector's own list of each target's manager secret, by the target's
-  host.
+- **Manager mapping**: the connector's own list of each target's manager secret and target id,
+  by the target's host.
 - **Approved role**: an existing customer-owned database role a grant was approved for. The
   connector grants it, and never creates or alters it.
 - **Grantable role**: a role a grant can be approved for. It cannot log in, is not the
@@ -70,7 +70,9 @@ Every access call carries this context (`src/context.ts`):
 
 The context does not name the manager secret. The connector looks it up by `target.host` in
 the [manager mapping](#manager-mapping), which Terraform sets in the connector's own
-environment, so the P0 control plane cannot point the connector at another secret or host.
+environment, so the P0 control plane cannot point the connector at another secret or host. The
+mapping also holds the target's id. A grant call is to be refused unless the `<target id>`
+segment of `secretName` is that id (see [Names](#names)).
 
 Revoke parses the same context as grant, so the parser accepts a past `deadline` and truncates
 a `comment` over 1000 characters.
@@ -88,6 +90,12 @@ The last segment of a grant secret's name is the grant login. The schema cannot 
 because the login arrives as the user, outside the context, so the user namespace check does:
 it refuses a login whose grant secret is another login's. With the connector's IAM scoped to
 `p0/postgres-ai/<its vpc>/`, that keeps one grant's secret from being another's.
+
+The `<target id>` segment is the same kind of claim: the schema cannot tie it to the target in
+`target.host`. The [manager mapping](#manager-mapping) does. It holds each host's target id,
+and a grant call whose `secretName` names another target is to be refused with
+`validation_error`, before any call to Secrets Manager or PostgreSQL. That keeps a request for
+one target from writing a grant secret that belongs under another.
 
 ### Lifecycle
 
@@ -228,19 +236,27 @@ network or TLS failure has the error's code in `code`. The error's type is one o
 ### Manager mapping
 
 The connector reads the manager mapping from the environment variable `MANAGER_SECRET_ARNS`: a
-JSON object from each target's host to the ARN of that target's manager secret.
+JSON object from each target's host to an object with the ARN of that target's manager secret
+(`arn`) and the target's id (`targetId`).
 
 ```json
 {
-  "orders.cluster-abc.us-east-1.rds.amazonaws.com": "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf"
+  "orders.cluster-abc.us-east-1.rds.amazonaws.com": {
+    "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+    "targetId": "orders-prod"
+  }
 }
 ```
 
 - The connector reads the variable on each call, so a mapping that is not set or does not parse
   fails the call at `manager_mapping`, not the Lambda's start.
 - The host lookup ignores case.
-- Each value must be a full Secrets Manager ARN in the `aws`, `aws-cn` or `aws-us-gov`
+- Each `arn` must be a full Secrets Manager ARN in the `aws`, `aws-cn` or `aws-us-gov`
   partition. A secret's name alone is refused.
+- Each `targetId` is a target id as a grant secret's name holds it:
+  `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`. It is the `<target id>` segment that this target's grant
+  secrets must have. See [Names](#names).
+- A value that is a string, such as an ARN alone, is refused.
 - The connector reads the secret in the region its ARN names.
 
 ### Manager secret
