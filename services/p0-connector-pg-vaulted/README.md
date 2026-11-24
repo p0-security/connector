@@ -95,9 +95,9 @@ because the login arrives as the user, outside the context, so the user namespac
 it refuses a login whose grant secret is another login's. With the connector's IAM scoped to
 `p0/postgres-ai/<its vpc>/`, that keeps one grant's secret from being another's.
 
-The `<target id>` segment must be the request's `targetId`. A grant call whose `secretName`
-names another target, `getUser`, `createUser` and `setPoliciesForUser` alike, is refused with
-`validation_error` and a payload of `{ host }`, before any call to Secrets Manager or
+The `<target id>` segment must be the request's `targetId`. A call whose `secretName` names
+another target, `getUser`, `createUser`, `setPoliciesForUser` and `deleteUser` alike, is refused
+with `validation_error` and a payload of `{ host }`, before any call to Secrets Manager or
 PostgreSQL. That catches a request that pairs one target with another target's grant secret by
 mistake. It cannot stop a control plane that sends both wrong together: both fields come from
 the same request, so a request that names another target in `targetId` and in `secretName`

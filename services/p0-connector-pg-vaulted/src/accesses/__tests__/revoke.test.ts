@@ -1598,6 +1598,38 @@ describe("what the revoke path shows", () => {
   });
 });
 
+describe("a grant secret of another target", () => {
+  it.each([
+    [
+      "the cutoff",
+      () =>
+        role().setPoliciesForUser({
+          ...user,
+          policies: [],
+          context: { ...context, targetId: "billing-prod" },
+        }),
+    ],
+    ["the cleanup", () => cleanUp({ targetId: "billing-prod" })],
+  ])(
+    "is refused by %s before Secrets Manager or PostgreSQL is called",
+    async (_, call) => {
+      given("active");
+      const before = everything();
+
+      await expect(dataOf(call())).resolves.toEqual({
+        type: "validation_error",
+        message:
+          "The grant secret's name is for another target than the request's. Its target id must be the request's targetId.",
+        payload: { host: context.target.host },
+      });
+      expect(journal).toEqual([]);
+      expect(vault.reads).toEqual([]);
+      expect(db.signIns).toEqual([]);
+      expect(everything()).toEqual(before);
+    }
+  );
+});
+
 describe("the step and the database a failure names", () => {
   const calls = { cutoff: cutOff, cleanup: () => cleanUp() };
 
