@@ -8,7 +8,7 @@ import { z } from "zod";
  * contract. The README says what each one checks.
  */
 export const PG_VAULTED_INSTALL_STEPS = [
-  "manager_mapping",
+  "manager_secret",
   "sign_in",
   "create_role",
   "signal_backend",

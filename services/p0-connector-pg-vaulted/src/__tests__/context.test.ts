@@ -4,6 +4,7 @@ import {
   GRANT_LOGIN_PATTERN,
   GRANT_SECRET_NAME_PATTERN,
   isGrantSecretOfLogin,
+  isGrantSecretOfTarget,
   requestContext,
 } from "../context.ts";
 import { GRANT_KEY, LOGIN, context } from "./fixtures.ts";
@@ -92,6 +93,29 @@ describe("request context", () => {
     );
   });
 
+  it.each(["t", "Orders-Prod-1", "t".repeat(63)])(
+    "accepts the target id %j",
+    (targetId) => {
+      expect(requestContext.parse({ ...context, targetId }).targetId).toBe(
+        targetId
+      );
+    }
+  );
+
+  it.each([
+    undefined,
+    "",
+    "-orders",
+    "orders/prod",
+    "orders_prod",
+    "t".repeat(64),
+    "orders\n",
+  ])("refuses the target id %j", (targetId) => {
+    expect(requestContext.safeParse({ ...context, targetId }).success).toBe(
+      false
+    );
+  });
+
   it("accepts a deadline in the past", () => {
     const deadline = "2001-01-01T00:00:00Z";
 
@@ -176,4 +200,17 @@ describe("isGrantSecretOfLogin", () => {
   it("refuses a login that is only the end of the secret's last segment", () => {
     expect(isGrantSecretOfLogin(context.secretName, GRANT_KEY)).toBe(false);
   });
+});
+
+describe("isGrantSecretOfTarget", () => {
+  it("holds for a grant secret whose target id is the request's", () => {
+    expect(isGrantSecretOfTarget(context.secretName, "orders-prod")).toBe(true);
+  });
+
+  it.each(["billing-prod", "Orders-prod", "orders-prod2", "orders"])(
+    "does not hold for a grant secret of target %j",
+    (targetId) => {
+      expect(isGrantSecretOfTarget(context.secretName, targetId)).toBe(false);
+    }
+  );
 });

@@ -1,7 +1,7 @@
 {
   "name": "@p0security/p0-connector-pg-vaulted",
   "version": "1.0.0",
-  "description": "P0 vaulted PostgreSQL connector (AWS Lambda)",
+  "description": "P0 vaulted PostgreSQL connector",
   "type": "module",
   "exports": {
     ".": {

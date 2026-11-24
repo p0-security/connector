@@ -7,7 +7,7 @@ import { randomBytes } from "node:crypto";
 
 import { installContext } from "../context.ts";
 import type { Dependencies } from "../dependencies.ts";
-import { managerSecretFor, withManager } from "../manager.ts";
+import { readManagerCredential, withManager } from "../manager.ts";
 import {
   CAN_CREATE_ROLE_SQL,
   CAN_SIGNAL_BACKEND_SQL,
@@ -128,11 +128,11 @@ export const router = (
         const { host, port, database } = target;
         const scope = ctx.logger.child({ host, port });
         const logger = scope.child({ database });
-        const secret = await at("manager_mapping", host, async () =>
-          managerSecretFor(host, dependencies.env)
+        const credential = await at("manager_secret", host, () =>
+          readManagerCredential(target, dependencies)
         );
         const validation = await at("sign_in", host, () =>
-          withManager(target, secret, dependencies, scope, (session) =>
+          withManager(target, credential, dependencies, scope, (session) =>
             checkManager(session, host)
           )
         );

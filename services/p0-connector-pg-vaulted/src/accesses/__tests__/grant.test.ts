@@ -8,7 +8,6 @@ import {
   MANAGER_SECRET_ARN,
   capturingLogger,
   dataOf,
-  env,
   errorOf,
   fakeDatabase,
   fakeRandomBytes,
@@ -45,7 +44,6 @@ beforeEach(() => {
 });
 
 const dependencies = () => ({
-  env,
   connectSecretManager: vault.connectSecretManager,
   secretsManagerSdk: vault.secretsManagerSdk,
   connect: db.connect,
@@ -891,12 +889,16 @@ describe("a grant, from provisionUser to setPoliciesForUser", () => {
 });
 
 describe("a grant secret of another target", () => {
-  // The manager mapping holds the target id `orders-prod` for the fixture's
-  // host.
-  const OTHER_TARGET_CONTEXT = {
-    ...context,
-    secretName: SECRET.replace("/orders-prod/", "/billing-prod/"),
-  };
+  const OTHER_TARGET_CONTEXTS = [
+    [
+      "a grant secret of another target",
+      {
+        ...context,
+        secretName: SECRET.replace("/orders-prod/", "/billing-prod/"),
+      },
+    ],
+    ["another target id", { ...context, targetId: "billing-prod" }],
+  ] as const;
 
   const calls = {
     getUser: (requestContext: typeof context) =>
@@ -915,26 +917,34 @@ describe("a grant secret of another target", () => {
       }),
   };
 
-  it.each(Object.entries(calls))(
-    "is refused by %s before Secrets Manager or PostgreSQL is called",
-    async (_, call) => {
+  it.each(
+    Object.entries(calls).flatMap(([name, call]) =>
+      OTHER_TARGET_CONTEXTS.map(
+        ([reason, requestContext]) =>
+          [name, reason, call, requestContext] as const
+      )
+    )
+  )(
+    "is refused by %s, for %s, before Secrets Manager or PostgreSQL is called",
+    async (_, _reason, call, requestContext) => {
       given("prepared", "filled");
       const before = everything();
 
-      const data = await dataOf(call(OTHER_TARGET_CONTEXT));
+      const data = await dataOf(call(requestContext));
 
       expect(data.type).toBe("validation_error");
       expect(data.payload).toEqual({ host: context.target.host });
       expect(data.message).not.toContain("billing-prod");
       expect(data.message).not.toContain("orders-prod");
       expect(journal).toEqual([]);
+      expect(vault.reads).toEqual([]);
       expect(db.signIns).toEqual([]);
       expect(everything()).toEqual(before);
     }
   );
 
   it.each(Object.entries(calls))(
-    "is no obstacle to %s when the target id matches the mapping's",
+    "is no obstacle to %s when the grant secret's target id is the request's",
     async (_, call) => {
       given("prepared", "filled");
 
@@ -943,6 +953,20 @@ describe("a grant secret of another target", () => {
       expect(db.signIns).toHaveLength(1);
     }
   );
+
+  // The check compares two fields of one request, so a request that names
+  // another target in both passes it.
+  it("passes a request that names another target in both", async () => {
+    given("prepared", "filled");
+
+    await calls.getUser({
+      ...context,
+      targetId: "billing-prod",
+      secretName: SECRET.replace("/orders-prod/", "/billing-prod/"),
+    });
+
+    expect(db.signIns).toHaveLength(1);
+  });
 });
 
 describe("the grant login's password", () => {

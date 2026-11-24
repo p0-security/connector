@@ -12,7 +12,6 @@ import {
   capturingLogger,
   connectorErrorOf,
   dataOf,
-  env,
   errorOf,
   fakeDatabase,
   fakeRandomBytes,
@@ -47,7 +46,6 @@ beforeEach(() => {
 
 const role = () =>
   router(t, {
-    env,
     connectSecretManager: vault.connectSecretManager,
     secretsManagerSdk: vault.secretsManagerSdk,
     connect: db.connect,

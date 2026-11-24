@@ -114,7 +114,12 @@ const FIXTURE = [
 ];
 
 describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
-  const target = { host: HOST, port, database: "postgres" };
+  const target = {
+    host: HOST,
+    port,
+    database: "postgres",
+    managerSecretArn: ARN,
+  };
 
   /** Runs statements in `database` as the server's superuser, and returns
    * the last one's rows. */
@@ -151,11 +156,6 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
 
   let vault = fakeSecretStore({ [ARN]: JSON.stringify(MANAGER) });
   const dependencies = (): Dependencies => ({
-    env: {
-      MANAGER_SECRET_ARNS: JSON.stringify({
-        [HOST]: { arn: ARN, targetId: "it-target" },
-      }),
-    },
     connectSecretManager: vault.connectSecretManager,
     secretsManagerSdk: vault.secretsManagerSdk,
     connect: connectWith(false),
@@ -360,6 +360,7 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
     const context = (overrides: Partial<RequestContext> = {}) => ({
       requestId: "it-1",
       target,
+      targetId: "it-target",
       secrets: { manager: "aws" as const, region: "us-east-1" },
       secretName: GRANT_SECRET,
       deadline: DEADLINE,
@@ -1257,16 +1258,18 @@ describe("a target nothing listens on", () => {
 
     const data = await dataOf(
       validationRouter(t, {
-        env: {
-          MANAGER_SECRET_ARNS: JSON.stringify({
-            [HOST]: { arn: ARN, targetId: "it-target" },
-          }),
-        },
         connectSecretManager: vault.connectSecretManager,
         connect: connectWith(false),
       })
         .createCaller({ logger: createLogger() })
-        .get({ target: { host: HOST, port: 1, database: "postgres" } })
+        .get({
+          target: {
+            host: HOST,
+            port: 1,
+            database: "postgres",
+            managerSecretArn: ARN,
+          },
+        })
     );
 
     expect(data.type).toBe("upstream_unavailable");
