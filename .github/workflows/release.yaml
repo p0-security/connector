@@ -1,0 +1,211 @@
+on:
+  workflow_dispatch:
+    inputs:
+      tag-prefix:
+        description: What to release. connector checks the images main already built; npm publishes connector-core and connector-sdk.
+        required: true
+        type: choice
+        options:
+          - connector
+          - npm
+      version:
+        description: Plain x.y.z. Every package.json for the tag prefix must already be at it.
+        required: true
+        type: string
+      commit:
+        description: The main commit to release. Defaults to main's tip.
+        required: false
+        type: string
+      dry-run:
+        description: Run every check, but publish nothing and push no tag.
+        required: false
+        type: boolean
+        default: false
+
+name: Release
+
+# Tags <tag-prefix>/v<version> on a main commit whose package.json files a
+# merged PR already set to the version. This workflow writes no files: it
+# checks the commit, lints and tests it, ships it, and pushes the tag last, so
+# a run that fails before the tag can be fixed and run again with the same
+# version. See "Releasing" in the README.
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ inputs.tag-prefix }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: Check the release
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      commit: ${{ steps.commit.outputs.sha }}
+    env:
+      TAG_PREFIX: ${{ inputs.tag-prefix }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      # This workflow file, and the docker-publish environment the connector
+      # image check uses, come from the ref the run started on.
+      - name: Run from main
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Start a release from main, not $GITHUB_REF."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Commit is on main
+        id: commit
+        env:
+          COMMIT: ${{ inputs.commit || github.sha }}
+        run: |
+          if ! sha=$(git rev-parse --verify --quiet "$COMMIT^{commit}"); then
+            echo "::error::$COMMIT is not a commit in this repository."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$sha" origin/main; then
+            echo "::error::$sha is not on main."
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      # The script comes from main, the package.json files from the commit.
+      - name: Version can be released
+        env:
+          COMMIT: ${{ steps.commit.outputs.sha }}
+          ROOT: release
+        run: |
+          git worktree add --quiet --detach release "$COMMIT"
+          node .github/scripts/check-release.mjs
+
+  lint:
+    needs: verify
+    uses: ./.github/workflows/lint.yaml
+    with:
+      ref: ${{ needs.verify.outputs.commit }}
+
+  test:
+    needs: verify
+    uses: ./.github/workflows/test.yaml
+    with:
+      ref: ${{ needs.verify.outputs.commit }}
+
+  connector-images:
+    name: Check the connector images
+    if: inputs.tag-prefix == 'connector'
+    needs: [verify, lint, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: docker-publish
+    env:
+      COMMIT: ${{ needs.verify.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+
+      # Logged in, the lookups count against P0's Docker Hub limit rather
+      # than the runner's shared anonymous one.
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # The merge to main already built and pushed every image, tagged
+      # sha-<7 hex> by docker.yaml. The release reuses that build: building
+      # again would push the same tag with new digests. Only "not found" means
+      # an image is missing; any other failure stops here.
+      - name: Every image exists
+        run: |
+          tag="sha-${COMMIT:0:7}"
+          images=$(grep -oP '^\s*- image: \K\S+' .github/workflows/docker.yaml)
+          missing=()
+          {
+            echo "### Images of $COMMIT"
+            echo
+            echo "| Image | Digest |"
+            echo "| --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          for image in $images; do
+            if out=$(docker buildx imagetools inspect --format '{{json .Manifest}}' "p0security/$image:$tag" 2>&1); then
+              echo "| p0security/$image:$tag | $(jq -r .digest <<< "$out") |" >> "$GITHUB_STEP_SUMMARY"
+            elif [[ "$out" == *": not found"* ]]; then
+              missing+=("$image")
+            else
+              echo "::error::Could not check p0security/$image:$tag: $out"
+              exit 1
+            fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Not on Docker Hub at $tag: ${missing[*]}. Check the Deploy run for $COMMIT, or release a later main commit whose build finished."
+            exit 1
+          fi
+          echo "All $(wc -w <<< "$images") images exist at $tag."
+
+  npm-publish:
+    name: Publish to NPM
+    if: inputs.tag-prefix == 'npm'
+    needs: [verify, lint, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+
+      - uses: ./.github/actions/yarn-setup
+
+      # Builds every workspace, then publishes connector-core and
+      # connector-sdk only, core first because the SDK depends on it.
+      # --tolerate-republish skips a version already on NPM, so a re-run after
+      # a partial publish finishes the other package.
+      - name: Publish
+        if: ${{ !inputs.dry-run }}
+        run: yarn :publish
+        env:
+          YARN_NPM_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+
+      - name: Build only (dry run)
+        if: ${{ inputs.dry-run }}
+        run: yarn :build
+
+  tag:
+    name: Tag the release
+    needs: [verify, connector-images, npm-publish]
+    # The other tag prefix's job is skipped, so this checks the one this
+    # release needs.
+    if: >-
+      !cancelled() && !inputs.dry-run && needs.verify.result == 'success' && (
+        (inputs.tag-prefix == 'connector' && needs.connector-images.result == 'success') ||
+        (inputs.tag-prefix == 'npm' && needs.npm-publish.result == 'success'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      TAG: ${{ inputs.tag-prefix }}/v${{ inputs.version }}
+      COMMIT: ${{ needs.verify.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.verify.outputs.commit }}
+
+      # A tag already on this commit is a re-run.
+      - name: Push the tag
+        run: |
+          tagged=$(git ls-remote origin "refs/tags/$TAG" | cut -f1)
+          if [ -z "$tagged" ]; then
+            git push origin "$COMMIT:refs/tags/$TAG"
+          elif [ "$tagged" != "$COMMIT" ]; then
+            echo "::error::$TAG already tags $tagged, not $COMMIT."
+            exit 1
+          fi
+          echo "Released $TAG at $COMMIT." >> "$GITHUB_STEP_SUMMARY"

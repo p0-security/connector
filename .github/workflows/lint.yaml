@@ -40,6 +40,20 @@ jobs:
         env:
           NODE_OPTIONS: --max-old-space-size=12288
 
+  versions:
+    name: Check release versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+      # The release workflow refuses a tag prefix whose package.json files
+      # disagree, so catch that in the PR that causes it.
+      - name: Every tag prefix's package.json files hold one version
+        run: node .github/scripts/check-versions.mjs
+
   typecheck:
     name: Type-check packages
     runs-on: ubuntu-latest
