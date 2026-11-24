@@ -7,6 +7,10 @@
     ".": {
       "@p0security/development": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./connector": {
+      "@p0security/development": "./src/connector.ts",
+      "default": "./dist/connector.js"
     }
   },
   "scripts": {
@@ -21,7 +25,8 @@
   },
   "dependencies": {
     "@p0security/connector-core": "workspace:^",
-    "@trpc/server": "^11.10.0"
+    "@trpc/server": "^11.10.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
