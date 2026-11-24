@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import sdkPackageJson from "../../package.json" with { type: "json" };
 import {
   ConnectorError,
   type CustomAppConnectorActions,
@@ -44,10 +45,7 @@ const invoke = (
   );
 
 describe("newCustomAppLambdaHandler", () => {
-  const handler = newCustomAppLambdaHandler({
-    actions: newActions,
-    connectorVersion: "1.2.3",
-  });
+  const handler = newCustomAppLambdaHandler({ actions: newActions });
 
   it("serves an access procedure end-to-end, with a context the SDK supplies", async () => {
     const res = await invoke(
@@ -85,7 +83,9 @@ describe("newCustomAppLambdaHandler", () => {
 
     expect(res).toMatchObject({
       status: 200,
-      body: { result: { data: { connectorVersion: "1.2.3" } } },
+      body: {
+        result: { data: { connectorVersion: sdkPackageJson.version } },
+      },
     });
   });
 
@@ -99,7 +99,6 @@ describe("newCustomAppLambdaHandler", () => {
         expect(ctx.logger).toBeDefined();
         return newActions();
       },
-      connectorVersion: "1.2.3",
     });
 
     const res = await invoke(
@@ -122,10 +121,7 @@ describe("newCustomAppCloudRunServer", () => {
     // The bearer middleware admits only a Google-signed ID token for
     // $INVOKER_SA_EMAIL, so the served procedures are unreachable from a test;
     // they share their router and context factory with the Lambda path above.
-    const run = newCustomAppCloudRunServer({
-      actions: newActions,
-      connectorVersion: "1.2.3",
-    });
+    const run = newCustomAppCloudRunServer({ actions: newActions });
 
     expect(run).toBeTypeOf("function");
   });
@@ -151,7 +147,6 @@ describe("a connector that namespaces its users", () => {
 
   const handler = newCustomAppLambdaHandler({
     actions: newNamespacedActions,
-    connectorVersion: "1.2.3",
   });
 
   const provision = (principal: string) =>
@@ -178,7 +173,6 @@ describe("a connector that namespaces its users", () => {
           created.push(user.principal);
         },
       }),
-      connectorVersion: "1.2.3",
     });
 
     const res = await invoke(
@@ -207,7 +201,6 @@ describe("a connector that namespaces its users", () => {
           deleted.push(user.principal);
         },
       }),
-      connectorVersion: "1.2.3",
     });
 
     const res = await invoke(
@@ -254,7 +247,6 @@ describe("a ConnectorError thrown by an action", () => {
           });
         },
       }),
-      connectorVersion: "1.2.3",
     });
 
     const res = await invoke(
