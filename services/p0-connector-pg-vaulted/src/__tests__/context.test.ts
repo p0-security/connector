@@ -33,9 +33,9 @@ describe("GRANT_LOGIN_PATTERN", () => {
 
 describe("GRANT_SECRET_NAME_PATTERN", () => {
   it.each([
-    `p0/postgres-ai/vpc-0a1b2c3d/t/${LOGIN}`,
-    `p0/postgres-ai/vpc-0a1b2c3d4e5f67890/Orders-Prod-1/${LOGIN}`,
-    `p0/postgres-ai/vpc-0a1b2c3d/${"t".repeat(63)}/${LOGIN}`,
+    `p0/secrets/postgres/vpc-0a1b2c3d/t/${LOGIN}`,
+    `p0/secrets/postgres/vpc-0a1b2c3d4e5f67890/Orders-Prod-1/${LOGIN}`,
+    `p0/secrets/postgres/vpc-0a1b2c3d/${"t".repeat(63)}/${LOGIN}`,
   ])("matches %j", (secretName) => {
     expect(GRANT_SECRET_NAME_PATTERN.test(secretName)).toBe(true);
   });
@@ -48,44 +48,56 @@ describe("request context", () => {
 
   it.each([
     ["outside the prefix", `p0/access-token/vpc-0a1b2c3d/orders/${LOGIN}`],
-    ["under a longer prefix", `x/p0/postgres-ai/vpc-0a1b2c3d/orders/${LOGIN}`],
-    ["with no vpc id", `p0/postgres-ai/orders/${LOGIN}`],
-    ["with a short vpc id", `p0/postgres-ai/vpc-0a1b2c3/orders/${LOGIN}`],
+    [
+      "under a longer prefix",
+      `x/p0/secrets/postgres/vpc-0a1b2c3d/orders/${LOGIN}`,
+    ],
+    ["under the earlier prefix", `p0/postgres-ai/vpc-0a1b2c3d/orders/${LOGIN}`],
+    [
+      "under the manager secret's prefix",
+      `p0/install/postgres/vpc-0a1b2c3d/orders/${LOGIN}`,
+    ],
+    [
+      "that is a manager secret's",
+      "p0/install/postgres/vpc-0a1b2c3d/orders/p0manager",
+    ],
+    ["with no vpc id", `p0/secrets/postgres/orders/${LOGIN}`],
+    ["with a short vpc id", `p0/secrets/postgres/vpc-0a1b2c3/orders/${LOGIN}`],
     [
       "with a long vpc id",
-      `p0/postgres-ai/vpc-0a1b2c3d4e5f678901/orders/${LOGIN}`,
+      `p0/secrets/postgres/vpc-0a1b2c3d4e5f678901/orders/${LOGIN}`,
     ],
     [
       "with an upper-case vpc id",
-      `p0/postgres-ai/vpc-0A1B2C3D/orders/${LOGIN}`,
+      `p0/secrets/postgres/vpc-0A1B2C3D/orders/${LOGIN}`,
     ],
     [
       "with a vpc id that is not hex",
-      `p0/postgres-ai/vpc-wxyz0123/orders/${LOGIN}`,
+      `p0/secrets/postgres/vpc-wxyz0123/orders/${LOGIN}`,
     ],
-    ["with no target id", `p0/postgres-ai/vpc-0a1b2c3d/${LOGIN}`],
-    ["with an empty target id", `p0/postgres-ai/vpc-0a1b2c3d//${LOGIN}`],
+    ["with no target id", `p0/secrets/postgres/vpc-0a1b2c3d/${LOGIN}`],
+    ["with an empty target id", `p0/secrets/postgres/vpc-0a1b2c3d//${LOGIN}`],
     [
       "with a target id that starts with a hyphen",
-      `p0/postgres-ai/vpc-0a1b2c3d/-orders/${LOGIN}`,
+      `p0/secrets/postgres/vpc-0a1b2c3d/-orders/${LOGIN}`,
     ],
     [
       "with a long target id",
-      `p0/postgres-ai/vpc-0a1b2c3d/${"t".repeat(64)}/${LOGIN}`,
+      `p0/secrets/postgres/vpc-0a1b2c3d/${"t".repeat(64)}/${LOGIN}`,
     ],
     [
       "with a nested target id",
-      `p0/postgres-ai/vpc-0a1b2c3d/orders/prod/${LOGIN}`,
+      `p0/secrets/postgres/vpc-0a1b2c3d/orders/prod/${LOGIN}`,
     ],
-    ["with no login", "p0/postgres-ai/vpc-0a1b2c3d/orders"],
-    ["with an empty login", "p0/postgres-ai/vpc-0a1b2c3d/orders/"],
+    ["with no login", "p0/secrets/postgres/vpc-0a1b2c3d/orders"],
+    ["with an empty login", "p0/secrets/postgres/vpc-0a1b2c3d/orders/"],
     [
       "with a login outside the namespace",
-      "p0/postgres-ai/vpc-0a1b2c3d/orders/postgres",
+      "p0/secrets/postgres/vpc-0a1b2c3d/orders/postgres",
     ],
     [
       "with a path after the login",
-      `p0/postgres-ai/vpc-0a1b2c3d/orders/${LOGIN}/x`,
+      `p0/secrets/postgres/vpc-0a1b2c3d/orders/${LOGIN}/x`,
     ],
   ])("refuses a secret name %s", (_reason, secretName) => {
     expect(requestContext.safeParse({ ...context, secretName }).success).toBe(
@@ -114,6 +126,33 @@ describe("request context", () => {
     expect(requestContext.safeParse({ ...context, targetId }).success).toBe(
       false
     );
+  });
+
+  it.each([
+    "p0/install/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/p0manager",
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!cluster-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+  ])("accepts the manager secret %j", (managerSecret) => {
+    const parsed = requestContext.parse({
+      ...context,
+      target: { ...context.target, managerSecret },
+    });
+
+    expect(parsed.target.managerSecret).toBe(managerSecret);
+  });
+
+  it.each([
+    ["the request's grant secret", context.secretName],
+    [
+      "a name under the grant secrets' prefix",
+      "p0/secrets/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/p0manager",
+    ],
+  ])("refuses %s as the manager secret", (_reason, managerSecret) => {
+    expect(
+      requestContext.safeParse({
+        ...context,
+        target: { ...context.target, managerSecret },
+      }).success
+    ).toBe(false);
   });
 
   it("accepts a deadline in the past", () => {
