@@ -745,10 +745,12 @@ export const fakeDatabase = (
   /** A connection to `database`, which refuses the manager when the
    * database is closed to it. */
   const driverTo = (database: string): PgDriver => {
-    /** Records a call, and throws when it is one that is set to fail. */
-    const called = (name: string, sql: string, bindings: readonly string[]) => {
-      record(bindings.length > 0 ? [name, ...bindings] : name);
-      if (is.closedDatabases.includes(database)) throw pgError("42501");
+    /** Throws when the call is one that is set to fail. */
+    const failing = (
+      name: string,
+      sql: string,
+      bindings: readonly string[]
+    ) => {
       const failed = failures.find(
         (failure) =>
           name.startsWith(failure.prefix) &&
@@ -757,6 +759,13 @@ export const fakeDatabase = (
       if (!failed) return;
       const { failure } = failed;
       throw typeof failure === "function" ? failure(sql, bindings) : failure;
+    };
+
+    /** Records a call, and throws when it is one that is set to fail. */
+    const called = (name: string, sql: string, bindings: readonly string[]) => {
+      record(bindings.length > 0 ? [name, ...bindings] : name);
+      if (is.closedDatabases.includes(database)) throw pgError("42501");
+      failing(name, sql, bindings);
     };
 
     const query: PgQuery = async (sql, bindings = []) => {
@@ -794,6 +803,7 @@ export const fakeDatabase = (
       },
       close: async () => {
         record("close");
+        failing("close", "close", []);
       },
     };
   };
@@ -816,7 +826,7 @@ export const fakeDatabase = (
     objects: catalog.objects,
     /** The open sessions of logins. */
     sessions,
-    /** The statement whose call starts with `prefix` throws `failure`, on
+    /** The statement whose call starts with `prefix`, or `close`, throws `failure`, on
      * every connection or on those to `database`, until the function this
      * returns is called. */
     failOn: (prefix: string, failure: Failure, database?: string) => {

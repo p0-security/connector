@@ -908,7 +908,10 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
           );
 
           expect(data.type).toBe("upstream_unavailable");
-          expect(data.payload).toEqual({ sqlState: "55P03" });
+          expect(data.payload).toEqual({
+            sqlState: "55P03",
+            step: "retire_login",
+          });
         } finally {
           await endTheLoop();
         }
@@ -990,7 +993,11 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
         await provision();
         await expect(dataOf(cleanUp())).resolves.toMatchObject({
           type: "dependency_violation",
-          payload: { login: GRANTED_LOGIN, state: "prepared" },
+          payload: {
+            login: GRANTED_LOGIN,
+            state: "prepared",
+            step: "read_login",
+          },
         });
         await approve(["analyst"]);
         const active = await grantLogin();
@@ -1000,7 +1007,11 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
           type: "dependency_violation",
           message:
             "The grant login has not been cut off. The connector drops a login only after its database cutoff.",
-          payload: { login: GRANTED_LOGIN, state: "active" },
+          payload: {
+            login: GRANTED_LOGIN,
+            state: "active",
+            step: "read_login",
+          },
         });
 
         expect(await grantLogin()).toEqual(active);
@@ -1021,7 +1032,11 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
         ).resolves.toEqual({
           type: "validation_error",
           message: "The role unshared is not a grantable role of this target.",
-          payload: { login: GRANTED_LOGIN, rolename: "unshared" },
+          payload: {
+            login: GRANTED_LOGIN,
+            rolename: "unshared",
+            step: "read_ownership",
+          },
         });
 
         expect(await grantLogin()).toEqual(retired);
@@ -1128,7 +1143,7 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
           type: "dependency_violation",
           message:
             "PostgreSQL refused the operation because other objects depend on the role.",
-          payload: { sqlState: "2BP01" },
+          payload: { sqlState: "2BP01", step: "drop_login" },
         });
 
         expect(await grantLogin()).toEqual(retired);

@@ -182,6 +182,11 @@ export type InDatabase = <T>(
  * connection. The driver connects on its first statement, so that is where a
  * refused sign-in surfaces. `run` also gets a way into the target's other
  * databases, which signs in with the credential this call read.
+ *
+ * Each session logs through `logger` with the `database` it is signed in to,
+ * so a line that a session's close or rollback writes names that database.
+ * `logger` must not bind `database` itself, or the line would hold the key
+ * twice.
  */
 export const withManager = async <T>(
   target: Target,
@@ -198,7 +203,7 @@ export const withManager = async <T>(
   const inDatabase: InDatabase = (database, runThere) =>
     withSession(
       connect({ ...target, ...credential, database }),
-      logger,
+      logger.child({ database }),
       runThere
     );
   return inDatabase(target.database, (session) => run(session, inDatabase));

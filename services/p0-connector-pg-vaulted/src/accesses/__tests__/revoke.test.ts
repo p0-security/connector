@@ -1,6 +1,8 @@
+import { ConnectorError } from "@p0security/connector-core";
 import { UnauthorizedError } from "@p0security/connector-secret-manager-client";
 import { inspect } from "node:util";
 import { beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import {
   type FakeObject,
@@ -8,6 +10,7 @@ import {
   type Journal,
   MANAGER_SECRET_ARN,
   capturingLogger,
+  connectorErrorOf,
   dataOf,
   env,
   errorOf,
@@ -23,6 +26,9 @@ import { t } from "../../router.ts";
 import { router } from "../role/handler.ts";
 
 const SECRET = context.secretName;
+
+/** The parts of a log line that a test reads. */
+const logLine = z.object({ msg: z.string(), database: z.string().optional() });
 const OTHER_LOGIN = `p0v_${"f".repeat(32)}`;
 
 let journal: Journal = [];
@@ -308,7 +314,7 @@ describe("setPoliciesForUser with no policies", () => {
       type: "upstream_unavailable",
       message:
         "The grant login is disabled, but some of its sessions have not ended yet. Try again in a moment.",
-      payload: { login: LOGIN, sessions: 1 },
+      payload: { login: LOGIN, sessions: 1, step: "end_sessions" },
     });
 
     expect(journal.slice(journal.lastIndexOf("COMMIT"))).toEqual([
@@ -344,7 +350,7 @@ describe("setPoliciesForUser with no policies", () => {
       const data = await dataOf(cutOff());
 
       expect(data.type).toBe("upstream_unavailable");
-      expect(data.payload).toEqual({ sqlState: "57014" });
+      expect(data.payload).toEqual({ sqlState: "57014", step: "end_sessions" });
       expect(everything()).toEqual({
         ...before,
         roles: [[LOGIN, RETIRED]],
@@ -448,7 +454,7 @@ describe("setPoliciesForUser with no policies", () => {
       const data = await dataOf(cutOff());
 
       expect(data.type).toBe("upstream_unavailable");
-      expect(data.payload).toEqual({ sqlState: "55P03" });
+      expect(data.payload).toEqual({ sqlState: "55P03", step: "retire_login" });
       expect(journal.slice(journal.indexOf("BEGIN"))).toEqual([
         ...REVOKES("analyst"),
         ...RETIRE_STALLED,
@@ -541,7 +547,7 @@ describe("setPoliciesForUser with no policies", () => {
       const data = await dataOf(cutOff());
 
       expect(data.type).toBe("dependency_violation");
-      expect(data.payload).toEqual({ login: LOGIN });
+      expect(data.payload).toEqual({ login: LOGIN, step: "revoke_roles" });
       expect(db.roles.get(LOGIN)).toEqual(RETIRED);
     });
 
@@ -604,7 +610,7 @@ describe("setPoliciesForUser with no policies", () => {
       const data = await dataOf(cutOff());
 
       expect(data.type).toBe("upstream_unavailable");
-      expect(data.payload).toEqual({ sqlState: "57014" });
+      expect(data.payload).toEqual({ sqlState: "57014", step: "revoke_roles" });
       expect(db.roles.get(LOGIN)).toEqual(RETIRED);
       expect(db.sessions).toEqual([]);
       expect(db.memberships).toEqual([
@@ -675,7 +681,7 @@ describe("setPoliciesForUser with no policies", () => {
         const data = await dataOf(cutOff());
 
         expect(data.type).toBe("dependency_violation");
-        expect(data.payload).toEqual({ login: LOGIN });
+        expect(data.payload).toEqual({ login: LOGIN, step: "revoke_roles" });
         expect(db.roles.get(LOGIN)).toEqual(RETIRED);
         expect(db.sessions).toEqual([]);
         expect(db.memberships).toEqual([
@@ -732,7 +738,7 @@ describe("deleteUser", () => {
       type: "upstream_unavailable",
       message:
         "The grant login is disabled, but some of its sessions have not ended yet. Try again in a moment.",
-      payload: { login: LOGIN, sessions: 1 },
+      payload: { login: LOGIN, sessions: 1, step: "end_sessions" },
     });
 
     expect(db.roles.get(LOGIN)).toEqual(RETIRED);
@@ -893,7 +899,7 @@ describe("deleteUser", () => {
         type: "dependency_violation",
         message:
           "The grant login has not been cut off. The connector drops a login only after its database cutoff.",
-        payload: { login: LOGIN, state },
+        payload: { login: LOGIN, state, step: "read_login" },
       });
 
       expect(everything()).toEqual(before);
@@ -916,7 +922,11 @@ describe("deleteUser", () => {
       await expect(dataOf(cleanUp(UNGRANTABLE))).resolves.toEqual({
         type: "validation_error",
         message: "The role postgres is not a grantable role of this target.",
-        payload: { login: LOGIN, rolename: "postgres" },
+        payload: {
+          login: LOGIN,
+          rolename: "postgres",
+          step: "read_ownership",
+        },
       });
 
       expect(everything()).toEqual(before);
@@ -1016,7 +1026,12 @@ describe("deleteUser", () => {
       await expect(dataOf(cleanUp(UNGRANTABLE))).resolves.toEqual({
         type: "validation_error",
         message: "The role postgres is not a grantable role of this target.",
-        payload: { login: LOGIN, rolename: "postgres" },
+        payload: {
+          login: LOGIN,
+          rolename: "postgres",
+          step: "release_owned",
+          database: "orders",
+        },
       });
 
       expect(db.objects).toEqual([owned("orders", "orders.public.late")]);
@@ -1116,7 +1131,7 @@ describe("deleteUser", () => {
         type: "dependency_violation",
         message:
           "PostgreSQL refused the operation because other objects depend on the role.",
-        payload: { sqlState: "2BP01" },
+        payload: { sqlState: "2BP01", step: "drop_login" },
       });
 
       expect(everything()).toEqual({
@@ -1189,7 +1204,7 @@ describe("deleteUser", () => {
         type: "insufficient_privileges",
         message:
           "Secrets Manager refused to let the connector delete the grant secret. Give the connector's role secretsmanager:DeleteSecret on the secrets under p0/postgres-ai/<vpc id>/.",
-        payload: {},
+        payload: { step: "delete_secret" },
       });
 
       expect(everything()).toEqual(before);
@@ -1210,40 +1225,45 @@ describe("deleteUser", () => {
         "GRANT p0v_",
         undefined,
         { memberships: [], objects: [ORDERS, NOTES] },
+        { step: "take_privileges" },
       ],
       [
         "the reassign in the first database",
         "REASSIGN OWNED",
         "orders",
         { memberships: [TAKEN], objects: [ORDERS, NOTES] },
+        { step: "release_owned", database: "orders" },
       ],
       [
         "the commit in the first database",
         "COMMIT",
         "orders",
         { memberships: [TAKEN], objects: [ORDERS, NOTES] },
+        { step: "release_owned", database: "orders" },
       ],
       [
         "the drop of what it owns in the second database",
         "DROP OWNED",
         "postgres",
         { memberships: [TAKEN], objects: [HANDED_OVER, NOTES] },
+        { step: "release_owned", database: "postgres" },
       ],
       [
         "the drop of the login",
         "DROP ROLE",
         undefined,
         { memberships: [TAKEN], objects: DONE.objects },
+        { step: "drop_login" },
       ],
     ])(
       "%s, the login stays retired and found, and the next call finishes the cleanup",
-      async (_, statement, database, left) => {
+      async (_, statement, database, left, where) => {
         const stop = db.failOn(statement, pgError("57014"), database);
 
         const data = await dataOf(cleanUp());
 
         expect(data.type).toBe("upstream_unavailable");
-        expect(data.payload).toEqual({ sqlState: "57014" });
+        expect(data.payload).toEqual({ sqlState: "57014", ...where });
         expect(everything()).toEqual({
           roles: [[LOGIN, RETIRED]],
           sessions: [],
@@ -1454,14 +1474,261 @@ describe("what the revoke path shows", () => {
     expectNothingHiddenIn(shown);
   });
 
-  it("names nothing but the login and the count when sessions outlive a cutoff", async () => {
+  it("names nothing but the login, the count and the step when sessions outlive a cutoff", async () => {
     given("active");
     db.sessions.push({ usename: LOGIN, outlives: Infinity });
 
     const error = await errorOf(cutOff());
     const shown = `${inspect(error, { depth: 10 })}\n${log.lines.join("")}`;
 
-    expect(shown).toContain(`payload: { login: '${LOGIN}', sessions: 1 }`);
+    expect(connectorErrorOf(error).data.payload).toEqual({
+      login: LOGIN,
+      sessions: 1,
+      step: "end_sessions",
+    });
     expectNothingHiddenIn(shown);
+  });
+
+  /** What the call logged apart from the router's own lines, as its message
+   * and the database the line names. */
+  const logged = () =>
+    log.lines
+      .map((line) => z.parse(logLine, JSON.parse(line)))
+      .filter(({ msg }) => !msg.startsWith("connector request"))
+      .map(({ msg, database }) => [msg, database]);
+
+  it("logs each durable point of a cutoff, with the roles it revoked, and no statement", async () => {
+    given("active");
+    db.memberships.push({ role: "analyst", member: LOGIN, byManager: true });
+
+    const shown = await shownBy(cutOff());
+
+    expect(logged()).toEqual([
+      ["revoked the roles the manager granted the grant login", "postgres"],
+      ["retired the grant login: it cannot log in", "postgres"],
+      [
+        "cut off the grant login and confirmed that none of its sessions is left",
+        "postgres",
+      ],
+    ]);
+    expect(shown).toContain('"revoked":["analyst"]');
+    expectNothingHiddenIn(shown);
+  });
+
+  it("logs each durable point of a cleanup, each database released by its name, and no statement", async () => {
+    given("retired");
+
+    const shown = await shownBy(cleanUp());
+
+    expect(logged()).toEqual([
+      ["deleted the grant secret", "postgres"],
+      [
+        "released what the grant login owns and was granted in the database",
+        "orders",
+      ],
+      [
+        "released what the grant login owns and was granted in the database",
+        "postgres",
+      ],
+      ["dropped the grant login", "postgres"],
+      [
+        "cleaned up the grant: its secret is deleted and its login is gone",
+        "postgres",
+      ],
+    ]);
+    expectNothingHiddenIn(shown);
+  });
+
+  it("logs no durable point that a failed step did not reach", async () => {
+    given("retired");
+    db.failOn("REASSIGN OWNED", pgError("57014"), "orders");
+
+    await shownBy(cleanUp());
+
+    expect(logged()).toEqual([["deleted the grant secret", "postgres"]]);
+  });
+
+  describe("the database a session's own lines name", () => {
+    /** Each line holds the key once: a logger that binds `database` and
+     * then a child that binds it again would write it twice. */
+    const namesOnce = (message: string, database: string) => {
+      const lines = log.lines.filter((line) => line.includes(message));
+      expect(lines).toHaveLength(1);
+      expect(lines[0]?.match(/"database":/g)).toHaveLength(1);
+      expect(lines[0]).toContain(`"database":"${database}"`);
+    };
+
+    it("names the database of a connection that will not close", async () => {
+      given("retired");
+      db.failOn("close", pgError("57P01"), "orders");
+
+      await expect(cleanUp()).resolves.toBe(null);
+
+      namesOnce("failed to close the PostgreSQL connection", "orders");
+    });
+
+    it("names the database of a transaction that will not roll back", async () => {
+      given("retired");
+      db.failOn("REASSIGN OWNED", pgError("57014"), "orders");
+      db.failOn("ROLLBACK", pgError("57P01"), "orders");
+
+      await expect(dataOf(cleanUp())).resolves.toMatchObject({
+        payload: { step: "release_owned", database: "orders" },
+      });
+
+      namesOnce("failed to roll back the PostgreSQL transaction", "orders");
+    });
+
+    it("names the target's database for a line about its own connection", async () => {
+      given("retired");
+      db.failOn("close", pgError("57P01"), "postgres");
+
+      await expect(cleanUp()).resolves.toBe(null);
+
+      expect(
+        log.lines.filter((line) =>
+          line.includes("failed to close the PostgreSQL connection")
+        )
+      ).toHaveLength(2);
+      for (const line of log.lines.filter((l) =>
+        l.includes("failed to close")
+      )) {
+        expect(line.match(/"database":/g)).toHaveLength(1);
+        expect(line).toContain('"database":"postgres"');
+      }
+    });
+  });
+});
+
+describe("the step and the database a failure names", () => {
+  const calls = { cutoff: cutOff, cleanup: () => cleanUp() };
+
+  it.each(["cutoff", "cleanup"] as const)(
+    "the %s names read_login when the connector cannot read the manager secret",
+    async (name) => {
+      given("retired");
+      vault.state.fail = new UnauthorizedError("aws");
+
+      await expect(dataOf(calls[name]())).resolves.toMatchObject({
+        type: "insufficient_privileges",
+        payload: { step: "read_login" },
+      });
+
+      expect(db.calls).toEqual([]);
+    }
+  );
+
+  it.each(["cutoff", "cleanup"] as const)(
+    "the %s names read_login when PostgreSQL refuses the manager's sign-in",
+    async (name) => {
+      given("retired");
+      db.failOn("login", pgError("28P01"));
+
+      await expect(dataOf(calls[name]())).resolves.toMatchObject({
+        type: "insufficient_privileges",
+        payload: { sqlState: "28P01", step: "read_login" },
+      });
+    }
+  );
+
+  it("the cutoff names retire_login when PostgreSQL refuses the retirement for a reason other than a stall", async () => {
+    given("active");
+    db.failOn(RETIRE_STATEMENT, pgError("42501"));
+
+    await expect(dataOf(cutOff())).resolves.toMatchObject({
+      type: "insufficient_privileges",
+      payload: { sqlState: "42501", step: "retire_login" },
+    });
+  });
+
+  it("the cutoff names end_sessions when the sessions will not end between two attempts to retire the login", async () => {
+    given("active");
+    db.sessions.push({ usename: LOGIN });
+    db.failOn(RETIRE_STATEMENT, pgError("55P03"));
+    db.failOn("endSessions", pgError("57014"));
+
+    await expect(dataOf(cutOff())).resolves.toMatchObject({
+      payload: { sqlState: "57014", step: "end_sessions" },
+    });
+  });
+
+  it("the cleanup names list_databases when PostgreSQL will not list them, and has handed nothing over", async () => {
+    given("retired");
+    db.objects.push(owned("orders", "orders.public.drafts"));
+    db.failOn("connectableDatabases", pgError("57014"));
+
+    await expect(dataOf(cleanUp())).resolves.toMatchObject({
+      type: "upstream_unavailable",
+      payload: { sqlState: "57014", step: "list_databases" },
+    });
+
+    expect(db.objects).toEqual([owned("orders", "orders.public.drafts")]);
+  });
+
+  it("the cleanup names end_sessions when the sessions will not end before an objectOwner that is not a grantable role is used, and has handed nothing over", async () => {
+    given("retired");
+    db.sessions.push({ usename: LOGIN, outlives: Infinity });
+
+    await expect(
+      dataOf(cleanUp({ objectOwner: "postgres" }))
+    ).resolves.toMatchObject({
+      type: "upstream_unavailable",
+      payload: { login: LOGIN, sessions: 1, step: "end_sessions" },
+    });
+
+    expect(db.calls).not.toContain("connectableDatabases");
+  });
+
+  it("the cleanup names the second of three databases, not the target's own, after it has released the first", async () => {
+    db = fakeDatabase(
+      { databases: ["billing", "orders", "postgres"] },
+      journal
+    );
+    given("retired");
+    db.objects.push(
+      owned("billing", "billing.public.ledger"),
+      owned("orders", "orders.public.drafts")
+    );
+    db.failOn("REASSIGN OWNED", pgError("57014"), "orders");
+
+    await expect(dataOf(cleanUp())).resolves.toEqual({
+      type: "upstream_unavailable",
+      message:
+        "The connector could not reach PostgreSQL, or PostgreSQL did not answer in time. Check the network path from the connector to the target.",
+      payload: { sqlState: "57014", step: "release_owned", database: "orders" },
+    });
+
+    expect(db.objects).toEqual([
+      { ...owned("billing", "billing.public.ledger"), owner: "analyst" },
+      owned("orders", "orders.public.drafts"),
+    ]);
+    expect(
+      log.lines.filter((line) => line.includes("released what the grant"))
+    ).toHaveLength(1);
+    expect(log.lines.join("")).toContain('"database":"billing"');
+  });
+
+  it("leaves a failure that is not a ConnectorError as it is, with no step", async () => {
+    given("active");
+    db.sessions.push({ usename: LOGIN });
+    const failure = new Error("the wait failed");
+    wait = async () => {
+      throw failure;
+    };
+
+    const error = await errorOf(cutOff());
+
+    expect(error).not.toBeInstanceOf(ConnectorError);
+    expect(error.cause).toBe(failure);
+  });
+
+  it("the cleanup names the database when the manager's sign-in to it is refused", async () => {
+    given("retired");
+    db.failOn("BEGIN", pgError("28P01"), "orders");
+
+    await expect(dataOf(cleanUp())).resolves.toMatchObject({
+      type: "insufficient_privileges",
+      payload: { sqlState: "28P01", step: "release_owned", database: "orders" },
+    });
   });
 });

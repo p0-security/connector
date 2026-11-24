@@ -126,12 +126,13 @@ export const router = (
       .query(async ({ input, ctx }): Promise<InstallValidation> => {
         const { target } = input;
         const { host, port, database } = target;
-        const logger = ctx.logger.child({ host, port, database });
+        const scope = ctx.logger.child({ host, port });
+        const logger = scope.child({ database });
         const secret = await at("manager_mapping", host, async () =>
           managerSecretFor(host, dependencies.env)
         );
         const validation = await at("sign_in", host, () =>
-          withManager(target, secret, dependencies, logger, (session) =>
+          withManager(target, secret, dependencies, scope, (session) =>
             checkManager(session, host)
           )
         );

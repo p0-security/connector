@@ -278,6 +278,35 @@ The connector puts no value into SQL itself (`src/postgres/statement.ts`):
   So the password is in no server log and no `pg_stat_statements` row. The verifier is in the
   statement's text, so the connector never logs a statement, and no error it throws holds one.
 
+### Failed steps
+
+A failure of `setPoliciesForUser` with no policies or of `deleteUser` is a `ConnectorError`
+whose payload names where it came from: the step in `step`, and for a step that works in one
+database, the database it was working in, in `database`, which need not be the request's
+`target.database`. The error keeps its type, its message and its other payload keys
+(`sqlState`, `login`, `sessions`, `rolename`, `state`). Neither value is sensitive, and neither
+is an object's name. A failure that is not a `ConnectorError` is thrown as it is. The steps
+(`REVOKE_STEPS` in `src/revoke-step.ts`):
+
+| `step`            | Operation | What it was doing                                                                                                                                                                                                                  | `database` |
+| ----------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| `read_login`      | both      | Reading the manager secret, signing in to the target and looking up the grant login. A `deleteUser` refusal of a login that has not been cut off is also this step.                                                                | no         |
+| `revoke_roles`    | cutoff    | Taking back the memberships the manager granted the login (step 1).                                                                                                                                                                | no         |
+| `retire_login`    | cutoff    | Setting the login to `NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL`, with its attempts (step 2).                                                                                                                                       | no         |
+| `end_sessions`    | both      | Ending and counting the login's sessions: between two attempts of `retire_login` and after it (steps 3 and 4) in the cutoff, and in `deleteUser` before anything is handed over (step 4) and before the login is dropped (step 6). | no         |
+| `read_ownership`  | cleanup   | Checking `objectOwner` against the grantable roles and, when it is not one, reading what the login owns (step 1).                                                                                                                  | no         |
+| `delete_secret`   | cleanup   | Deleting the grant secret (step 2).                                                                                                                                                                                                | no         |
+| `take_privileges` | cleanup   | Granting the login to the manager (step 3).                                                                                                                                                                                        | no         |
+| `list_databases`  | cleanup   | Listing the databases the manager can connect to.                                                                                                                                                                                  | no         |
+| `release_owned`   | cleanup   | `REASSIGN OWNED` and `DROP OWNED` in one database, with the sign-in to it (step 5).                                                                                                                                                | yes        |
+| `drop_login`      | cleanup   | `DROP ROLE` (step 7).                                                                                                                                                                                                              | no         |
+
+When a call fails, the connector has logged an info line for each durable point it passed: the
+grant secret deleted, the roles revoked (with the list), the login retired, each database
+released (with the database's name in `database`) and the login dropped. None holds a statement.
+Each session of the connector's own logs with the database it is signed in to, so a line about
+a connection that would not close, or a transaction that would not roll back, names it.
+
 ### Install validation
 
 `pg-vaulted.install.validation.get` takes `{ target }`. It runs these checks in order and stops
@@ -657,7 +686,9 @@ Every primitive is implemented. What is not done, or not measured:
 - The cleanup cannot take a privilege that a role whose privileges the manager does not hold
   granted the login, and cannot reach a database the manager cannot connect to. In both cases
   `deleteUser` throws `dependency_violation` on every call until someone with the privilege
-  steps in. Nothing tells the customer which object it is: the error holds only the SQLSTATE.
+  steps in. The error names the step (`drop_login`) and the SQLSTATE, and a failure inside a
+  database also names the database (see [Failed steps](#failed-steps)). It still does not name
+  the object, and a `DROP ROLE` that PostgreSQL refuses does not name a database either.
 - A grant login that owns an object while `objectOwner` is not a grantable role is refused, on
   every call, with `validation_error`. The cleanup never drops an object, so the login and its
   secret stay until someone hands the objects to another role, or the owner becomes grantable.

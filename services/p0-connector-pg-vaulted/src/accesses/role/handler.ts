@@ -38,6 +38,7 @@ import {
 import type { PgSession } from "../../postgres/client.ts";
 import { SALT_BYTES, scramVerifier } from "../../postgres/scram.ts";
 import { execute } from "../../postgres/statement.ts";
+import { at } from "../../revoke-step.ts";
 import { type RoleSchema, spec } from "./definition.ts";
 
 /** What `list` returns for each type of its query, by name. */
@@ -70,6 +71,7 @@ export const newRolePrimitives = (
    * The call's logger, its grant secrets, and a way to run as the target's
    * manager. It refuses a grant secret that belongs to another target than
    * the request's, before the call reaches Secrets Manager or PostgreSQL.
+   * `loggerIn` is the logger of a line about one of the target's databases.
    */
   const forGrant = (context: RequestContext, login: string) => {
     const { requestId, target, secrets, secretName } = context;
@@ -83,13 +85,16 @@ export const newRolePrimitives = (
         payload: { host },
       });
     }
-    const logger = ctx.logger.child({ requestId, host, port, database, login });
+    // Without `database`, which each session and each line about a database
+    // binds for itself, so that a line never holds the key twice.
+    const scope = ctx.logger.child({ requestId, host, port, login });
     return {
-      logger,
+      logger: scope.child({ database }),
+      loggerIn: (name: string) => scope.child({ database: name }),
       grantSecrets: newGrantSecretStore(secrets.region, dependencies),
       asManager: <T>(
         run: (session: PgSession, inDatabase: InDatabase) => Promise<T>
-      ) => withManager(target, secret, dependencies, logger, run),
+      ) => withManager(target, secret, dependencies, scope, run),
     };
   };
 
@@ -165,45 +170,69 @@ export const newRolePrimitives = (
     },
 
     deleteUser: async (context, login) => {
-      const { logger, grantSecrets, asManager } = forGrant(context, login);
+      const { logger, loggerIn, grantSecrets, asManager } = forGrant(
+        context,
+        login
+      );
       const { secretName, objectOwner: owner } = context;
       const { wait = (ms) => sleep(ms) } = dependencies;
-      const { from, databases } = await asManager(
-        async ({ query }, inDatabase) => {
+      // A failure that no step below names is the manager secret's, the
+      // sign-in's or the first look at the login's.
+      const { from, databases } = await at("read_login", () =>
+        asManager(async ({ query }, inDatabase) => {
           const cleanup = await readCleanup(query, { login, owner });
           // Before the login is touched: `getUser` finds a retired login
           // without its secret, so a cleanup that stops after this is found
           // and finished by the next call.
-          await grantSecrets.remove(secretName);
-          if (!cleanup.drop) return { from: cleanup.from, databases: [] };
+          await at("delete_secret", () => grantSecrets.remove(secretName));
+          logger.info("deleted the grant secret");
+          const { drop } = cleanup;
+          if (!drop) return { from: cleanup.from, databases: [] };
           // Each of these statements is its own transaction. The grant is
           // committed here because every database below needs it.
-          await takeGrantLoginPrivileges(query, login);
+          await at("take_privileges", () =>
+            takeGrantLoginPrivileges(query, login)
+          );
           // With no owner to hand objects to, `DROP OWNED` below drops
           // whatever the login owns. It checks that the login owns nothing,
           // so no session of the login may still be able to create something.
           if (!cleanup.ownerIsGrantable) {
-            await endGrantLoginSessions(query, login, wait);
+            await at("end_sessions", () =>
+              endGrantLoginSessions(query, login, wait)
+            );
           }
-          const connectable = await listConnectableDatabases(query);
+          const connectable = await at("list_databases", () =>
+            listConnectableDatabases(query)
+          );
           for (const database of connectable) {
-            await inDatabase(database, (there) =>
-              there.committed((inTransaction) =>
-                releaseOwned(inTransaction, {
-                  login,
-                  owner,
-                  ownerIsGrantable: cleanup.ownerIsGrantable,
-                })
-              )
+            await at(
+              "release_owned",
+              () =>
+                inDatabase(database, (there) =>
+                  there.committed((inTransaction) =>
+                    releaseOwned(inTransaction, {
+                      login,
+                      owner,
+                      ownerIsGrantable: cleanup.ownerIsGrantable,
+                    })
+                  )
+                ),
+              database
+            );
+            loggerIn(database).info(
+              "released what the grant login owns and was granted in the database"
             );
           }
           // PostgreSQL drops a role whose session is still open, and the
           // session lives on under no name, where no later call finds it.
           // A session the cutoff missed has had time to show by now.
-          await endGrantLoginSessions(query, login, wait);
-          await execute(query, cleanup.drop);
+          await at("end_sessions", () =>
+            endGrantLoginSessions(query, login, wait)
+          );
+          await at("drop_login", () => execute(query, drop));
+          logger.info("dropped the grant login");
           return { from: cleanup.from, databases: connectable };
-        }
+        })
       );
       logger.info(
         { from, to: "absent", owner, databases },
@@ -215,8 +244,10 @@ export const newRolePrimitives = (
       const { logger, asManager } = forGrant(context, login);
       if (policies.length === 0) {
         const { wait = (ms) => sleep(ms) } = dependencies;
-        const { from, revoked, sessionsEnded } = await asManager((session) =>
-          retireGrantLogin(session, login, wait)
+        // A failure that no step of the cutoff names is the manager secret's,
+        // the sign-in's or the first look at the login's.
+        const { from, revoked, sessionsEnded } = await at("read_login", () =>
+          asManager((session) => retireGrantLogin(session, login, wait, logger))
         );
         logger.info(
           { from, revoked, sessionsEnded },
@@ -242,15 +273,18 @@ export const newRolePrimitives = (
 
     list: async ({ type, context: target }) => {
       const { host, port, database } = target;
-      const logger = ctx.logger.child({ host, port, database, type });
+      const scope = ctx.logger.child({ host, port, type });
       const names = await withManager(
         target,
         managerSecretFor(host, dependencies.env),
         dependencies,
-        logger,
+        scope,
         ({ query }) => LISTERS[type](query)
       );
-      logger.info({ count: names.length }, "listed from the PostgreSQL target");
+      scope.info(
+        { database, count: names.length },
+        "listed from the PostgreSQL target"
+      );
       return names.map((name) => ({ key: name, value: name }));
     },
   };

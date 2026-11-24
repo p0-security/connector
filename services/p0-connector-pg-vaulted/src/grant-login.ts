@@ -1,6 +1,7 @@
 import {
   ConnectorError,
   type ConnectorErrorOptions,
+  type Logger,
 } from "@p0security/connector-core";
 
 import { isIdentifier } from "./identifier.ts";
@@ -20,6 +21,7 @@ import {
 } from "./postgres/catalog.ts";
 import type { PgQuery, PgSession } from "./postgres/client.ts";
 import { type Statement, execute } from "./postgres/statement.ts";
+import { at } from "./revoke-step.ts";
 
 /**
  * The one state a grant login is in. It is read from the catalog on each
@@ -356,13 +358,18 @@ const settle = async <T>(run: () => Promise<T>): Promise<Outcome<T>> => {
  * When several steps fail, the call throws the failure of step 2, else of
  * step 1, else of step 3: the login that can still sign in is the worst.
  *
+ * Each step's failure carries the step it came from in `payload.step`
+ * (`revoke_roles`, `retire_login`, `end_sessions`), and an info line says
+ * that its durable work is done: the revokes' commit, and the retirement's.
+ *
  * Returns the state the login was in, the roles step 1 revoked and how many
  * sessions step 3 ended. With no login it changes nothing.
  */
 export const retireGrantLogin = async (
   { query, committed }: PgSession,
   login: string,
-  wait: (ms: number) => Promise<void>
+  wait: (ms: number) => Promise<void>,
+  logger: Logger
 ) => {
   const from = await readGrantLoginState(query, login);
   const step = LIFECYCLE[from].retire;
@@ -381,18 +388,30 @@ export const retireGrantLogin = async (
         return await retire();
       } catch (error) {
         if (!isStalled(error) || attempt === RETIRE_ATTEMPTS) throw error;
-        await endSessions(query, login);
+        await at("end_sessions", () => endSessions(query, login));
       }
     }
   };
   const revoked = await settle(() =>
-    committed((inTransaction) =>
-      revokeManagerGrants(inTransaction, login, () => true)
-    )
+    at("revoke_roles", async () => {
+      const roles = await committed((inTransaction) =>
+        revokeManagerGrants(inTransaction, login, () => true)
+      );
+      logger.info(
+        { revoked: roles },
+        "revoked the roles the manager granted the grant login"
+      );
+      return roles;
+    })
   );
-  const retired = await settle(retireWithRetries);
+  const retired = await settle(() =>
+    at("retire_login", async () => {
+      await retireWithRetries();
+      logger.info("retired the grant login: it cannot log in");
+    })
+  );
   const sessionsEnded = await settle(() =>
-    endGrantLoginSessions(query, login, wait)
+    at("end_sessions", () => endGrantLoginSessions(query, login, wait))
   );
   // The retire error first, then the revoke error, then the session error.
   if (!retired.ok) throw retired.error;
@@ -414,7 +433,8 @@ export const retireGrantLogin = async (
  * An `owner` that is not a grantable role cannot take over anything, so the
  * login must own nothing, in any database. When it owns something, this
  * throws, before the cleanup writes anything: the cleanup never drops an
- * object.
+ * object. A failure of the reads of the owner and of the ownership is the
+ * step `read_ownership`.
  */
 export const readCleanup = async (
   query: PgQuery,
@@ -429,11 +449,13 @@ export const readCleanup = async (
   const step = LIFECYCLE[from].drop;
   if (step === NOTHING) return { from, ownerIsGrantable: false };
   const template = templateOf(step, from, login);
-  const ownerIsGrantable = await holds(query, IS_GRANTABLE_ROLE_SQL, [owner]);
-  if (!ownerIsGrantable && (await holds(query, OWNS_ANYTHING_SQL, [login]))) {
-    throw notGrantable(login, owner);
-  }
-  return { from, drop: { template, args: [login] }, ownerIsGrantable };
+  return at("read_ownership", async () => {
+    const ownerIsGrantable = await holds(query, IS_GRANTABLE_ROLE_SQL, [owner]);
+    if (!ownerIsGrantable && (await holds(query, OWNS_ANYTHING_SQL, [login]))) {
+      throw notGrantable(login, owner);
+    }
+    return { from, drop: { template, args: [login] }, ownerIsGrantable };
+  });
 };
 
 /**
