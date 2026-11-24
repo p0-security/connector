@@ -3,6 +3,7 @@ import { inspect } from "node:util";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  CONNECTOR_ENV,
   MANAGER,
   capturingLogger,
   dataOf,
@@ -30,6 +31,7 @@ beforeEach(() => {
 });
 
 const dependencies = (overrides: Dependencies = {}): Dependencies => ({
+  env: CONNECTOR_ENV,
   connectSecretManager: vault.connectSecretManager,
   secretsManagerSdk: vault.secretsManagerSdk,
   connect: db.connect,
@@ -230,14 +232,14 @@ describe("list", () => {
     ]);
   });
 
-  it("reads the manager secret the target names, in the region its ARN names", async () => {
-    const managerSecretArn =
-      "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:billing-manager-AbCdEf";
-    vault = fakeSecretStore({ [managerSecretArn]: JSON.stringify(MANAGER) });
+  it("reads a manager secret P0 names in the connector's own region", async () => {
+    const managerSecret =
+      "p0/install/postgres/vpc-0a1b2c3d/billing-prod/p0manager";
+    vault = fakeSecretStore({ [managerSecret]: JSON.stringify(MANAGER) });
 
     await expect(
-      role().list({
-        query: { type: "role", context: { ...target, managerSecretArn } },
+      role({ env: { AWS_REGION: "eu-west-1" } }).list({
+        query: { type: "role", context: { ...target, managerSecret } },
       })
     ).resolves.toEqual([
       { key: "analyst", value: "analyst" },
@@ -245,11 +247,36 @@ describe("list", () => {
     ]);
 
     expect(vault.reads).toEqual([
-      {
-        config: { provider: "aws", region: "cn-north-1" },
-        ref: managerSecretArn,
-      },
+      { config: { provider: "aws", region: "eu-west-1" }, ref: managerSecret },
     ]);
+  });
+
+  it("reads a manager secret RDS manages in the region its ARN names", async () => {
+    const managerSecret =
+      "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123";
+    vault = fakeSecretStore({ [managerSecret]: JSON.stringify(MANAGER) });
+
+    await expect(
+      role().list({
+        query: { type: "role", context: { ...target, managerSecret } },
+      })
+    ).resolves.toEqual([
+      { key: "analyst", value: "analyst" },
+      { key: "reporting", value: "reporting" },
+    ]);
+
+    expect(vault.reads).toEqual([
+      { config: { provider: "aws", region: "cn-north-1" }, ref: managerSecret },
+    ]);
+  });
+
+  it("fails with no region in the connector's environment, for a secret P0 names", async () => {
+    const data = await dataOf(list("role", { env: {} }));
+
+    expect(data.type).toBe("validation_error");
+    expect(data.message).toContain("AWS_REGION");
+    expect(vault.reads).toEqual([]);
+    expect(db.signIns).toEqual([]);
   });
 
   it("fails as not found when the target's manager secret does not exist", async () => {

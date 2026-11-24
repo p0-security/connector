@@ -35,8 +35,12 @@ import type {
 } from "../postgres/client.ts";
 import { target } from "./fixtures.ts";
 
-/** The fixture target's manager secret. */
-export const MANAGER_SECRET_ARN = target.managerSecretArn;
+/** The fixture target's manager secret, a secret P0 names. */
+export const MANAGER_SECRET = target.managerSecret;
+
+/** The connector's environment in Lambda, which reads a manager secret P0
+ * names in its `AWS_REGION`. */
+export const CONNECTOR_ENV = { AWS_REGION: "us-east-1" };
 
 export const MANAGER = {
   username: "p0_manager",
@@ -140,14 +144,14 @@ const refOf = (ref: string) => ref as SecretRef;
  * secret with and creates, writes and deletes a grant secret with, and the
  * SDK client it describes a grant secret with.
  *
- * The readable values are by ARN, and hold the fixture manager's secret
+ * The readable values are by name or ARN, and hold the fixture manager's secret
  * unless given others. A grant secret is by name, in `secrets`, and is
  * created with no value, as the real client creates it. Every read is kept,
  * of whatever secret.
  */
 export const fakeSecretStore = (
   values: Record<string, SecretPayload> = {
-    [MANAGER_SECRET_ARN]: JSON.stringify(MANAGER),
+    [MANAGER_SECRET]: JSON.stringify(MANAGER),
   },
   journal: Journal = []
 ) => {

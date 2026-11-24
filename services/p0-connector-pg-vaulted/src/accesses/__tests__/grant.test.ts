@@ -3,9 +3,11 @@ import { inspect } from "node:util";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  CONNECTOR_ENV,
   type FakeRole,
   type Journal,
-  MANAGER_SECRET_ARN,
+  MANAGER,
+  MANAGER_SECRET,
   capturingLogger,
   dataOf,
   errorOf,
@@ -44,6 +46,7 @@ beforeEach(() => {
 });
 
 const dependencies = () => ({
+  env: CONNECTOR_ENV,
   connectSecretManager: vault.connectSecretManager,
   secretsManagerSdk: vault.secretsManagerSdk,
   connect: db.connect,
@@ -145,7 +148,7 @@ describe("identifyUser", () => {
     await identify();
 
     expect(journal).toEqual([
-      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      `getSecretValue ${MANAGER_SECRET}`,
       ["login", LOGIN],
       "close",
       `describeSecret ${SECRET}`,
@@ -161,7 +164,7 @@ describe("identifyUser", () => {
       await expect(identify()).resolves.toBe(LOGIN);
 
       expect(journal).toEqual([
-        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        `getSecretValue ${MANAGER_SECRET}`,
         ["login", LOGIN],
         "close",
       ]);
@@ -194,11 +197,11 @@ describe("provisionUser", () => {
     await expect(provision()).resolves.toBe(LOGIN);
 
     expect(journal).toEqual([
-      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      `getSecretValue ${MANAGER_SECRET}`,
       ["login", LOGIN],
       "close",
       `createSecret ${SECRET}`,
-      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      `getSecretValue ${MANAGER_SECRET}`,
       "BEGIN",
       ["login", LOGIN],
       [
@@ -293,7 +296,7 @@ describe("provisionUser", () => {
 
       expect(everything()).toEqual(before);
       expect(journal).toEqual([
-        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        `getSecretValue ${MANAGER_SECRET}`,
         ["login", LOGIN],
         "close",
         ...(state === "prepared" ? [`describeSecret ${SECRET}`] : []),
@@ -340,7 +343,7 @@ describe("provisionUser", () => {
     expect(data.payload).toEqual({ login: LOGIN, state: "retired" });
   });
 
-  it("keeps the grant secret in the request's region, and reads the manager secret in its own", async () => {
+  it("keeps the grant secret in the request's region, and reads a manager secret P0 names in the connector's", async () => {
     given("prepared", "empty");
 
     await provision({
@@ -352,12 +355,30 @@ describe("provisionUser", () => {
     expect(vault.reads).toEqual([
       {
         config: { provider: "aws", region: "us-east-1" },
-        ref: "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+        ref: "p0/install/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/p0manager",
       },
       {
         config: { provider: "aws", region: "us-east-1" },
-        ref: "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+        ref: "p0/install/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/p0manager",
       },
+    ]);
+  });
+
+  it("reads a manager secret RDS manages in the region its ARN names", async () => {
+    const managerSecret =
+      "arn:aws:secretsmanager:us-west-2:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123";
+    vault = fakeSecretStore(
+      { [managerSecret]: JSON.stringify(MANAGER) },
+      journal
+    );
+
+    await expect(
+      provision({ ...context, target: { ...context.target, managerSecret } })
+    ).resolves.toBe(LOGIN);
+
+    expect(vault.reads).toEqual([
+      { config: { provider: "aws", region: "us-west-2" }, ref: managerSecret },
+      { config: { provider: "aws", region: "us-west-2" }, ref: managerSecret },
     ]);
   });
 
@@ -369,14 +390,14 @@ describe("provisionUser", () => {
           given("prepared", "empty");
           vault.state.failDescribe = sdkError("AccessDeniedException");
         },
-        "Secrets Manager refused to let the connector look up the grant secret. Give the connector's role secretsmanager:DescribeSecret on the secrets under p0/postgres-ai/<vpc id>/.",
+        "Secrets Manager refused to let the connector look up the grant secret. Give the connector's role secretsmanager:DescribeSecret on the secrets under p0/secrets/postgres/<vpc id>/.",
       ],
       [
         "to create the grant secret",
         () => {
           vault.state.failNextCreate = new UnauthorizedError("aws");
         },
-        "Secrets Manager refused to let the connector create the grant secret. Give the connector's role secretsmanager:CreateSecret and secretsmanager:DescribeSecret on the secrets under p0/postgres-ai/<vpc id>/.",
+        "Secrets Manager refused to let the connector create the grant secret. Give the connector's role secretsmanager:CreateSecret and secretsmanager:DescribeSecret on the secrets under p0/secrets/postgres/<vpc id>/.",
       ],
     ])("%s, it leaves the database untouched", async (_, refuse, message) => {
       refuse();
@@ -408,7 +429,7 @@ describe("provisionUser", () => {
     const WRITE_REFUSED = {
       type: "insufficient_privileges",
       message:
-        "Secrets Manager refused to let the connector write the grant secret. Give the connector's role secretsmanager:PutSecretValue on the secrets under p0/postgres-ai/<vpc id>/.",
+        "Secrets Manager refused to let the connector write the grant secret. Give the connector's role secretsmanager:PutSecretValue on the secrets under p0/secrets/postgres/<vpc id>/.",
       payload: {},
     };
 
@@ -833,7 +854,7 @@ describe("setPoliciesForUser with policies", () => {
     await grant("analyst");
 
     expect(journal.filter((call) => typeof call === "string")).toEqual([
-      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      `getSecretValue ${MANAGER_SECRET}`,
       "BEGIN",
       `GRANT analyst TO ${LOGIN}`,
       `ALTER ROLE ${LOGIN} LOGIN VALID UNTIL '2026-12-01T00:00:00Z'`,
@@ -880,15 +901,25 @@ describe("a grant, from provisionUser to setPoliciesForUser", () => {
     await identify();
 
     expect(vault.reads.map(({ ref }) => ref)).toEqual([
-      MANAGER_SECRET_ARN,
-      MANAGER_SECRET_ARN,
-      MANAGER_SECRET_ARN,
-      MANAGER_SECRET_ARN,
+      MANAGER_SECRET,
+      MANAGER_SECRET,
+      MANAGER_SECRET,
+      MANAGER_SECRET,
     ]);
   });
 });
 
-describe("a grant secret of another target", () => {
+/** The request context, with `managerSecret` as the target's manager
+ * secret. */
+const withManagerSecret = (managerSecret: string) => ({
+  ...context,
+  target: { ...context.target, managerSecret },
+});
+
+const RDS_MANAGER_SECRET =
+  "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!cluster-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123";
+
+describe("a secret of another target", () => {
   const OTHER_TARGET_CONTEXTS = [
     [
       "a grant secret of another target",
@@ -898,6 +929,21 @@ describe("a grant secret of another target", () => {
       },
     ],
     ["another target id", { ...context, targetId: "billing-prod" }],
+    [
+      "a manager secret P0 names for another target",
+      withManagerSecret(
+        MANAGER_SECRET.replace("/orders-prod/", "/billing-prod/")
+      ),
+    ],
+    [
+      "a manager secret P0 names under another vpc",
+      withManagerSecret(
+        MANAGER_SECRET.replace(
+          "/vpc-0a1b2c3d4e5f67890/",
+          "/vpc-0a1b2c3d4e5f67891/"
+        )
+      ),
+    ],
   ] as const;
 
   const calls = {
@@ -954,13 +1000,35 @@ describe("a grant secret of another target", () => {
     }
   );
 
-  // The check compares two fields of one request, so a request that names
-  // another target in both passes it.
-  it("passes a request that names another target in both", async () => {
+  it("is no obstacle when the manager secret is one RDS manages", async () => {
+    vault = fakeSecretStore(
+      { [RDS_MANAGER_SECRET]: JSON.stringify(MANAGER) },
+      journal
+    );
+    given("prepared", "filled");
+
+    await expect(
+      calls.getUser(withManagerSecret(RDS_MANAGER_SECRET))
+    ).resolves.toBe(LOGIN);
+
+    expect(db.signIns).toHaveLength(1);
+  });
+
+  // The checks compare fields of one request, so a request that names
+  // another target in all three passes them.
+  it("passes a request that names another target in all three", async () => {
+    const managerSecret = MANAGER_SECRET.replace(
+      "/orders-prod/",
+      "/billing-prod/"
+    );
+    vault = fakeSecretStore(
+      { [managerSecret]: JSON.stringify(MANAGER) },
+      journal
+    );
     given("prepared", "filled");
 
     await calls.getUser({
-      ...context,
+      ...withManagerSecret(managerSecret),
       targetId: "billing-prod",
       secretName: SECRET.replace("/orders-prod/", "/billing-prod/"),
     });

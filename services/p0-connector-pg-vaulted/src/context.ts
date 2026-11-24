@@ -16,34 +16,47 @@ export const grantLogin = z.string().regex(GRANT_LOGIN_PATTERN);
 // outside AWS's regional ones.
 const REGION = "[a-z]{2}(-[a-z]+)+-\\d{1,2}";
 
-/** Where every grant secret's name starts. */
-const GRANT_SECRET_PREFIX = "p0/postgres-ai/";
+/** A VPC's id, as the `<vpc id>` segment of a secret's name holds it. */
+const VPC_ID = "vpc-[0-9a-f]{8,17}";
 
-/** A Secrets Manager secret's full ARN, in the `aws`, `aws-cn` or
- * `aws-us-gov` partition. A secret's name alone is refused. `!` is for the
- * secrets RDS manages, which it names `rds!db-<id>` and `rds!cluster-<id>`. */
-const MANAGER_SECRET_ARN_PATTERN = new RegExp(
-  `^arn:aws(-cn|-us-gov)?:secretsmanager:${REGION}:\\d{12}:secret:[A-Za-z0-9/_+=.@!-]{1,512}$`
-);
+/** P0's id of a target, as the `<target id>` segment of a secret's name
+ * holds it. */
+const TARGET_ID = "[A-Za-z0-9][A-Za-z0-9-]{0,62}";
 
-/** The secret's name, with the suffix Secrets Manager adds, from an ARN that
- * matches {@link MANAGER_SECRET_ARN_PATTERN}. */
-const secretNameOfArn = (arn: string) => arn.split(":")[6] ?? "";
+/** A lowercase UUID, as RDS writes one in the name of a secret it manages. */
+const UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
 /**
- * The ARN of the secret that holds the target's manager login. The P0
- * control plane names it, as it names the private key secret of the
- * Snowflake and GitHub (AI) connectors, and the connector's IAM limits which
- * secrets it can read. It is never a grant secret: the connector writes
- * those and must not read one, and a grant must never write over the
- * manager's login.
+ * The name of a manager secret P0 names:
+ * `p0/install/postgres/<vpc id>/<target id>/p0manager`. The customer creates
+ * it, in the connector's own account and region.
  */
-const managerSecretArn = z
+export const MANAGER_SECRET_NAME_PATTERN = new RegExp(
+  `^p0/install/postgres/${VPC_ID}/${TARGET_ID}/p0manager$`
+);
+
+/**
+ * The full ARN of a manager secret RDS manages, in the `aws`, `aws-cn` or
+ * `aws-us-gov` partition. RDS names the secret `rds!db-<uuid>` or
+ * `rds!cluster-<uuid>`, and Secrets Manager adds a suffix of six characters.
+ */
+export const RDS_MANAGER_SECRET_ARN_PATTERN = new RegExp(
+  `^arn:aws(-cn|-us-gov)?:secretsmanager:${REGION}:\\d{12}:secret:rds!(db|cluster)-${UUID}-[A-Za-z0-9]{6}$`
+);
+
+/**
+ * The secret that holds the target's manager login: the name of a secret P0
+ * names, or the ARN of a secret RDS manages. Anything else is refused. The
+ * connector's IAM limits which secrets it can read.
+ */
+const managerSecret = z
   .string()
-  .regex(MANAGER_SECRET_ARN_PATTERN)
-  .refine((arn) => !secretNameOfArn(arn).startsWith(GRANT_SECRET_PREFIX), {
-    message: "managerSecretArn must not name a grant secret",
-  });
+  .refine(
+    (secret) =>
+      MANAGER_SECRET_NAME_PATTERN.test(secret) ||
+      RDS_MANAGER_SECRET_ARN_PATTERN.test(secret),
+    "managerSecret must be a name p0/install/postgres/<vpc id>/<target id>/p0manager, or the ARN of a secret RDS manages"
+  );
 
 /**
  * One target: a PostgreSQL instance or cluster P0 manages, the database the
@@ -55,7 +68,7 @@ export const target = z.object({
   // 65535 is the highest TCP port (input validation only)
   port: z.coerce.number().int().min(1).max(65535),
   database: z.string().min(1),
-  managerSecretArn,
+  managerSecret,
 });
 
 export type Target = z.infer<typeof target>;
@@ -70,14 +83,25 @@ const region = z.string().regex(new RegExp(`^${REGION}$`));
  * `manager` is the secret manager, not the manager login. */
 const secrets = z.object({ manager: z.literal("aws"), region });
 
-/** P0's id of a target, as the `<target id>` segment of a grant secret's
- * name holds it. */
-const TARGET_ID = "[A-Za-z0-9][A-Za-z0-9-]{0,62}";
-
-/** A grant secret's name: `p0/postgres-ai/<vpc id>/<target id>/<grant login>`. */
+/**
+ * A grant secret's name:
+ * `p0/secrets/postgres/<vpc id>/<target id>/<grant login>`. No manager secret
+ * has a name under `p0/secrets/`, so a grant never writes over the manager's
+ * login.
+ */
 export const GRANT_SECRET_NAME_PATTERN = new RegExp(
-  `^${GRANT_SECRET_PREFIX}vpc-[0-9a-f]{8,17}/${TARGET_ID}/p0v_[0-9a-f]{32}$`
+  `^p0/secrets/postgres/${VPC_ID}/${TARGET_ID}/p0v_[0-9a-f]{32}$`
 );
+
+/**
+ * The `<vpc id>` and `<target id>` segments of a name that matches
+ * {@link GRANT_SECRET_NAME_PATTERN} or {@link MANAGER_SECRET_NAME_PATTERN},
+ * which both hold them as their 4th and 5th segments.
+ */
+const segmentsOf = (name: string) => {
+  const [, , , vpcId, targetId] = name.split("/");
+  return { vpcId, targetId };
+};
 
 /**
  * Whether `secretName`, a name that matches {@link GRANT_SECRET_NAME_PATTERN},
@@ -85,7 +109,26 @@ export const GRANT_SECRET_NAME_PATTERN = new RegExp(
  * that id.
  */
 export const isGrantSecretOfTarget = (secretName: string, targetId: string) =>
-  secretName.split("/")[3] === targetId;
+  segmentsOf(secretName).targetId === targetId;
+
+/**
+ * Whether `managerSecret`, a target's manager secret, may sign in for a
+ * request whose grant secret is `secretName` and whose target is `targetId`.
+ * A secret P0 names must be under the grant secret's `<vpc id>` and under
+ * `targetId`. A secret RDS manages names no target, so nothing ties it to
+ * one.
+ */
+export const isManagerSecretOfTarget = (
+  managerSecret: string,
+  { secretName, targetId }: { secretName: string; targetId: string }
+) => {
+  if (RDS_MANAGER_SECRET_ARN_PATTERN.test(managerSecret)) return true;
+  const manager = segmentsOf(managerSecret);
+  return (
+    manager.vpcId === segmentsOf(secretName).vpcId &&
+    manager.targetId === targetId
+  );
+};
 
 /**
  * Whether `secretName` is the grant secret of `login`: its last segment is
@@ -107,8 +150,8 @@ const MAX_COMMENT_LENGTH = 1000;
 export const requestContext = z.object({
   requestId: z.string().min(1),
   target,
-  /** P0's id of `target`. The `<target id>` segment of `secretName` must be
-   * this id. */
+  /** P0's id of `target`. The `<target id>` segment of `secretName`, and of
+   * a manager secret P0 names, must be this id. */
   targetId: z.string().regex(new RegExp(`^${TARGET_ID}$`)),
   secrets,
   /** The grant secret P0 names for the grant login. The connector writes the

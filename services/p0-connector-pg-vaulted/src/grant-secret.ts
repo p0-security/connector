@@ -72,7 +72,7 @@ const toGrantSecretError = (call: keyof typeof CALLS, error: unknown) => {
   if (isRefusal(error)) {
     return new ConnectorError({
       type: "insufficient_privileges",
-      message: `Secrets Manager refused to let the connector ${words} the grant secret. Give the connector's role ${actions} on the secrets under p0/postgres-ai/<vpc id>/.`,
+      message: `Secrets Manager refused to let the connector ${words} the grant secret. Give the connector's role ${actions} on the secrets under p0/secrets/postgres/<vpc id>/.`,
       payload: {},
     });
   }

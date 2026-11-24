@@ -7,7 +7,7 @@ import {
 } from "@p0security/connector-secret-manager-client";
 import { z } from "zod";
 
-import type { Target } from "./context.ts";
+import { RDS_MANAGER_SECRET_ARN_PATTERN, type Target } from "./context.ts";
 import type { Dependencies } from "./dependencies.ts";
 import {
   type PgSession,
@@ -32,8 +32,9 @@ const parseJson = (text: string): unknown => {
   }
 };
 
-// The shared client's refs are a brand on a string, which only a cast makes.
-const refOf = (arn: string) => arn as SecretRef;
+// Secrets Manager takes a secret's name where it takes its ARN. The shared
+// client's refs are a brand on a string, which only a cast makes.
+const refOf = (secret: string) => secret as SecretRef;
 
 /**
  * A Secrets Manager failure, without its cause. The call that failed is the
@@ -68,19 +69,43 @@ const secretManagerError = (error: unknown) => {
 export type ManagerCredential = z.infer<typeof managerCredential>;
 
 /**
- * Reads the manager's username and password from the secret that
- * `target.managerSecretArn` names, in the region its ARN names. The request
- * names the secret, and the connector's IAM limits which secrets it can
- * read. Neither value is logged, and no error holds either.
+ * The region to read `managerSecret` in. A secret RDS manages is read in the
+ * region its ARN names. A secret P0 names is read in the connector's own
+ * region, which is the target's: the customer creates it there.
+ */
+const regionOf = (managerSecret: string, env: NodeJS.ProcessEnv) => {
+  if (RDS_MANAGER_SECRET_ARN_PATTERN.test(managerSecret)) {
+    const [, , , region = ""] = managerSecret.split(":");
+    return region;
+  }
+  if (!env.AWS_REGION) {
+    throw new ConnectorError({
+      type: "validation_error",
+      message:
+        "The connector's AWS_REGION environment variable is not set, so it does not know the region to read the manager secret in. AWS Lambda sets it.",
+      payload: {},
+    });
+  }
+  return env.AWS_REGION;
+};
+
+/**
+ * Reads the manager's username and password from `target.managerSecret`, in
+ * the region {@link regionOf} names. The request names the secret, and the
+ * connector's IAM limits which secrets it can read. Neither value is logged,
+ * and no error holds either.
  */
 export const readManagerCredential = async (
-  { managerSecretArn }: Target,
+  { managerSecret }: Target,
   dependencies: Dependencies
 ): Promise<ManagerCredential> => {
-  const { connectSecretManager = createSecretManagerClient } = dependencies;
-  const [, , , region = ""] = managerSecretArn.split(":");
+  const {
+    env = process.env,
+    connectSecretManager = createSecretManagerClient,
+  } = dependencies;
+  const region = regionOf(managerSecret, env);
   const { value } = await connectSecretManager({ provider: "aws", region })
-    .then((secrets) => secrets.getSecretValue({ ref: refOf(managerSecretArn) }))
+    .then((secrets) => secrets.getSecretValue({ ref: refOf(managerSecret) }))
     .catch((error: unknown) => {
       throw secretManagerError(error);
     });

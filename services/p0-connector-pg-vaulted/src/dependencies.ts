@@ -26,8 +26,12 @@ export type ConnectSecretManager = (
   deleteSecret: (params: { ref: SecretRef }) => Promise<unknown>;
 }>;
 
-/** What stands in for AWS, PostgreSQL, randomness and the clock in tests. */
+/** What stands in for the connector's environment, AWS, PostgreSQL,
+ * randomness and the clock in tests. */
 export type Dependencies = {
+  /** The connector's environment. Its `AWS_REGION`, which Lambda sets, is
+   * the region the connector runs in. */
+  env?: NodeJS.ProcessEnv;
   connectSecretManager?: ConnectSecretManager;
   /** The SDK client that describes a grant secret, in a region. */
   secretsManagerSdk?: (region: string) => Pick<SecretsManagerClient, "send">;

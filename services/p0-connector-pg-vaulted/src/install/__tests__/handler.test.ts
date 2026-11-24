@@ -3,8 +3,9 @@ import { inspect } from "node:util";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  CONNECTOR_ENV,
   MANAGER,
-  MANAGER_SECRET_ARN,
+  MANAGER_SECRET,
   capturingLogger,
   dataOf,
   errorOf,
@@ -33,6 +34,7 @@ beforeEach(() => {
 
 const validation = (overrides: Dependencies = {}) =>
   router(t, {
+    env: CONNECTOR_ENV,
     connectSecretManager: vault.connectSecretManager,
     connect: db.connect,
     ...overrides,
@@ -54,32 +56,76 @@ describe("install validation input", () => {
   });
 
   it.each([
-    ["a name alone", "orders-manager"],
+    ["a name P0 does not give", "orders-manager"],
     [
-      "an ARN with no account",
-      "arn:aws:secretsmanager:us-east-1::secret:orders-manager-AbCdEf",
+      "a name with another leaf",
+      "p0/install/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/manager",
+    ],
+    [
+      "a name with no p0manager leaf",
+      "p0/install/postgres/vpc-0a1b2c3d4e5f67890/orders-prod",
+    ],
+    [
+      "a name under another prefix",
+      "p0/secrets/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/p0manager",
+    ],
+    ["a name with no vpc id", "p0/install/postgres/orders-prod/p0manager"],
+    [
+      "a name with an uppercase vpc id",
+      "p0/install/postgres/vpc-0A1B2C3D/orders-prod/p0manager",
+    ],
+    [
+      "a name with a target id P0 does not give",
+      "p0/install/postgres/vpc-0a1b2c3d/-orders/p0manager",
+    ],
+    [
+      "the ARN of a secret RDS does not manage",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+    ],
+    [
+      "the ARN of a secret P0 names",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:p0/install/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/p0manager-AbCdEf",
+    ],
+    [
+      "an RDS secret's name with no ARN",
+      "rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+    ],
+    [
+      "an RDS secret's ARN with an uppercase uuid",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-0A1B2C3D-4E5F-6789-ABCD-EF0123456789-AbC123",
+    ],
+    [
+      "an RDS secret's ARN with no suffix",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789",
+    ],
+    [
+      "an RDS secret's ARN with a short suffix",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC12",
+    ],
+    [
+      "an RDS secret's ARN with a uuid cut short",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef01234567-AbC123",
+    ],
+    [
+      "an RDS secret's ARN of another kind",
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!proxy-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+    ],
+    [
+      "an RDS secret's ARN with no account",
+      "arn:aws:secretsmanager:us-east-1::secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+    ],
+    [
+      "an RDS secret's ARN in an unknown partition",
+      "arn:aws-iso:secretsmanager:us-iso-east-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
     ],
     [
       "an ARN of another service",
-      "arn:aws:ssm:us-east-1:123456789012:parameter/orders-manager",
+      "arn:aws:ssm:us-east-1:123456789012:parameter/rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
     ],
-    [
-      "an ARN in an unknown partition",
-      "arn:aws-iso:secretsmanager:us-iso-east-1:123456789012:secret:orders-manager-AbCdEf",
-    ],
-  ])("refuses %s as the manager secret", async (_, managerSecretArn) => {
+  ])("refuses %s as the manager secret", async (_, managerSecret) => {
     await expect(
-      validation().get({ target: { ...target, managerSecretArn } })
-    ).rejects.toThrow("managerSecretArn");
-  });
-
-  it("refuses a grant secret as the manager secret", async () => {
-    const managerSecretArn =
-      "arn:aws:secretsmanager:us-east-1:123456789012:secret:p0/postgres-ai/vpc-0abc1234/orders-prod/p0v_0123456789abcdef0123456789abcdef-AbCdEf";
-
-    await expect(
-      validation().get({ target: { ...target, managerSecretArn } })
-    ).rejects.toThrow("managerSecretArn must not name a grant secret");
+      validation().get({ target: { ...target, managerSecret } })
+    ).rejects.toThrow("managerSecret must be a name");
   });
 });
 
@@ -90,13 +136,13 @@ describe("install validation", () => {
     });
   });
 
-  it("reads the manager secret in the region its ARN names, and signs in with it", async () => {
+  it("reads the manager secret in the connector's region, and signs in with it", async () => {
     await validate();
 
     expect(vault.reads).toEqual([
       {
         config: { provider: "aws", region: "us-east-1" },
-        ref: "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+        ref: "p0/install/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/p0manager",
       },
     ]);
     expect(db.signIns).toEqual([
@@ -177,35 +223,76 @@ describe("install validation", () => {
 });
 
 describe("manager_secret", () => {
+  it("reads a secret P0 names in the connector's own region", async () => {
+    await expect(
+      validate({ env: { AWS_REGION: "eu-central-1" } })
+    ).resolves.toEqual({ grantableRoles: ["analyst", "reporting"] });
+    expect(vault.reads).toEqual([
+      {
+        config: { provider: "aws", region: "eu-central-1" },
+        ref: "p0/install/postgres/vpc-0a1b2c3d4e5f67890/orders-prod/p0manager",
+      },
+    ]);
+  });
+
   it.each([
-    [
-      "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
-      "us-east-1",
-    ],
-    [
-      "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:orders-manager-AbCdEf",
-      "cn-north-1",
-    ],
-    [
-      "arn:aws-us-gov:secretsmanager:us-gov-west-1:123456789012:secret:p0/orders-manager-AbCdEf",
-      "us-gov-west-1",
-    ],
     [
       "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
       "us-east-1",
     ],
     [
-      "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!cluster-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
-      "us-east-1",
+      "arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:rds!cluster-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+      "ap-southeast-2",
     ],
-  ])("reads %s in %s", async (managerSecretArn, region) => {
-    vault = fakeSecretStore({ [managerSecretArn]: JSON.stringify(MANAGER) });
+    [
+      "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+      "cn-north-1",
+    ],
+    [
+      "arn:aws-us-gov:secretsmanager:us-gov-west-1:123456789012:secret:rds!cluster-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123",
+      "us-gov-west-1",
+    ],
+  ])(
+    "reads the secret RDS manages %s in its ARN's region, %s, whatever the connector's",
+    async (managerSecret, region) => {
+      vault = fakeSecretStore({ [managerSecret]: JSON.stringify(MANAGER) });
+
+      await expect(
+        validation({ env: { AWS_REGION: "eu-central-1" } }).get({
+          target: { ...target, managerSecret },
+        })
+      ).resolves.toEqual({ grantableRoles: ["analyst", "reporting"] });
+      expect(vault.reads).toEqual([
+        { config: { provider: "aws", region }, ref: managerSecret },
+      ]);
+    }
+  );
+
+  it.each([{}, { AWS_REGION: "" }])(
+    "fails, and reads nothing, when the connector's environment %j has no region",
+    async (env) => {
+      const data = await dataOf(validate({ env }));
+
+      expect(data.type).toBe("validation_error");
+      expect(data.message).toBe(
+        "The connector's AWS_REGION environment variable is not set, so it does not know the region to read the manager secret in. AWS Lambda sets it."
+      );
+      expect(data.payload).toEqual({ step: "manager_secret", host: HOST });
+      expect(vault.reads).toEqual([]);
+      expect(db.signIns).toEqual([]);
+    }
+  );
+
+  it("reads a secret RDS manages with no region in the connector's environment", async () => {
+    const managerSecret =
+      "arn:aws:secretsmanager:us-west-2:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123";
+    vault = fakeSecretStore({ [managerSecret]: JSON.stringify(MANAGER) });
 
     await expect(
-      validation().get({ target: { ...target, managerSecretArn } })
+      validation({ env: {} }).get({ target: { ...target, managerSecret } })
     ).resolves.toEqual({ grantableRoles: ["analyst", "reporting"] });
     expect(vault.reads).toEqual([
-      { config: { provider: "aws", region }, ref: managerSecretArn },
+      { config: { provider: "aws", region: "us-west-2" }, ref: managerSecret },
     ]);
   });
 
@@ -253,7 +340,7 @@ describe("manager_secret", () => {
   ])(
     "fails as a validation error when the secret's value %s",
     async (_, value) => {
-      vault = fakeSecretStore({ [MANAGER_SECRET_ARN]: value });
+      vault = fakeSecretStore({ [MANAGER_SECRET]: value });
 
       const data = await dataOf(validate());
 
@@ -265,7 +352,7 @@ describe("manager_secret", () => {
 
   it("reads a binary value, and ignores the keys AWS adds for RDS", async () => {
     vault = fakeSecretStore({
-      [MANAGER_SECRET_ARN]: Buffer.from(
+      [MANAGER_SECRET]: Buffer.from(
         JSON.stringify({
           engine: "postgres",
           host: "another.example.com",
@@ -423,7 +510,7 @@ describe("the manager's password", () => {
 
   it("is in no error and no log line when the secret's value is not JSON", async () => {
     vault = fakeSecretStore({
-      [MANAGER_SECRET_ARN]: `password=${MANAGER.password}`,
+      [MANAGER_SECRET]: `password=${MANAGER.password}`,
     });
 
     const shown = await shownBy(validate());
@@ -440,6 +527,6 @@ describe("the manager's password", () => {
     expect(logged).toContain("validated the PostgreSQL target");
     expect(logged).not.toContain(MANAGER.password);
     expect(logged).not.toContain(MANAGER.username);
-    expect(logged).not.toContain(MANAGER_SECRET_ARN);
+    expect(logged).not.toContain(MANAGER_SECRET);
   });
 });
