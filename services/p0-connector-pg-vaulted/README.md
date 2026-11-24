@@ -172,6 +172,11 @@ its ARN names.
 - The ARN must be in the `aws`, `aws-cn` or `aws-us-gov` partition, with a region and a 12-digit
   account. A secret's name alone is refused, and so is an ARN whose secret name starts with
   `p0/postgres-ai/`, where grant secrets live.
+- The connector calls Secrets Manager in the manager secret's region, and writes grant secrets
+  in `secrets.region`. Both regions must be reachable from the connector's VPC. From a VPC with
+  no NAT, only the region of its Secrets Manager interface endpoint is reachable, since an
+  endpoint's private DNS covers only its own region. P0 sends the database's own region for
+  both.
 - Nothing ties the secret to `target.host`. A request that pairs one target's host with another
   target's manager secret signs in to that host with the other target's credential, which the
   host refuses unless both targets share the login.

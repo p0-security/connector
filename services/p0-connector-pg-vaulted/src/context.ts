@@ -82,8 +82,7 @@ export const GRANT_SECRET_NAME_PATTERN = new RegExp(
 /**
  * Whether `secretName`, a name that matches {@link GRANT_SECRET_NAME_PATTERN},
  * is a grant secret of the target `targetId`: its `<target id>` segment is
- * that id. The grant path checks this before it calls Secrets Manager or the
- * database.
+ * that id.
  */
 export const isGrantSecretOfTarget = (secretName: string, targetId: string) =>
   secretName.split("/")[3] === targetId;
