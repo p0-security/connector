@@ -281,12 +281,18 @@ on the real target, which no catalog query stands in for.
 
 The connector's execution role will need:
 
-- `secretsmanager:GetSecretValue` on the manager's secrets, and on no other secret.
+- `secretsmanager:GetSecretValue` on the manager's secrets, and on no other secret. A manager
+  secret encrypted with a customer-managed KMS key also needs `kms:Decrypt` on that key.
 - `secretsmanager:CreateSecret`, `secretsmanager:PutSecretValue`,
   `secretsmanager:DescribeSecret` and `secretsmanager:DeleteSecret` on secrets under
   `p0/postgres-ai/<vpc id>/`.
 
 It must not be able to read a secret under `p0/postgres-ai/<vpc id>/`.
+
+A manager secret must be in the connector's account. A secret in another account is readable only
+with a resource policy on the secret that lets the connector's role read it, and only when a
+customer-managed KMS key encrypts it, since `aws/secretsmanager` cannot be used from another
+account.
 
 ## Tests
 
