@@ -96,6 +96,15 @@ describe("request parsing", () => {
     ).rejects.toThrow("policies");
   });
 
+  it("refuses a context with no target id", async () => {
+    const { targetId: _, ...withoutTargetId } = context;
+
+    await expect(
+      // @ts-expect-error -- the context has a target id
+      role().provisionUser({ userBody: LOGIN, context: withoutTargetId })
+    ).rejects.toThrow("targetId");
+  });
+
   it("refuses a lister type other than role and database", async () => {
     await expect(
       // @ts-expect-error -- the only lister types are "role" and "database"

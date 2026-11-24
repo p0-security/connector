@@ -92,6 +92,29 @@ describe("request context", () => {
     );
   });
 
+  it.each(["t", "Orders-Prod-1", "t".repeat(63)])(
+    "accepts the target id %j",
+    (targetId) => {
+      expect(requestContext.parse({ ...context, targetId }).targetId).toBe(
+        targetId
+      );
+    }
+  );
+
+  it.each([
+    undefined,
+    "",
+    "-orders",
+    "orders/prod",
+    "orders_prod",
+    "t".repeat(64),
+    "orders\n",
+  ])("refuses the target id %j", (targetId) => {
+    expect(requestContext.safeParse({ ...context, targetId }).success).toBe(
+      false
+    );
+  });
+
   it("accepts a deadline in the past", () => {
     const deadline = "2001-01-01T00:00:00Z";
 

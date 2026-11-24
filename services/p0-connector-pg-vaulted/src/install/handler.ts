@@ -128,7 +128,7 @@ export const router = (
         const { target } = input;
         const { host, port, database } = target;
         const logger = ctx.logger.child({ host, port, database });
-        const secret = await at("manager_mapping", host, async () =>
+        const secret = await at("manager_secret", host, async () =>
           managerSecretFor(host, dependencies.env)
         );
         const validation = await at("sign_in", host, () =>

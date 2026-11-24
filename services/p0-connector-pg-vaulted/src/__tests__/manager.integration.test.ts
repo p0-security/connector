@@ -64,7 +64,12 @@ const FIXTURE = [
 ];
 
 describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
-  const target = { host: HOST, port, database: "postgres" };
+  const target = {
+    host: HOST,
+    port,
+    database: "postgres",
+    managerSecretArn: ARN,
+  };
 
   /** Runs statements as the server's superuser, and returns the last one's
    * rows. */
@@ -316,7 +321,14 @@ describe("a target nothing listens on", () => {
         connect: connectWith(false),
       })
         .createCaller({ logger: createLogger() })
-        .get({ target: { host: HOST, port: 1, database: "postgres" } })
+        .get({
+          target: {
+            host: HOST,
+            port: 1,
+            database: "postgres",
+            managerSecretArn: ARN,
+          },
+        })
     );
 
     expect(data.type).toBe("upstream_unavailable");

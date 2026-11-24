@@ -16,8 +16,8 @@ scopes the secrets it can write.
 - **Target**: one PostgreSQL instance or cluster P0 manages. Its id in P0 is the target id.
 - **Manager**: the database login the connector uses for management operations. Its credential
   never reaches P0.
-- **Manager secret**: the Secrets Manager entry that holds one target's manager username and
-  password. The connector only reads it.
+- **Manager secret**: the AWS Secrets Manager secret that holds one target's manager username
+  and password. The connector only reads it.
 - **Manager mapping**: the connector's own list of each target's manager secret and target id,
   by the target's host.
 - **Approved role**: an existing customer-owned database role a grant was approved for. The
@@ -59,18 +59,21 @@ Every access call carries this context (`src/context.ts`):
 | Field         | Value                                                                                                                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `requestId`   | The P0 request, a non-empty string.                                                                                                                                                               |
-| `target`      | `{ host, port, database }`: the target, and the database the manager connects to.                                                                                                                 |
+| `target`      | `{ host, port, database, managerSecretArn }`: the target, the database the manager connects to, and the full ARN of the target's manager secret.                                                  |
+| `targetId`    | P0's id of the target: `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`, the pattern of the `<target id>` segment of a grant secret's name. See [Names](#names).                                                 |
 | `secrets`     | `{ manager: "aws", region }`: where the grant secret is written. `manager` here is the secret manager, not the manager login.                                                                     |
 | `secretName`  | The grant secret's name. See [Names](#names).                                                                                                                                                     |
 | `deadline`    | An ISO 8601 date and time with `Z` or an offset. It becomes the grant login's `VALID UNTIL`. A deadline in the past is accepted.                                                                  |
 | `comment`     | Who asked and for which request. Written with `COMMENT ON ROLE`, so the customer's own database audit resolves the grant login without P0.                                                        |
 | `objectOwner` | The role that takes over what the grant login owns before the login is dropped. P0 sends exactly one policy, and this is its `rolename`, repeated here because `deleteUser` receives no policies. |
 
-The context does not name the manager secret. The connector looks it up by `target.host` in
-the [manager mapping](#manager-mapping), which Terraform sets in the connector's own
-environment, so the P0 control plane cannot point the connector at another secret or host. The
-mapping also holds the target's id. A grant call is to be refused unless the `<target id>`
-segment of `secretName` is that id (see [Names](#names)).
+The P0 control plane names the manager secret, as it names the private key secret of the
+Snowflake (AI) and GitHub (AI) connectors. The connector's IAM, which the install's Terraform
+writes, limits which secrets the connector can read, so a request can name only a secret the
+customer gave the connector. `managerSecretArn` must be a full Secrets Manager ARN in the `aws`,
+`aws-cn` or `aws-us-gov` partition, and a secret's name alone is refused. An ARN whose secret
+name starts with `p0/postgres-ai/` is refused too: that is where grant secrets live, which the
+connector writes and never reads.
 
 Revoke parses the same context as grant, so the parser accepts a past `deadline` and truncates
 a `comment` over 1000 characters.
@@ -89,11 +92,8 @@ because the login arrives as the user, outside the context, so the user namespac
 it refuses a login whose grant secret is another login's. With the connector's IAM scoped to
 `p0/postgres-ai/<its vpc>/`, that keeps one grant's secret from being another's.
 
-The `<target id>` segment is the same kind of claim: the schema cannot tie it to the target in
-`target.host`. The [manager mapping](#manager-mapping) does. It holds each host's target id,
-and a grant call whose `secretName` names another target is to be refused with
-`validation_error`, before any call to Secrets Manager or PostgreSQL. That keeps a request for
-one target from writing a grant secret that belongs under another.
+The `<target id>` segment must be the request's `targetId`. The grant path is to compare the
+two, and refuse a request whose grant secret belongs under another target.
 
 ### Lifecycle
 
@@ -126,10 +126,11 @@ The P0 control plane must serialize calls for the same grant login.
 
 ### Install validation
 
-`pg-vaulted.install.validation.get` takes `{ target }`. It runs these checks in order and stops
-at the first that fails (`PG_VAULTED_INSTALL_STEPS`):
+`pg-vaulted.install.validation.get` takes `{ target }`, the same `target` as the request
+context's. It runs these checks in order and stops at the first that fails
+(`PG_VAULTED_INSTALL_STEPS`):
 
-1. `manager_mapping`: the manager mapping parses, and has the target's host.
+1. `manager_secret`: the manager mapping parses, and has the target's host.
 2. `sign_in`: the connector reads the manager secret, and the manager authenticates to the
    target and runs `SELECT 1`.
 3. `create_role`: the manager can create roles. It has `CREATEROLE` or is superuser.
@@ -174,7 +175,7 @@ JSON object from each target's host to an object with the ARN of that target's m
 ```
 
 - The connector reads the variable on each call, so a mapping that is not set or does not parse
-  fails the call at `manager_mapping`, not the Lambda's start.
+  fails the call at `manager_secret`, not the Lambda's start.
 - The host lookup ignores case.
 - Each `arn` must be a full Secrets Manager ARN in the `aws`, `aws-cn` or `aws-us-gov`
   partition. A secret's name alone is refused.

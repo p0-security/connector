@@ -207,5 +207,10 @@ export const withManager = async <T>(
     connect = connectWithTls,
   } = dependencies;
   const credential = await readManagerCredential(secret, connectSecretManager);
-  return withSession(connect({ ...target, ...credential }), logger, run);
+  const { host, port, database } = target;
+  return withSession(
+    connect({ host, port, database, ...credential }),
+    logger,
+    run
+  );
 };

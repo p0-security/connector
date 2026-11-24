@@ -19,7 +19,6 @@ import {
 import { target } from "../../__tests__/fixtures.ts";
 import type { ManagerDependencies } from "../../manager.ts";
 import { t } from "../../router.ts";
-import { installValidation } from "../definition.ts";
 import { router } from "../handler.ts";
 
 const HOST = "orders.cluster-abc123.us-east-1.rds.amazonaws.com";
@@ -66,10 +65,43 @@ describe("install validation input", () => {
     ).rejects.toThrow("port");
   });
 
-  it("the result schema accepts grantable roles", () => {
-    const validated = { grantableRoles: ["analyst", "reporting"] };
+  it.each([
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+    "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:orders-manager-AbCdEf",
+    "arn:aws-us-gov:secretsmanager:us-gov-west-1:123456789012:secret:orders-manager-AbCdEf",
+  ])("accepts the manager secret %s", async (managerSecretArn) => {
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).resolves.toEqual({ grantableRoles: ["analyst", "reporting"] });
+  });
 
-    expect(installValidation.parse(validated)).toEqual(validated);
+  it.each([
+    ["a name alone", "orders-manager"],
+    [
+      "an ARN with no account",
+      "arn:aws:secretsmanager:us-east-1::secret:orders-manager-AbCdEf",
+    ],
+    [
+      "an ARN of another service",
+      "arn:aws:ssm:us-east-1:123456789012:parameter/orders-manager",
+    ],
+    [
+      "an ARN in an unknown partition",
+      "arn:aws-iso:secretsmanager:us-iso-east-1:123456789012:secret:orders-manager-AbCdEf",
+    ],
+  ])("refuses %s as the manager secret", async (_, managerSecretArn) => {
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).rejects.toThrow("managerSecretArn");
+  });
+
+  it("refuses a grant secret as the manager secret", async () => {
+    const managerSecretArn =
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:p0/postgres-ai/vpc-0abc1234/orders-prod/p0v_0123456789abcdef0123456789abcdef-AbCdEf";
+
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).rejects.toThrow("managerSecretArn must not name a grant secret");
   });
 });
 
@@ -158,7 +190,7 @@ describe("install validation", () => {
   });
 });
 
-describe("manager_mapping", () => {
+describe("manager_secret", () => {
   it.each([
     ["is not set", {}],
     ["is empty", { MANAGER_SECRET_ARNS: "" }],
@@ -237,7 +269,7 @@ describe("manager_mapping", () => {
     const data = await dataOf(validate({ env }));
 
     expect(data.type).toBe("validation_error");
-    expect(data.payload).toEqual({ step: "manager_mapping", host: HOST });
+    expect(data.payload).toEqual({ step: "manager_secret", host: HOST });
     expect(data.message).toContain("MANAGER_SECRET_ARNS");
     expect(vault.reads).toEqual([]);
     expect(db.signIns).toEqual([]);
@@ -251,7 +283,7 @@ describe("manager_mapping", () => {
     );
 
     expect(data.type).toBe("object_not_found");
-    expect(data.payload).toEqual({ step: "manager_mapping", host: HOST });
+    expect(data.payload).toEqual({ step: "manager_secret", host: HOST });
     expect(vault.reads).toEqual([]);
   });
 

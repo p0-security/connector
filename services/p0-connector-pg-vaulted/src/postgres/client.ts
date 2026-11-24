@@ -19,8 +19,11 @@ export type PgDriver = {
   close: () => Promise<void>;
 };
 
-/** A target, and the manager's credential for it. */
-export type ManagerSignIn = Target & { username: string; password: string };
+/** A target's address and database, and the manager's credential for it. */
+export type ManagerSignIn = Pick<Target, "database" | "host" | "port"> & {
+  username: string;
+  password: string;
+};
 
 /** Opens the driver. It connects on its first statement. */
 export type Connect = (signIn: ManagerSignIn) => PgDriver;
