@@ -157,26 +157,36 @@ a grant's lifecycle like this:
 
 - `setPoliciesForUser` with no policies performs the database cutoff. With no login it does
   nothing. Otherwise, whatever state the login is in:
-  1. In a transaction of its own, it sets the login to
+  1. In a transaction of its own, it revokes every membership the manager granted the login,
+     and reads them again to be sure none is left. See
+     [The manager's grants](#the-managers-grants). A revoke does not wait for the lock a
+     session of the login can hold on the login's own row (see [Sessions](#sessions)), so the
+     login cannot stall this step, and from its commit on the login holds none of the approved
+     roles. A failure here is kept, and the call goes on to step 2.
+  2. In a transaction of its own, it sets the login to
      `NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL`, waiting at most 2 seconds for a lock
      (`lock_timeout`). A session of the login can hold a lock on the login's own row: a login
      may `ALTER ROLE` itself and keep the transaction open, and the manager's `ALTER ROLE` then
      waits for it. When the statement fails for want of the lock, or is cancelled (SQLSTATE
-     class `55` or `57`), the connector ends the login's sessions once and runs it once more.
-     When that fails too, the call throws and the login can still sign in, so that P0 tries
-     again. See [Sessions](#sessions).
-  2. In a second transaction, it revokes every membership the manager granted the login, and
-     reads them again to be sure none is left. See
-     [The manager's grants](#the-managers-grants). A failure here leaves the login retired. The
-     call still ends the login's sessions (steps 3 and 4), and then throws what failed.
-  3. After the first commit, it ends the login's sessions: `pg_terminate_backend` on every
-     `pg_stat_activity` row whose `usename` is the login.
+     class `55` or `57`), the connector ends the login's sessions and runs it again, for at
+     most 3 attempts in all. Any other failure is thrown at once, and so is a stall of the
+     third attempt. Then the login can still sign in, so that P0 tries again. See
+     [Sessions](#sessions).
+  3. After the commit of step 2, it ends the login's sessions: `pg_terminate_backend` on every
+     `pg_stat_activity` row whose `usename` is the login. This runs whether or not step 1 or
+     step 2 failed, so that no failure leaves a session open.
   4. It counts the login's sessions. Then it waits 200 ms, ends what it finds and counts
      again, until a count after the first is 0. When sessions remain after 10 counts, it
-     throws `upstream_unavailable` with `{ login, sessions }`, so that P0 tries again. The
-     login stays retired.
+     throws `upstream_unavailable` with `{ login, sessions }`, so that P0 tries again.
 
-  The first commit comes first because PostgreSQL then refuses every new sign-in. It does not
+  When more than one step fails, the call throws the failure of step 2, else of step 1, else
+  of steps 3 and 4: a login that can still sign in is the worst outcome, so a later failure
+  never replaces an earlier one. A failed step 1 leaves the login retired, with no session, and
+  the memberships it did not revoke, which the next call revokes. A step 2 that fails on every
+  attempt leaves the login active, with no approved role and no session (unless it signed in
+  again), which the next call retires.
+
+  Step 2 commits before step 3 because PostgreSQL then refuses every new sign-in. It does not
   come first by much: a sign-in that PostgreSQL let in just before the commit shows in
   `pg_stat_activity` a few milliseconds after it. That is why every count ends what it finds,
   and why the first count alone never confirms the cutoff. See [Sessions](#sessions).
@@ -470,15 +480,24 @@ on one machine, with the connector's statements run by hand:
   `usename`, where no later call can find it. So the cleanup refuses a login that has not been
   cut off, and ends the login's sessions once more just before it drops the login.
 
-- A session of the login can hold a lock that stalls the cutoff. A login may `ALTER ROLE`
+- A session of the login can hold a lock that stalls the retirement. A login may `ALTER ROLE`
   itself, so a session that did that in a transaction it keeps open holds the row, and the
   manager's `ALTER ROLE` waits for it until `statement_timeout`. The statement then fails with
   `57014` and the login can still sign in. Ending the login's sessions first lets the same
   statement succeed at once. So the cutoff waits for the lock 2 seconds, then ends the
-  sessions and tries once more. On PostgreSQL 14 and 16, in the integration tests, a session
-  that held the row that way made the first attempt fail with `55P03` after 2 seconds, and the
-  cutoff then completed. The retry is one: a login that signs in again between the two
-  attempts and takes the lock again fails the call, and P0's next call tries again.
+  sessions and tries again, for at most 3 attempts. On PostgreSQL 14 and 16, in the integration
+  tests, a session that held the row that way made the first attempt fail with `55P03` after 2
+  seconds, and the cutoff then completed. A login that signs in again between two attempts and
+  takes the lock again can still stall the cutoff. It is bounded at three attempts, each
+  waiting 2 seconds, and the call then throws, so that P0's next call tries again. In the
+  integration tests, with a login that took the lock again each time its sessions ended, the
+  call threw `upstream_unavailable` from a `55P03`, with the roles already taken back.
+- A membership `REVOKE` does not wait for that lock. On PostgreSQL 14.25 and 16.16, a
+  manager's `REVOKE <role> FROM <login>` completed in under 1 ms while a session of the login
+  held a lock on its own row, in an open transaction that ran `ALTER ROLE CURRENT_USER
+PASSWORD '...'`, where the manager's `ALTER ROLE` waited until its timeout. That is why the
+  cutoff revokes the memberships first: a login that stalls every attempt to retire it still
+  loses the approved roles.
 
 Session termination covers the instance the connector is connected to: `pg_stat_activity` and
 `pg_terminate_backend` act on that instance's backends and no other. On an Aurora cluster, a

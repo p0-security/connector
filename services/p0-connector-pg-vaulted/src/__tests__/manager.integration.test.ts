@@ -8,7 +8,8 @@ import { router as roleRouter } from "../accesses/role/handler.ts";
 import type { RequestContext } from "../context.ts";
 import type { Dependencies } from "../dependencies.ts";
 import { router as validationRouter } from "../install/handler.ts";
-import { connect, connectWith } from "../postgres/client.ts";
+import { END_SESSIONS_SQL } from "../postgres/catalog.ts";
+import { type PgQuery, connect, connectWith } from "../postgres/client.ts";
 import { t } from "../router.ts";
 import {
   capturingLogger,
@@ -808,6 +809,99 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
         });
         await expect(cleanUp()).resolves.toBe(null);
         await expect(identify()).resolves.toBe(null);
+      });
+
+      it("takes back the roles of a login that signs in again and takes the lock on its row every time its sessions end, so that no attempt to retire it succeeds", async () => {
+        await provision();
+        await approve(["analyst", "reporting"]);
+        let stopped = false;
+        let holds = 0;
+        // As soon as a session of the login dies, another signs in and takes
+        // the row again.
+        const holder = (async () => {
+          while (!stopped) {
+            try {
+              const session = await openSession();
+              await session.client.query("BEGIN");
+              await session.client.query(
+                "ALTER ROLE CURRENT_USER PASSWORD 'held'"
+              );
+              holds++;
+              await session.died();
+            } catch {
+              await new Promise((resolve) => setTimeout(resolve, 5));
+            }
+          }
+        })();
+        // The connector's next statement runs only once the login holds the
+        // row again. Without this the connector wins the race: it needs
+        // milliseconds, and a sign-in tens of them.
+        const connectWaitingForTheLogin: Dependencies["connect"] = (signIn) => {
+          const driver = connectWith(false)(signIn);
+          const waiting =
+            (query: PgQuery): PgQuery =>
+            async (sql, bindings) => {
+              const seen = holds;
+              const rows = await query(sql, bindings);
+              if (sql === END_SESSIONS_SQL) {
+                while (!stopped && holds === seen) {
+                  await new Promise((resolve) => setTimeout(resolve, 1));
+                }
+              }
+              return rows;
+            };
+          return {
+            ...driver,
+            query: waiting(driver.query),
+            begin: async () => {
+              const transaction = await driver.begin();
+              return { ...transaction, query: waiting(transaction.query) };
+            },
+          };
+        };
+        const stuck = roleRouter(t, {
+          ...dependencies(),
+          connect: connectWaitingForTheLogin,
+        }).createCaller({ logger });
+        const endTheLoop = async () => {
+          stopped = true;
+          const endSessions = `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE usename = '${GRANTED_LOGIN}'`;
+          await asSuperuser(endSessions);
+          await holder;
+          await asSuperuser(endSessions);
+        };
+        try {
+          while (holds === 0) {
+            await new Promise((resolve) => setTimeout(resolve, 5));
+          }
+
+          const data = await dataOf(
+            stuck.setPoliciesForUser({
+              ...user,
+              policies: [],
+              context: context(),
+            })
+          );
+
+          expect(data.type).toBe("upstream_unavailable");
+          expect(data.payload).toEqual({ sqlState: "55P03" });
+        } finally {
+          await endTheLoop();
+        }
+        expect(await grantLogin()).toMatchObject({
+          rolcanlogin: true,
+          rolconnlimit: -1,
+          memberships: null,
+        });
+
+        await expect(cutOff()).resolves.toBe(null);
+
+        expect(await grantLogin()).toMatchObject({
+          rolcanlogin: false,
+          rolconnlimit: 0,
+          rolpassword: null,
+          memberships: null,
+        });
       });
 
       it("takes back a role the manager reaches another way since the grant, whose grantor is no longer the one PostgreSQL infers", async () => {

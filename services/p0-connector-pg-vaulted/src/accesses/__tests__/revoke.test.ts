@@ -124,15 +124,38 @@ const RETIRED_BY_ITS_OWN_TRANSACTION = [
   "COMMIT",
 ];
 
-/** Everything up to the revokes' transaction, which has the rest. */
-const RETIRE = [
-  ...RETIRED_BY_ITS_OWN_TRANSACTION,
+/** The revokes' transaction of a login the manager granted nothing. */
+const REVOKES_NOTHING = ["BEGIN", ["managerGrantedRoles", LOGIN], "COMMIT"];
+
+/** The revokes' transaction when the manager granted the login `role`, as
+ * `grantor`. */
+const REVOKES = (role: string, grantor = "p0_manager") => [
   "BEGIN",
   ["managerGrantedRoles", LOGIN],
+  ["format", "REVOKE %I FROM %I GRANTED BY %I", role, LOGIN, grantor],
+  `REVOKE ${role} FROM ${LOGIN} GRANTED BY ${grantor}`,
+  ["managerGrantedRoles", LOGIN],
+  "COMMIT",
+];
+
+/** The retire transaction that fails for want of the row, and is rolled
+ * back. */
+const RETIRE_STALLED = [
+  ...RETIRED_BY_ITS_OWN_TRANSACTION.slice(0, -1),
+  "ROLLBACK",
+];
+
+/** The two looks that end a session and see it gone. */
+const SESSIONS_ENDED = [
+  ["endSessions", LOGIN],
+  ["countSessions", LOGIN],
+  "wait 200",
+  ["endSessions", LOGIN],
+  ["countSessions", LOGIN],
 ];
 
 describe("setPoliciesForUser with no policies", () => {
-  it("retires the login in a transaction, takes back the manager's grants in a second, then ends its sessions, then counts that none is left", async () => {
+  it("takes back the manager's grants in a transaction, retires the login in a second, then ends its sessions, then counts that none is left", async () => {
     given("active");
     db.roles.set(OTHER_LOGIN, { ...ROLES.active });
     db.memberships.push(
@@ -151,22 +174,9 @@ describe("setPoliciesForUser with no policies", () => {
     expect(journal).toEqual([
       `getSecretValue ${MANAGER_SECRET_ARN}`,
       ["login", LOGIN],
-      ...RETIRE,
-      [
-        "format",
-        "REVOKE %I FROM %I GRANTED BY %I",
-        "analyst",
-        LOGIN,
-        "p0_manager",
-      ],
-      `REVOKE analyst FROM ${LOGIN} GRANTED BY p0_manager`,
-      ["managerGrantedRoles", LOGIN],
-      "COMMIT",
-      ["endSessions", LOGIN],
-      ["countSessions", LOGIN],
-      "wait 200",
-      ["endSessions", LOGIN],
-      ["countSessions", LOGIN],
+      ...REVOKES("analyst"),
+      ...RETIRED_BY_ITS_OWN_TRANSACTION,
+      ...SESSIONS_ENDED,
       "close",
     ]);
     expect(everything()).toEqual({
@@ -230,8 +240,8 @@ describe("setPoliciesForUser with no policies", () => {
       expect(everything()).toEqual(after);
       expect(db.calls).toEqual([
         ["login", LOGIN],
-        ...RETIRE,
-        "COMMIT",
+        ...REVOKES_NOTHING,
+        ...RETIRED_BY_ITS_OWN_TRANSACTION,
         ["endSessions", LOGIN],
         ["countSessions", LOGIN],
         ["endSessions", LOGIN],
@@ -363,55 +373,37 @@ describe("setPoliciesForUser with no policies", () => {
   describe("when a session of the login stalls the retiring ALTER ROLE", () => {
     // A session of the login that holds the login's row, as one does that
     // ran ALTER ROLE on itself in a transaction it keeps open. The ALTER ROLE
-    // waits for the row, until the lock timeout.
-    const stalledBy = (sqlState: string) => {
+    // waits for the row, until the lock timeout. The first `times` attempts
+    // stall.
+    const stalledBy = (sqlState: string, times = 1) => {
+      let left = times;
       const stop = db.failOn(RETIRE_STATEMENT, () => {
-        stop();
+        if (--left === 0) stop();
         return pgError(sqlState);
       });
+      return stop;
+    };
+
+    const analystHeld = () => {
+      given("active");
+      db.memberships.push({ role: "analyst", member: LOGIN, byManager: true });
+      db.sessions.push({ usename: LOGIN });
     };
 
     it.each(["55P03", "57014"])(
-      "ends the login's sessions once, retries it once, and finishes the cutoff (SQLSTATE %s)",
+      "has taken back the manager's grants, ends the login's sessions, retries, and finishes the cutoff (SQLSTATE %s)",
       async (sqlState) => {
-        given("active");
-        db.memberships.push({
-          role: "analyst",
-          member: LOGIN,
-          byManager: true,
-        });
-        db.sessions.push({ usename: LOGIN });
+        analystHeld();
         stalledBy(sqlState);
 
         await expect(cutOff()).resolves.toBe(null);
 
         expect(journal.slice(journal.indexOf("BEGIN"))).toEqual([
-          "BEGIN",
-          ["setLockTimeout", "2000ms"],
-          [
-            "format",
-            "ALTER ROLE %I NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL",
-            LOGIN,
-          ],
-          RETIRE_STATEMENT,
-          "ROLLBACK",
+          ...REVOKES("analyst"),
+          ...RETIRE_STALLED,
           ["endSessions", LOGIN],
-          ...RETIRE,
-          [
-            "format",
-            "REVOKE %I FROM %I GRANTED BY %I",
-            "analyst",
-            LOGIN,
-            "p0_manager",
-          ],
-          `REVOKE analyst FROM ${LOGIN} GRANTED BY p0_manager`,
-          ["managerGrantedRoles", LOGIN],
-          "COMMIT",
-          ["endSessions", LOGIN],
-          ["countSessions", LOGIN],
-          "wait 200",
-          ["endSessions", LOGIN],
-          ["countSessions", LOGIN],
+          ...RETIRED_BY_ITS_OWN_TRANSACTION,
+          ...SESSIONS_ENDED,
           "close",
         ]);
         expect(everything()).toEqual({
@@ -424,21 +416,56 @@ describe("setPoliciesForUser with no policies", () => {
       }
     );
 
-    it("throws when the retry stalls too, leaves the login active, and the next call finishes the cutoff", async () => {
-      given("active");
-      db.sessions.push({ usename: LOGIN });
-      const stop = db.failOn(RETIRE_STATEMENT, pgError("55P03"));
+    it("ends the login's sessions between attempts, and finishes the cutoff on the third", async () => {
+      analystHeld();
+      stalledBy("55P03", 2);
+
+      await expect(cutOff()).resolves.toBe(null);
+
+      expect(journal.slice(journal.indexOf("BEGIN"))).toEqual([
+        ...REVOKES("analyst"),
+        ...RETIRE_STALLED,
+        ["endSessions", LOGIN],
+        ...RETIRE_STALLED,
+        ["endSessions", LOGIN],
+        ...RETIRED_BY_ITS_OWN_TRANSACTION,
+        ...SESSIONS_ENDED,
+        "close",
+      ]);
+      expect(everything()).toEqual({
+        roles: [[LOGIN, RETIRED]],
+        memberships: [],
+        objects: [],
+        sessions: [],
+        secret: ["an earlier password"],
+      });
+    });
+
+    it("throws when all three attempts stall, with the memberships taken back, the login active and its sessions ended, and the next call finishes the cutoff", async () => {
+      analystHeld();
+      const stop = stalledBy("55P03", Infinity);
 
       const data = await dataOf(cutOff());
 
       expect(data.type).toBe("upstream_unavailable");
       expect(data.payload).toEqual({ sqlState: "55P03" });
-      expect(
-        journal.filter(
-          (call) => Array.isArray(call) && call[0] === "endSessions"
-        )
-      ).toHaveLength(1);
-      expect(db.roles.get(LOGIN)).toEqual(ROLES.active);
+      expect(journal.slice(journal.indexOf("BEGIN"))).toEqual([
+        ...REVOKES("analyst"),
+        ...RETIRE_STALLED,
+        ["endSessions", LOGIN],
+        ...RETIRE_STALLED,
+        ["endSessions", LOGIN],
+        ...RETIRE_STALLED,
+        ...SESSIONS_ENDED,
+        "close",
+      ]);
+      expect(everything()).toEqual({
+        roles: [[LOGIN, ROLES.active]],
+        memberships: [],
+        objects: [],
+        sessions: [],
+        secret: ["an earlier password"],
+      });
       await expect(identify()).resolves.toBe(LOGIN);
 
       stop();
@@ -448,32 +475,32 @@ describe("setPoliciesForUser with no policies", () => {
       expect(db.sessions).toEqual([]);
     });
 
-    it("does not end the sessions before it tries again when PostgreSQL refuses for another reason", async () => {
-      given("active");
-      db.sessions.push({ usename: LOGIN });
+    it("does not retry when PostgreSQL refuses for another reason, and still has taken back the grants and ended the sessions", async () => {
+      analystHeld();
       db.failOn(RETIRE_STATEMENT, pgError("42501"));
 
       const data = await dataOf(cutOff());
 
       expect(data.type).toBe("insufficient_privileges");
       expect(journal.slice(journal.indexOf("BEGIN"))).toEqual([
-        "BEGIN",
-        ["setLockTimeout", "2000ms"],
-        [
-          "format",
-          "ALTER ROLE %I NOLOGIN CONNECTION LIMIT 0 PASSWORD NULL",
-          LOGIN,
-        ],
-        RETIRE_STATEMENT,
-        "ROLLBACK",
+        ...REVOKES("analyst"),
+        ...RETIRE_STALLED,
+        ...SESSIONS_ENDED,
         "close",
       ]);
-      expect(db.sessions).toEqual([{ usename: LOGIN }]);
+      expect(everything()).toEqual({
+        roles: [[LOGIN, ROLES.active]],
+        memberships: [],
+        objects: [],
+        sessions: [],
+        secret: ["an earlier password"],
+      });
     });
   });
 
-  it("when PostgreSQL refuses COMMIT of the retirement, leaves the login active", async () => {
+  it("when PostgreSQL refuses COMMIT of the revokes and of the retirement, throws the retirement's error, leaves the login active with its roles, and ends its sessions", async () => {
     given("active");
+    db.memberships.push({ role: "analyst", member: LOGIN, byManager: true });
     db.sessions.push({ usename: LOGIN });
     const before = everything();
     db.failOn("COMMIT", pgError("42501"));
@@ -481,7 +508,90 @@ describe("setPoliciesForUser with no policies", () => {
     const data = await dataOf(cutOff());
 
     expect(data.type).toBe("insufficient_privileges");
-    expect(everything()).toEqual(before);
+    expect(everything()).toEqual({ ...before, sessions: [] });
+  });
+
+  describe("when more than one step fails", () => {
+    const held = () => {
+      given("active");
+      db.memberships.push({ role: "analyst", member: LOGIN, byManager: true });
+      db.sessions.push({ usename: LOGIN });
+    };
+
+    it("throws the retirement's error when the revokes fail too, and still ends the sessions", async () => {
+      db = fakeDatabase({ ignoresRevoke: true }, journal);
+      held();
+      db.failOn(RETIRE_STATEMENT, pgError("42501"));
+
+      const data = await dataOf(cutOff());
+
+      expect(data.type).toBe("insufficient_privileges");
+      expect(db.roles.get(LOGIN)).toEqual(ROLES.active);
+      expect(db.memberships).toEqual([
+        { role: "analyst", member: LOGIN, byManager: true },
+      ]);
+      expect(db.sessions).toEqual([]);
+    });
+
+    it("throws the revokes' error when the sessions will not end either, after the login is retired", async () => {
+      db = fakeDatabase({ ignoresRevoke: true }, journal);
+      held();
+      db.failOn("endSessions", pgError("57014"));
+
+      const data = await dataOf(cutOff());
+
+      expect(data.type).toBe("dependency_violation");
+      expect(data.payload).toEqual({ login: LOGIN });
+      expect(db.roles.get(LOGIN)).toEqual(RETIRED);
+    });
+
+    it("throws the retirement's error when the sessions will not end either", async () => {
+      held();
+      db.failOn(RETIRE_STATEMENT, pgError("42501"));
+      db.failOn("endSessions", pgError("57014"));
+
+      const data = await dataOf(cutOff());
+
+      expect(data.type).toBe("insufficient_privileges");
+      expect(db.memberships).toEqual([]);
+    });
+
+    it("retires the login and ends its sessions when the revokes fail, throws their error, and the next call finishes them", async () => {
+      held();
+      const stop = db.failOn("REVOKE", pgError("42501"));
+
+      const data = await dataOf(cutOff());
+
+      expect(data.type).toBe("insufficient_privileges");
+      expect(journal.slice(journal.indexOf("BEGIN"))).toEqual([
+        "BEGIN",
+        ["managerGrantedRoles", LOGIN],
+        [
+          "format",
+          "REVOKE %I FROM %I GRANTED BY %I",
+          "analyst",
+          LOGIN,
+          "p0_manager",
+        ],
+        `REVOKE analyst FROM ${LOGIN} GRANTED BY p0_manager`,
+        "ROLLBACK",
+        ...RETIRED_BY_ITS_OWN_TRANSACTION,
+        ...SESSIONS_ENDED,
+        "close",
+      ]);
+      expect(everything()).toEqual({
+        roles: [[LOGIN, RETIRED]],
+        memberships: [{ role: "analyst", member: LOGIN, byManager: true }],
+        objects: [],
+        sessions: [],
+        secret: ["an earlier password"],
+      });
+
+      stop();
+      await expect(cutOff()).resolves.toBe(null);
+
+      expect(db.memberships).toEqual([]);
+    });
   });
 
   describe("when taking back the manager's grants fails", () => {

@@ -295,13 +295,23 @@ export const endGrantLoginSessions = async (
 };
 
 /**
- * How long the cutoff's `ALTER ROLE` waits for the login's row, which a
- * session of the login can hold: a login may `ALTER ROLE` itself, and keep
- * the transaction open. Well under the statement timeout, so that a stalled
- * cutoff has time left to end the login's sessions and try again before the
- * call is cancelled.
+ * How long each attempt of the cutoff's `ALTER ROLE` waits for the login's
+ * row, which a session of the login can hold: a login may `ALTER ROLE`
+ * itself, and keep the transaction open. Well under the statement timeout,
+ * so that a stalled attempt fails on this timeout and leaves time to end the
+ * login's sessions and try again, and all the attempts together stay short.
  */
 const RETIRE_LOCK_TIMEOUT_MS = 2000;
+
+/**
+ * How many times the cutoff tries to retire the login before it gives up.
+ * More than one, because a login that signs in again after its sessions were
+ * ended can take the row lock again, and a second kill clears that as the
+ * first did. Bounded, because a login that keeps signing in would otherwise
+ * hold the call open: after this many attempts the call throws, and P0's next
+ * call tries again. The memberships are already revoked by then.
+ */
+const RETIRE_ATTEMPTS = 3;
 
 /** Whether `error` is a lock timeout, or another cancelled or shut down
  * statement: SQLSTATE class 55 or 57. Ending the login's sessions can
@@ -311,25 +321,43 @@ const isStalled = (error: unknown) =>
   typeof error.data.payload.sqlState === "string" &&
   /^5[57]/.test(error.data.payload.sqlState);
 
+/** What `run` came to, so that the steps after it can still run and the
+ * caller decides which failure to throw. */
+type Outcome<T> = { ok: false; error: unknown } | { ok: true; value: T };
+
+const settle = async <T>(run: () => Promise<T>): Promise<Outcome<T>> => {
+  try {
+    return { ok: true, value: await run() };
+  } catch (error) {
+    return { ok: false, error };
+  }
+};
+
 /**
  * The database cutoff of the grant login. Each step is safe to repeat:
  *
- * 1. In a transaction of its own, the login is retired, which disables it
+ * 1. In a transaction of its own, the memberships the manager granted the
+ *    login are revoked, and read again to be sure none is left. A revoke
+ *    does not wait for the lock a session of the login can hold on its own
+ *    row, so nothing the login does can stall it, and the login holds none of
+ *    the approved roles from here on, whatever happens next.
+ * 2. In a transaction of its own, the login is retired, which disables it
  *    and clears its password. A session of the login can hold a lock on its
  *    row, so the statement waits for the lock only so long. When it fails
  *    for want of the lock, or is cancelled, the login's sessions are ended
- *    once and the statement is tried once more.
- * 2. In a second transaction, the memberships the manager granted the login
- *    are revoked, and read again to be sure none is left. A failure here
- *    leaves the login retired.
+ *    and the statement is tried again, up to {@link RETIRE_ATTEMPTS} attempts
+ *    in all. Any other failure, and a stall of the last attempt, throws.
  * 3. Its sessions are ended and counted, as {@link endGrantLoginSessions}
- *    does, whether or not step 2 failed. The commit of step 1 comes first,
- *    so that PostgreSQL refuses a new sign-in while the old sessions go.
- *    When some outlive the last count, it throws, so that the cutoff is
- *    tried again. The login stays retired.
+ *    does, whether or not step 1 or 2 failed, so that no failure leaves a
+ *    session open. The commit of step 2 comes first, so that PostgreSQL
+ *    refuses a new sign-in while the old sessions go. When some outlive the
+ *    last count, it throws, so that the cutoff is tried again.
  *
- * Returns the state the login was in, the roles it lost and how many
- * sessions it ended. With no login it changes nothing.
+ * When several steps fail, the call throws the failure of step 2, else of
+ * step 1, else of step 3: the login that can still sign in is the worst.
+ *
+ * Returns the state the login was in, the roles step 1 revoked and how many
+ * sessions step 3 ended. With no login it changes nothing.
  */
 export const retireGrantLogin = async (
   { query, committed }: PgSession,
@@ -347,21 +375,34 @@ export const retireGrantLogin = async (
       ]);
       await execute(inTransaction, { template, args: [login] });
     });
-  await retire().catch(async (error: unknown) => {
-    if (!isStalled(error)) throw error;
-    await endSessions(query, login);
-    await retire();
-  });
-  let revoked: string[];
-  let sessionsEnded: number;
-  try {
-    revoked = await committed((inTransaction) =>
+  const retireWithRetries = async () => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await retire();
+      } catch (error) {
+        if (!isStalled(error) || attempt === RETIRE_ATTEMPTS) throw error;
+        await endSessions(query, login);
+      }
+    }
+  };
+  const revoked = await settle(() =>
+    committed((inTransaction) =>
       revokeManagerGrants(inTransaction, login, () => true)
-    );
-  } finally {
-    sessionsEnded = await endGrantLoginSessions(query, login, wait);
-  }
-  return { from, revoked, sessionsEnded };
+    )
+  );
+  const retired = await settle(retireWithRetries);
+  const sessionsEnded = await settle(() =>
+    endGrantLoginSessions(query, login, wait)
+  );
+  // The retire error first, then the revoke error, then the session error.
+  if (!retired.ok) throw retired.error;
+  if (!revoked.ok) throw revoked.error;
+  if (!sessionsEnded.ok) throw sessionsEnded.error;
+  return {
+    from,
+    revoked: revoked.value,
+    sessionsEnded: sessionsEnded.value,
+  };
 };
 
 /**
