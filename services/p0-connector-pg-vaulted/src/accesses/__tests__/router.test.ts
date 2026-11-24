@@ -7,10 +7,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   MANAGER,
-  MANAGER_SECRET_ARN,
   capturingLogger,
   dataOf,
-  env,
   errorOf,
   fakeDatabase,
   fakeSecretStore,
@@ -35,7 +33,6 @@ beforeEach(() => {
 
 const role = (overrides: ManagerDependencies = {}) =>
   router(t, {
-    env,
     connectSecretManager: vault.connectSecretManager,
     connect: db.connect,
     ...overrides,
@@ -231,24 +228,35 @@ describe("list", () => {
     expect(db.calls).toEqual(["databases", "close"]);
   });
 
-  it("fails as not found for a target that has no manager secret", async () => {
-    const data = await dataOf(
-      list("role", {
-        env: {
-          MANAGER_SECRET_ARNS: JSON.stringify({
-            "billing.example.com": {
-              arn: MANAGER_SECRET_ARN,
-              targetId: "billing",
-            },
-          }),
-        },
+  it("reads the manager secret the target names, in the region its ARN names", async () => {
+    const managerSecretArn =
+      "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:billing-manager-AbCdEf";
+    vault = fakeSecretStore({ [managerSecretArn]: JSON.stringify(MANAGER) });
+
+    await expect(
+      role().list({
+        query: { type: "role", context: { ...target, managerSecretArn } },
       })
-    );
+    ).resolves.toEqual([
+      { key: "analyst", value: "analyst" },
+      { key: "reporting", value: "reporting" },
+    ]);
+
+    expect(vault.reads).toEqual([
+      {
+        config: { provider: "aws", region: "cn-north-1" },
+        ref: managerSecretArn,
+      },
+    ]);
+  });
+
+  it("fails as not found when the target's manager secret does not exist", async () => {
+    vault = fakeSecretStore({});
+
+    const data = await dataOf(list("role"));
 
     expect(data.type).toBe("object_not_found");
-    expect(data.payload).toEqual({
-      host: "orders.cluster-abc123.us-east-1.rds.amazonaws.com",
-    });
+    expect(data.payload).toEqual({});
     expect(db.signIns).toEqual([]);
   });
 

@@ -73,18 +73,19 @@ const secrets = z.object({ manager: z.literal("aws"), region });
  * name holds it. */
 const TARGET_ID = "[A-Za-z0-9][A-Za-z0-9-]{0,62}";
 
-/** A target id, the `<target id>` segment of a grant secret's name. */
-export const TARGET_ID_PATTERN = new RegExp(`^${TARGET_ID}$`);
-
 /** A grant secret's name: `p0/postgres-ai/<vpc id>/<target id>/<grant login>`. */
 export const GRANT_SECRET_NAME_PATTERN = new RegExp(
   `^${GRANT_SECRET_PREFIX}vpc-[0-9a-f]{8,17}/${TARGET_ID}/p0v_[0-9a-f]{32}$`
 );
 
-/** The `<target id>` segment of a name that matches
- * {@link GRANT_SECRET_NAME_PATTERN}. */
-export const targetIdOfGrantSecret = (secretName: string) =>
-  secretName.split("/")[3];
+/**
+ * Whether `secretName`, a name that matches {@link GRANT_SECRET_NAME_PATTERN},
+ * is a grant secret of the target `targetId`: its `<target id>` segment is
+ * that id. The grant path checks this before it calls Secrets Manager or the
+ * database.
+ */
+export const isGrantSecretOfTarget = (secretName: string, targetId: string) =>
+  secretName.split("/")[3] === targetId;
 
 /**
  * Whether `secretName` is the grant secret of `login`: its last segment is
@@ -108,7 +109,7 @@ export const requestContext = z.object({
   target,
   /** P0's id of `target`. The `<target id>` segment of `secretName` must be
    * this id. */
-  targetId: z.string().regex(TARGET_ID_PATTERN),
+  targetId: z.string().regex(new RegExp(`^${TARGET_ID}$`)),
   secrets,
   /** The grant secret P0 names for the grant login. The connector writes the
    * login's password to it and can't read it back. */

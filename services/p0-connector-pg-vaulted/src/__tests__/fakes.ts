@@ -24,22 +24,12 @@ import type {
 } from "../postgres/client.ts";
 import { target } from "./fixtures.ts";
 
-export const MANAGER_SECRET_ARN =
-  "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf";
-
-/** The target id of the fixture target, as its grant secrets name it. */
-export const MANAGER_TARGET_ID = "orders-prod";
+/** The fixture target's manager secret. */
+export const MANAGER_SECRET_ARN = target.managerSecretArn;
 
 export const MANAGER = {
   username: "p0_manager",
   password: "correct-horse-battery-staple",
-};
-
-/** The connector's environment, with the fixture target's manager secret. */
-export const env = {
-  MANAGER_SECRET_ARNS: JSON.stringify({
-    [target.host]: { arn: MANAGER_SECRET_ARN, targetId: MANAGER_TARGET_ID },
-  }),
 };
 
 // copy of `errorOf`, `connectorErrorOf` and `dataOf` in services/p0-connector-aws-ssm-ai/src/__tests__/fakes.ts

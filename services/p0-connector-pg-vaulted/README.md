@@ -18,8 +18,6 @@ scopes the secrets it can write.
   never reaches P0.
 - **Manager secret**: the AWS Secrets Manager secret that holds one target's manager username
   and password. The connector only reads it.
-- **Manager mapping**: the connector's own list of each target's manager secret and target id,
-  by the target's host.
 - **Approved role**: an existing customer-owned database role a grant was approved for. The
   connector grants it, and never creates or alters it.
 - **Grantable role**: a role a grant can be approved for. It cannot log in, is not the
@@ -130,9 +128,9 @@ The P0 control plane must serialize calls for the same grant login.
 context's. It runs these checks in order and stops at the first that fails
 (`PG_VAULTED_INSTALL_STEPS`):
 
-1. `manager_secret`: the manager mapping parses, and has the target's host.
-2. `sign_in`: the connector reads the manager secret, and the manager authenticates to the
-   target and runs `SELECT 1`.
+1. `manager_secret`: the connector reads the manager secret that `target.managerSecretArn`
+   names, and its value parses. See [Manager secret](#manager-secret).
+2. `sign_in`: the manager authenticates to the target and runs `SELECT 1`.
 3. `create_role`: the manager can create roles. It has `CREATEROLE` or is superuser.
 4. `signal_backend`: the manager can end other logins' sessions. It has the privileges of
    `pg_signal_backend` or is superuser.
@@ -151,39 +149,32 @@ network or TLS failure has the error's code in `code`. The error's type is one o
 
 | Type                      | When                                                                                                                                                            |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `validation_error`        | The manager mapping is not set or does not parse, or the manager secret's value does not.                                                                       |
-| `object_not_found`        | The manager mapping has no entry for the host, the manager secret does not exist, or the target's database does not.                                            |
+| `validation_error`        | The manager secret's value does not parse.                                                                                                                      |
+| `object_not_found`        | The manager secret does not exist, or the target's database does not.                                                                                           |
 | `insufficient_privileges` | The connector's role may not read the manager secret, PostgreSQL refuses the manager's sign-in, or the manager lacks a privilege.                               |
 | `upstream_unavailable`    | The connector cannot reach Secrets Manager or PostgreSQL, the server's certificate is not one AWS signed, or a statement ran longer than the statement timeout. |
 | `unknown`                 | PostgreSQL reported a failure the connector does not map.                                                                                                       |
 
 ## Manager
 
-### Manager mapping
+### The manager secret in the request
 
-The connector reads the manager mapping from the environment variable `MANAGER_SECRET_ARNS`: a
-JSON object from each target's host to an object with the ARN of that target's manager secret
-(`arn`) and the target's id (`targetId`).
+Each request names its target's manager secret in `target.managerSecretArn`, the secret's full
+ARN. The connector reads that secret on each call that signs in as the manager, in the region
+its ARN names.
 
-```json
-{
-  "orders.cluster-abc.us-east-1.rds.amazonaws.com": {
-    "arn": "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
-    "targetId": "orders-prod"
-  }
-}
-```
-
-- The connector reads the variable on each call, so a mapping that is not set or does not parse
-  fails the call at `manager_secret`, not the Lambda's start.
-- The host lookup ignores case.
-- Each `arn` must be a full Secrets Manager ARN in the `aws`, `aws-cn` or `aws-us-gov`
-  partition. A secret's name alone is refused.
-- Each `targetId` is a target id as a grant secret's name holds it:
-  `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`. It is the `<target id>` segment that this target's grant
-  secrets must have. See [Names](#names).
-- A value that is a string, such as an ARN alone, is refused.
-- The connector reads the secret in the region its ARN names.
+- The P0 control plane chooses the secret, as it chooses the private key secret of the
+  Snowflake (AI) and GitHub (AI) connectors. One connector serves every target in its VPC, and
+  keeps no list of targets of its own.
+- What keeps a request from naming any other secret is the connector's IAM, not the connector:
+  its role can read only the manager secrets the install's Terraform gives it. See [IAM](#iam).
+  Secrets Manager refuses a request that names another secret.
+- The ARN must be in the `aws`, `aws-cn` or `aws-us-gov` partition, with a region and a 12-digit
+  account. A secret's name alone is refused, and so is an ARN whose secret name starts with
+  `p0/postgres-ai/`, where grant secrets live.
+- Nothing ties the secret to `target.host`. A request that pairs one target's host with another
+  target's manager secret signs in to that host with the other target's credential, which the
+  host refuses unless both targets share the login.
 
 ### Manager secret
 

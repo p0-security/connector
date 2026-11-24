@@ -9,7 +9,7 @@ import { installContext } from "../context.ts";
 import { ident } from "../identifier.ts";
 import {
   type ManagerDependencies,
-  managerSecretFor,
+  readManagerCredential,
   withManager,
 } from "../manager.ts";
 import {
@@ -128,11 +128,11 @@ export const router = (
         const { target } = input;
         const { host, port, database } = target;
         const logger = ctx.logger.child({ host, port, database });
-        const secret = await at("manager_secret", host, async () =>
-          managerSecretFor(host, dependencies.env)
+        const credential = await at("manager_secret", host, () =>
+          readManagerCredential(target, dependencies)
         );
         const validation = await at("sign_in", host, () =>
-          withManager(target, secret, dependencies, logger, (session) =>
+          withManager(target, credential, dependencies, logger, (session) =>
             checkManager(session, host)
           )
         );

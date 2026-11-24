@@ -8,7 +8,7 @@ import {
 import { GRANT_LOGIN_PATTERN, isGrantSecretOfLogin } from "../../context.ts";
 import {
   type ManagerDependencies,
-  managerSecretFor,
+  readManagerCredential,
   withManager,
 } from "../../manager.ts";
 import { newNotImplementedError } from "../../not-implemented.ts";
@@ -64,9 +64,10 @@ export const newRolePrimitives = (
   list: async ({ type, context: target }) => {
     const { host, port, database } = target;
     const logger = ctx.logger.child({ host, port, database, type });
+    const credential = await readManagerCredential(target, dependencies);
     const names = await withManager(
       target,
-      managerSecretFor(host, dependencies.env),
+      credential,
       dependencies,
       logger,
       ({ query }) => LISTERS[type](query)

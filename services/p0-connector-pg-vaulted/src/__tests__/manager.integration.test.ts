@@ -103,11 +103,6 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
 
   const vault = fakeSecretStore({ [ARN]: JSON.stringify(MANAGER) });
   const dependencies: ManagerDependencies = {
-    env: {
-      MANAGER_SECRET_ARNS: JSON.stringify({
-        [HOST]: { arn: ARN, targetId: "it-target" },
-      }),
-    },
     connectSecretManager: vault.connectSecretManager,
     connect: connectWith(false),
   };
@@ -312,11 +307,6 @@ describe("a target nothing listens on", () => {
 
     const data = await dataOf(
       validationRouter(t, {
-        env: {
-          MANAGER_SECRET_ARNS: JSON.stringify({
-            [HOST]: { arn: ARN, targetId: "it-target" },
-          }),
-        },
         connectSecretManager: vault.connectSecretManager,
         connect: connectWith(false),
       })
