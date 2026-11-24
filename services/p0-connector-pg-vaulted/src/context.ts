@@ -94,12 +94,41 @@ export const GRANT_SECRET_NAME_PATTERN = new RegExp(
 );
 
 /**
+ * The `<vpc id>` and `<target id>` segments of a name that matches
+ * {@link GRANT_SECRET_NAME_PATTERN} or {@link MANAGER_SECRET_NAME_PATTERN},
+ * which both hold them as their 4th and 5th segments.
+ */
+const segmentsOf = (name: string) => {
+  const [, , , vpcId, targetId] = name.split("/");
+  return { vpcId, targetId };
+};
+
+/**
  * Whether `secretName`, a name that matches {@link GRANT_SECRET_NAME_PATTERN},
  * is a grant secret of the target `targetId`: its `<target id>` segment is
  * that id.
  */
 export const isGrantSecretOfTarget = (secretName: string, targetId: string) =>
-  secretName.split("/")[3] === targetId;
+  segmentsOf(secretName).targetId === targetId;
+
+/**
+ * Whether `managerSecret`, a target's manager secret, may sign in for a
+ * request whose grant secret is `secretName` and whose target is `targetId`.
+ * A secret P0 names must be under the grant secret's `<vpc id>` and under
+ * `targetId`. A secret RDS manages names no target, so nothing ties it to
+ * one.
+ */
+export const isManagerSecretOfTarget = (
+  managerSecret: string,
+  { secretName, targetId }: { secretName: string; targetId: string }
+) => {
+  if (RDS_MANAGER_SECRET_ARN_PATTERN.test(managerSecret)) return true;
+  const manager = segmentsOf(managerSecret);
+  return (
+    manager.vpcId === segmentsOf(secretName).vpcId &&
+    manager.targetId === targetId
+  );
+};
 
 /**
  * Whether `secretName` is the grant secret of `login`: its last segment is

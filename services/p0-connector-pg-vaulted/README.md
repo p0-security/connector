@@ -146,8 +146,9 @@ The P0 control plane must serialize calls for the same grant login.
 context's. It runs these checks in order and stops at the first that fails
 (`PG_VAULTED_INSTALL_STEPS`):
 
-1. `manager_secret`: the connector reads the manager secret that `target.managerSecretArn`
-   names, and its value parses. See [Manager secret](#manager-secret).
+1. `manager_secret`: the connector reads `target.managerSecret`, in the region that
+   [The manager secret in the request](#the-manager-secret-in-the-request) names, and its value
+   parses. See [Manager secret](#manager-secret).
 2. `sign_in`: the manager authenticates to the target and runs `SELECT 1`.
 3. `create_role`: the manager can create roles. It has `CREATEROLE` or is superuser.
 4. `signal_backend`: the manager can end other logins' sessions. It has the privileges of
@@ -167,7 +168,7 @@ network or TLS failure has the error's code in `code`. The error's type is one o
 
 | Type                      | When                                                                                                                                                            |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `validation_error`        | The manager secret's value does not parse.                                                                                                                      |
+| `validation_error`        | The manager secret's value does not parse, or the manager secret is one P0 names and the connector's `AWS_REGION` is not set.                                   |
 | `object_not_found`        | The manager secret does not exist, or the target's database does not.                                                                                           |
 | `insufficient_privileges` | The connector's role may not read the manager secret, PostgreSQL refuses the manager's sign-in, or the manager lacks a privilege.                               |
 | `upstream_unavailable`    | The connector cannot reach Secrets Manager or PostgreSQL, the server's certificate is not one AWS signed, or a statement ran longer than the statement timeout. |
@@ -177,24 +178,29 @@ network or TLS failure has the error's code in `code`. The error's type is one o
 
 ### The manager secret in the request
 
-Each request names its target's manager secret in `target.managerSecretArn`, the secret's full
-ARN. The connector reads that secret on each call that signs in as the manager, in the region
-its ARN names.
+Each request names its target's manager secret in `target.managerSecret`, in one of the two
+forms under [Request context](#request-context). The connector reads that secret on each call
+that signs in as the manager:
 
-- The P0 control plane chooses the secret, as it chooses the private key secret of the
-  Snowflake (AI) and GitHub (AI) connectors. One connector serves every target in its VPC, and
+- A secret P0 names, in the connector's own region: the `AWS_REGION` that Lambda sets. When
+  `AWS_REGION` is not set, the call fails at `manager_secret` with `validation_error`, and reads
+  nothing.
+- A secret RDS manages, in the region its ARN names.
+
+More about the secret:
+
+- The P0 control plane chooses the secret. One connector serves every target in its VPC, and
   keeps no list of targets of its own.
 - What keeps a request from naming any other secret is the connector's IAM, not the connector:
   its role can read only the manager secrets the install's Terraform gives it. See [IAM](#iam).
   Secrets Manager refuses a request that names another secret.
-- The ARN must be in the `aws`, `aws-cn` or `aws-us-gov` partition, with a region and a 12-digit
-  account. A secret's name alone is refused, and so is an ARN whose secret name starts with
-  `p0/postgres-ai/`, where grant secrets live.
-- The connector calls Secrets Manager in the manager secret's region, and writes grant secrets
-  in `secrets.region`. Both regions must be reachable from the connector's VPC. From a VPC with
-  no NAT, only the region of its Secrets Manager interface endpoint is reachable, since an
-  endpoint's private DNS covers only its own region. P0 sends the database's own region for
-  both.
+- Any other ARN or name is refused before the connector calls Secrets Manager.
+- The connector runs in the target's region, and so do the grant secrets: it writes them in
+  `secrets.region`, for which P0 sends the database's region. A secret P0 names is read in that
+  region too. A secret RDS manages is read in the region its ARN names, which must also be
+  reachable from the connector's VPC. From a VPC with no NAT, only the region of its Secrets
+  Manager interface endpoint is reachable, since an endpoint's private DNS covers only its own
+  region.
 - Nothing ties the secret to `target.host`. A request that pairs one target's host with another
   target's manager secret signs in to that host with the other target's credential, which the
   host refuses unless both targets share the login.
@@ -202,7 +208,8 @@ its ARN names.
 ### Manager secret
 
 The manager secret's value is JSON with `username` and `password`, both non-empty strings. AWS
-writes this shape for a secret that RDS manages and for an "RDS database credentials" secret.
+writes this shape for a secret that RDS manages, and the customer writes it to a secret P0
+names.
 The connector ignores every other key, `host` and `port` included: the target comes from the
 request.
 

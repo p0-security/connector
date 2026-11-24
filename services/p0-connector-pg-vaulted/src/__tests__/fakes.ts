@@ -24,8 +24,12 @@ import type {
 } from "../postgres/client.ts";
 import { target } from "./fixtures.ts";
 
-/** The fixture target's manager secret. */
-export const MANAGER_SECRET_ARN = target.managerSecretArn;
+/** The fixture target's manager secret, a secret P0 names. */
+export const MANAGER_SECRET = target.managerSecret;
+
+/** The connector's environment in Lambda, which reads a manager secret P0
+ * names in its `AWS_REGION`. */
+export const CONNECTOR_ENV = { AWS_REGION: "us-east-1" };
 
 export const MANAGER = {
   username: "p0_manager",
@@ -68,12 +72,13 @@ export const capturingLogger = () => {
 };
 
 /**
- * Secrets Manager in memory, by ARN. It holds the fixture manager's secret
- * unless given other values, and keeps every read's region and ARN.
+ * Secrets Manager in memory, by name or ARN. It holds the fixture manager's
+ * secret unless given other values, and keeps every read's region and
+ * secret.
  */
 export const fakeSecretStore = (
   values: Record<string, SecretPayload> = {
-    [MANAGER_SECRET_ARN]: JSON.stringify(MANAGER),
+    [MANAGER_SECRET]: JSON.stringify(MANAGER),
   }
 ) => {
   const reads: { config: SecretManagerProviderConfig; ref: string }[] = [];

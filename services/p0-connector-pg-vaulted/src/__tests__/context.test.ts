@@ -5,6 +5,7 @@ import {
   GRANT_SECRET_NAME_PATTERN,
   isGrantSecretOfLogin,
   isGrantSecretOfTarget,
+  isManagerSecretOfTarget,
   requestContext,
 } from "../context.ts";
 import { GRANT_KEY, LOGIN, context } from "./fixtures.ts";
@@ -252,4 +253,45 @@ describe("isGrantSecretOfTarget", () => {
       expect(isGrantSecretOfTarget(context.secretName, targetId)).toBe(false);
     }
   );
+});
+
+describe("isManagerSecretOfTarget", () => {
+  const RDS_SECRET =
+    "arn:aws:secretsmanager:us-east-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123";
+
+  it("holds for a secret P0 names under the request's vpc id and target id", () => {
+    expect(isManagerSecretOfTarget(context.target.managerSecret, context)).toBe(
+      true
+    );
+  });
+
+  it("holds for a secret RDS manages, which names no target", () => {
+    expect(isManagerSecretOfTarget(RDS_SECRET, context)).toBe(true);
+  });
+
+  it.each([
+    [
+      "another vpc id",
+      "p0/install/postgres/vpc-0a1b2c3d4e5f67891/orders-prod/p0manager",
+    ],
+    [
+      "another target id",
+      "p0/install/postgres/vpc-0a1b2c3d4e5f67890/billing-prod/p0manager",
+    ],
+    [
+      "a target id that differs only in case",
+      "p0/install/postgres/vpc-0a1b2c3d4e5f67890/Orders-prod/p0manager",
+    ],
+  ])("does not hold for a secret P0 names under %s", (_, managerSecret) => {
+    expect(isManagerSecretOfTarget(managerSecret, context)).toBe(false);
+  });
+
+  it("does not hold when the request's targetId is another target's", () => {
+    expect(
+      isManagerSecretOfTarget(context.target.managerSecret, {
+        ...context,
+        targetId: "billing-prod",
+      })
+    ).toBe(false);
+  });
 });
