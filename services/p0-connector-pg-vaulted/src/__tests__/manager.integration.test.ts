@@ -523,6 +523,24 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
       expect(await grantLogin()).toEqual(prepared);
     });
 
+    it.each(["it_superuser", "pg_read_all_data"])(
+      "refuses %s, which the manager holds ADMIN OPTION on, and changes nothing",
+      async (rolename) => {
+        await provision();
+        const prepared = await grantLogin();
+        const before = await rolesAndMemberships();
+
+        await expect(dataOf(approve(["analyst", rolename]))).resolves.toEqual({
+          type: "validation_error",
+          message: `The role ${rolename} is not a grantable role of this target.`,
+          payload: { login: GRANTED_LOGIN, rolename },
+        });
+
+        expect(await grantLogin()).toEqual(prepared);
+        expect(await rolesAndMemberships()).toEqual(before);
+      }
+    );
+
     it("keeps the statement and the verifier out of the error and the log when PostgreSQL refuses to create the login", async () => {
       await asSuperuser(`ALTER ROLE ${MANAGER.username} NOCREATEROLE`);
       const log = capturingLogger();
