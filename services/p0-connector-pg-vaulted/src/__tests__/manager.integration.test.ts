@@ -138,7 +138,7 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
   /** Every role and every membership, which no call may change. */
   const rolesAndMemberships = () =>
     asSuperuser(
-      `SELECT r.rolname, array_agg(m.roleid::regrole::text || ' by ' || m.grantor::regrole::text ORDER BY 1) AS memberships
+      `SELECT r.rolname, array_agg(m.roleid::regrole::text || ' by ' || m.grantor::regrole::text ORDER BY m.roleid::regrole::text, m.grantor::regrole::text) AS memberships
         FROM pg_roles r LEFT JOIN pg_auth_members m ON m.member = r.oid
         WHERE r.rolname !~ '^pg_' GROUP BY r.rolname ORDER BY r.rolname`
     );
