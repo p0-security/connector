@@ -742,6 +742,61 @@ describe("a grant, from provisionUser to setPoliciesForUser", () => {
   });
 });
 
+describe("a grant secret of another target", () => {
+  // The manager mapping holds the target id `orders-prod` for the fixture's
+  // host.
+  const OTHER_TARGET_CONTEXT = {
+    ...context,
+    secretName: SECRET.replace("/orders-prod/", "/billing-prod/"),
+  };
+
+  const calls = {
+    getUser: (requestContext: typeof context) =>
+      role().identifyUser({ userBody: LOGIN, context: requestContext }),
+    createUser: (requestContext: typeof context) =>
+      newRolePrimitives({ logger: log.logger }, dependencies()).createUser(
+        requestContext,
+        LOGIN
+      ),
+    setPoliciesForUser: (requestContext: typeof context) =>
+      role().setPoliciesForUser({
+        userId: LOGIN,
+        userBody: LOGIN,
+        policies: [{ type: "role", rolename: "analyst" }],
+        context: requestContext,
+      }),
+  };
+
+  it.each(Object.entries(calls))(
+    "is refused by %s before Secrets Manager or PostgreSQL is called",
+    async (_, call) => {
+      given("prepared", "filled");
+      const before = everything();
+
+      const data = await dataOf(call(OTHER_TARGET_CONTEXT));
+
+      expect(data.type).toBe("validation_error");
+      expect(data.payload).toEqual({ host: context.target.host });
+      expect(data.message).not.toContain("billing-prod");
+      expect(data.message).not.toContain("orders-prod");
+      expect(journal).toEqual([]);
+      expect(db.signIns).toEqual([]);
+      expect(everything()).toEqual(before);
+    }
+  );
+
+  it.each(Object.entries(calls))(
+    "is no obstacle to %s when the target id matches the mapping's",
+    async (_, call) => {
+      given("prepared", "filled");
+
+      await call(context);
+
+      expect(db.signIns).toHaveLength(1);
+    }
+  );
+});
+
 describe("the grant login's password", () => {
   const SECRETS = [
     FIRST_PASSWORD.password,

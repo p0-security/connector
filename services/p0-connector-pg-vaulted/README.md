@@ -71,7 +71,7 @@ Every access call carries this context (`src/context.ts`):
 The context does not name the manager secret. The connector looks it up by `target.host` in
 the [manager mapping](#manager-mapping), which Terraform sets in the connector's own
 environment, so the P0 control plane cannot point the connector at another secret or host. The
-mapping also holds the target's id. A grant call is to be refused unless the `<target id>`
+mapping also holds the target's id. A grant call is refused unless the `<target id>`
 segment of `secretName` is that id (see [Names](#names)).
 
 Revoke parses the same context as grant, so the parser accepts a past `deadline` and truncates
@@ -93,8 +93,9 @@ it refuses a login whose grant secret is another login's. With the connector's I
 
 The `<target id>` segment is the same kind of claim: the schema cannot tie it to the target in
 `target.host`. The [manager mapping](#manager-mapping) does. It holds each host's target id,
-and a grant call whose `secretName` names another target is to be refused with
-`validation_error`, before any call to Secrets Manager or PostgreSQL. That keeps a request for
+and a grant call whose `secretName` names another target, `getUser`, `createUser` and
+`setPoliciesForUser` alike, is refused with `validation_error` and a payload of `{ host }`,
+before any call to Secrets Manager or PostgreSQL. That keeps a request for
 one target from writing a grant secret that belongs under another.
 
 ### Lifecycle
