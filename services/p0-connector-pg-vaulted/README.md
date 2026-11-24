@@ -302,8 +302,11 @@ The unit tests run with the repository's `yarn :test`. They reach Secrets Manage
 PostgreSQL through fakes that the routers take as `dependencies`.
 
 The integration tests (`src/**/*.integration.test.ts`) run install validation and `list`
-against PostgreSQL 14 and 16 in Docker, as a manager that is not superuser. CI does not run
-them. To run them, from this directory:
+against PostgreSQL 14 and 16 in Docker, as a manager that is not superuser. CI runs them in
+`.github/workflows/test-pg-vaulted-integration.yaml`, on a pull request that changes this
+service, `connector-core` or `secret-manager-client`. The unit tests' fake answers a catalog
+query by the identity of its SQL constant, so only these tests run the SQL. To run them
+yourself, from this directory:
 
 ```sh
 ./scripts/integration-db.sh up
