@@ -86,20 +86,30 @@ a `comment` over 1000 characters.
 
 ### Names
 
-P0 chooses both names. The connector only checks them, and refuses any other.
+P0 chooses these names. The connector only checks them, and refuses any other.
 
 - Grant login: `^p0v_[0-9a-f]{32}$` (`GRANT_LOGIN_PATTERN`).
-- Grant secret: `p0/postgres-ai/<vpc id>/<target id>/<grant login>`, that is
-  `^p0/postgres-ai/vpc-[0-9a-f]{8,17}/[A-Za-z0-9][A-Za-z0-9-]{0,62}/p0v_[0-9a-f]{32}$`
+- Grant secret: `p0/secrets/postgres/<vpc id>/<target id>/<grant login>`, that is
+  `^p0/secrets/postgres/vpc-[0-9a-f]{8,17}/[A-Za-z0-9][A-Za-z0-9-]{0,62}/p0v_[0-9a-f]{32}$`
   (`GRANT_SECRET_NAME_PATTERN`).
+- Manager secret, when P0 names it: `p0/install/postgres/<vpc id>/<target id>/p0manager`, that
+  is `^p0/install/postgres/vpc-[0-9a-f]{8,17}/[A-Za-z0-9][A-Za-z0-9-]{0,62}/p0manager$`
+  (`MANAGER_SECRET_NAME_PATTERN`).
+
+No manager secret is a grant secret. The two names start differently, and a secret RDS manages
+is sent as an ARN, never as a name.
 
 The last segment of a grant secret's name is the grant login. The schema cannot compare the two,
 because the login arrives as the user, outside the context, so the user namespace check does:
 it refuses a login whose grant secret is another login's. With the connector's IAM scoped to
-`p0/postgres-ai/<its vpc>/`, that keeps one grant's secret from being another's.
+`p0/secrets/postgres/<its vpc>/`, that keeps one grant's secret from being another's.
 
 The `<target id>` segment must be the request's `targetId`. The grant path is to compare the
-two, and refuse a request whose grant secret belongs under another target.
+two, and refuse a request whose grant secret belongs under another target. It is to refuse, the
+same way, a manager secret P0 names whose `<vpc id>` is not `secretName`'s, or whose
+`<target id>` is not `targetId`. A secret RDS manages names no target, so nothing ties it to
+one. Install validation and `list` take a target with no `targetId` or `secretName`, so only the
+manager secret's pattern applies there.
 
 ### Lifecycle
 
@@ -148,13 +158,17 @@ Once every check has passed it returns `{ grantableRoles }`.
 
 The connector's execution role will need:
 
-- `secretsmanager:GetSecretValue` on the manager's secrets, and on no other secret. A manager
-  secret encrypted with a customer-managed KMS key also needs `kms:Decrypt` on that key.
+- `secretsmanager:GetSecretValue` on
+  `arn:<partition>:secretsmanager:<region>:<account>:secret:p0/install/postgres/<vpc id>/*`,
+  plus the ARN of each RDS-managed manager secret that the VPC's targets use, and on no other
+  secret. A manager secret that a customer-managed KMS key encrypts also needs `kms:Decrypt` on
+  that key.
 - `secretsmanager:CreateSecret`, `secretsmanager:PutSecretValue`,
-  `secretsmanager:DescribeSecret` and `secretsmanager:DeleteSecret` on secrets under
-  `p0/postgres-ai/<vpc id>/`.
+  `secretsmanager:DescribeSecret` and `secretsmanager:DeleteSecret` only on
+  `arn:<partition>:secretsmanager:<region>:<account>:secret:p0/secrets/postgres/<vpc id>/*`.
 
-It must not be able to read a secret under `p0/postgres-ai/<vpc id>/`.
+The `*` covers the suffix Secrets Manager adds to each secret's name. The role must not be able to
+read a secret under `p0/secrets/postgres/<vpc id>/`.
 
 A manager secret must be in the connector's account. A secret in another account is readable only
 with a resource policy on the secret that lets the connector's role read it, and only when a

@@ -83,12 +83,14 @@ const region = z.string().regex(new RegExp(`^${REGION}$`));
  * `manager` is the secret manager, not the manager login. */
 const secrets = z.object({ manager: z.literal("aws"), region });
 
-/** Where every grant secret's name starts. */
-const GRANT_SECRET_PREFIX = "p0/postgres-ai/";
-
-/** A grant secret's name: `p0/postgres-ai/<vpc id>/<target id>/<grant login>`. */
+/**
+ * A grant secret's name:
+ * `p0/secrets/postgres/<vpc id>/<target id>/<grant login>`. No manager secret
+ * has a name under `p0/secrets/`, so a grant never writes over the manager's
+ * login.
+ */
 export const GRANT_SECRET_NAME_PATTERN = new RegExp(
-  `^${GRANT_SECRET_PREFIX}vpc-[0-9a-f]{8,17}/${TARGET_ID}/p0v_[0-9a-f]{32}$`
+  `^p0/secrets/postgres/${VPC_ID}/${TARGET_ID}/p0v_[0-9a-f]{32}$`
 );
 
 /**
@@ -111,8 +113,8 @@ const MAX_COMMENT_LENGTH = 1000;
 export const requestContext = z.object({
   requestId: z.string().min(1),
   target,
-  /** P0's id of `target`. The `<target id>` segment of `secretName` must be
-   * this id. */
+  /** P0's id of `target`. The `<target id>` segment of `secretName`, and of
+   * a manager secret P0 names, must be this id. */
   targetId: z.string().regex(new RegExp(`^${TARGET_ID}$`)),
   secrets,
   /** The grant secret P0 names for the grant login. The connector writes the
