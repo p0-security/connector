@@ -5,10 +5,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
 import {
+  CONNECTOR_ENV,
   type FakeObject,
   type FakeRole,
   type Journal,
-  MANAGER_SECRET_ARN,
+  MANAGER,
+  MANAGER_SECRET,
   capturingLogger,
   connectorErrorOf,
   dataOf,
@@ -46,6 +48,7 @@ beforeEach(() => {
 
 const role = () =>
   router(t, {
+    env: CONNECTOR_ENV,
     connectSecretManager: vault.connectSecretManager,
     secretsManagerSdk: vault.secretsManagerSdk,
     connect: db.connect,
@@ -176,7 +179,7 @@ describe("setPoliciesForUser with no policies", () => {
     await expect(cutOff()).resolves.toBe(null);
 
     expect(journal).toEqual([
-      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      `getSecretValue ${MANAGER_SECRET}`,
       ["login", LOGIN],
       ...REVOKES("analyst"),
       ...RETIRED_BY_ITS_OWN_TRANSACTION,
@@ -214,7 +217,7 @@ describe("setPoliciesForUser with no policies", () => {
 
     expect(everything()).toEqual(before);
     expect(journal).toEqual([
-      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      `getSecretValue ${MANAGER_SECRET}`,
       ["login", LOGIN],
       "close",
     ]);
@@ -760,7 +763,7 @@ describe("deleteUser", () => {
     await expect(cleanUp()).resolves.toBe(null);
 
     expect(journal).toEqual([
-      `getSecretValue ${MANAGER_SECRET_ARN}`,
+      `getSecretValue ${MANAGER_SECRET}`,
       ["login", LOGIN],
       ["isGrantableRole", "analyst"],
       `deleteSecret ${SECRET}`,
@@ -826,7 +829,7 @@ describe("deleteUser", () => {
 
     await cleanUp();
 
-    expect(vault.reads.map(({ ref }) => ref)).toEqual([MANAGER_SECRET_ARN]);
+    expect(vault.reads.map(({ ref }) => ref)).toEqual([MANAGER_SECRET]);
     expect(db.signIns).toEqual(
       ["postgres", "orders", "postgres"].map((database) => ({
         host: "orders.cluster-abc123.us-east-1.rds.amazonaws.com",
@@ -871,7 +874,7 @@ describe("deleteUser", () => {
       await expect(cleanUp()).resolves.toBe(null);
 
       expect(journal).toEqual([
-        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        `getSecretValue ${MANAGER_SECRET}`,
         ["login", LOGIN],
         `deleteSecret ${SECRET}`,
         "close",
@@ -902,7 +905,7 @@ describe("deleteUser", () => {
 
       expect(everything()).toEqual(before);
       expect(journal).toEqual([
-        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        `getSecretValue ${MANAGER_SECRET}`,
         ["login", LOGIN],
         "close",
       ]);
@@ -929,7 +932,7 @@ describe("deleteUser", () => {
 
       expect(everything()).toEqual(before);
       expect(journal).toEqual([
-        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        `getSecretValue ${MANAGER_SECRET}`,
         ["login", LOGIN],
         ["isGrantableRole", "postgres"],
         ["ownsAnything", LOGIN],
@@ -969,7 +972,7 @@ describe("deleteUser", () => {
       await expect(cleanUp(UNGRANTABLE)).resolves.toBe(null);
 
       expect(journal).toEqual([
-        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        `getSecretValue ${MANAGER_SECRET}`,
         ["login", LOGIN],
         ["isGrantableRole", "postgres"],
         ["ownsAnything", LOGIN],
@@ -1201,7 +1204,7 @@ describe("deleteUser", () => {
       await expect(dataOf(cleanUp())).resolves.toEqual({
         type: "insufficient_privileges",
         message:
-          "Secrets Manager refused to let the connector delete the grant secret. Give the connector's role secretsmanager:DeleteSecret on the secrets under p0/postgres-ai/<vpc id>/.",
+          "Secrets Manager refused to let the connector delete the grant secret. Give the connector's role secretsmanager:DeleteSecret on the secrets under p0/secrets/postgres/<vpc id>/.",
         payload: { step: "delete_secret" },
       });
 
@@ -1276,7 +1279,7 @@ describe("deleteUser", () => {
 
         expect(everything()).toEqual(DONE);
         expect(journal).toEqual([
-          `getSecretValue ${MANAGER_SECRET_ARN}`,
+          `getSecretValue ${MANAGER_SECRET}`,
           ["login", LOGIN],
           ["isGrantableRole", "analyst"],
           `deleteSecret ${SECRET}`,
@@ -1366,7 +1369,7 @@ describe("a grant's whole life, from provisionUser to deleteUser", () => {
     await revoke();
 
     expect([...new Set(vault.reads.map(({ ref }) => ref))]).toEqual([
-      MANAGER_SECRET_ARN,
+      MANAGER_SECRET,
     ]);
   });
 });
@@ -1598,34 +1601,99 @@ describe("what the revoke path shows", () => {
   });
 });
 
-describe("a grant secret of another target", () => {
-  it.each([
+describe("a secret of another target", () => {
+  /** The request context, with `managerSecret` as the target's manager
+   * secret. */
+  const withManagerSecret = (managerSecret: string) => ({
+    ...context,
+    target: { ...context.target, managerSecret },
+  });
+
+  const GRANT_SECRET_REFUSAL =
+    "The grant secret's name is for another target than the request's. Its target id must be the request's targetId.";
+  const MANAGER_SECRET_REFUSAL =
+    "The manager secret's name is for another target than the request's. Its vpc id must be the grant secret's, and its target id the request's targetId.";
+
+  const OTHER_TARGET_CONTEXTS = [
     [
-      "the cutoff",
-      () =>
-        role().setPoliciesForUser({
-          ...user,
-          policies: [],
-          context: { ...context, targetId: "billing-prod" },
-        }),
+      "a grant secret of another target",
+      { ...context, targetId: "billing-prod" },
+      GRANT_SECRET_REFUSAL,
     ],
-    ["the cleanup", () => cleanUp({ targetId: "billing-prod" })],
-  ])(
-    "is refused by %s before Secrets Manager or PostgreSQL is called",
-    async (_, call) => {
+    [
+      "a manager secret P0 names for another target",
+      withManagerSecret(
+        MANAGER_SECRET.replace("/orders-prod/", "/billing-prod/")
+      ),
+      MANAGER_SECRET_REFUSAL,
+    ],
+    [
+      "a manager secret P0 names under another vpc",
+      withManagerSecret(
+        MANAGER_SECRET.replace(
+          "/vpc-0a1b2c3d4e5f67890/",
+          "/vpc-0a1b2c3d4e5f67891/"
+        )
+      ),
+      MANAGER_SECRET_REFUSAL,
+    ],
+  ] as const;
+
+  const calls = {
+    "the cutoff": (requestContext: RequestContext) =>
+      role().setPoliciesForUser({
+        ...user,
+        policies: [],
+        context: requestContext,
+      }),
+    "the cleanup": (requestContext: RequestContext) =>
+      role().deleteUser({ ...user, context: requestContext }),
+  };
+
+  it.each(
+    Object.entries(calls).flatMap(([name, call]) =>
+      OTHER_TARGET_CONTEXTS.map(
+        ([reason, requestContext, message]) =>
+          [name, reason, call, requestContext, message] as const
+      )
+    )
+  )(
+    "is refused by %s, for %s, before Secrets Manager or PostgreSQL is called",
+    async (_, _reason, call, requestContext, message) => {
       given("active");
       const before = everything();
 
-      await expect(dataOf(call())).resolves.toEqual({
+      await expect(dataOf(call(requestContext))).resolves.toEqual({
         type: "validation_error",
-        message:
-          "The grant secret's name is for another target than the request's. Its target id must be the request's targetId.",
+        message,
         payload: { host: context.target.host },
       });
       expect(journal).toEqual([]);
       expect(vault.reads).toEqual([]);
       expect(db.signIns).toEqual([]);
       expect(everything()).toEqual(before);
+    }
+  );
+
+  it.each(Object.entries(calls))(
+    "lets %s read a manager secret RDS manages in the region its ARN names",
+    async (_, call) => {
+      const managerSecret =
+        "arn:aws:secretsmanager:eu-west-1:123456789012:secret:rds!db-0a1b2c3d-4e5f-6789-abcd-ef0123456789-AbC123";
+      vault = fakeSecretStore(
+        { [managerSecret]: JSON.stringify(MANAGER) },
+        journal
+      );
+      given("retired");
+
+      await call(withManagerSecret(managerSecret));
+
+      expect(vault.reads).toEqual([
+        {
+          config: { provider: "aws", region: "eu-west-1" },
+          ref: managerSecret,
+        },
+      ]);
     }
   );
 });
