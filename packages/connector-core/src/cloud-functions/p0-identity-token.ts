@@ -101,7 +101,14 @@ export const newP0IdentityTokenVerifier = ({
     new TokenRefusal(`P0 identity token refused: ${check}`);
 
   return async (token: string) => {
-    const decoded = jwt.decode(token, { complete: true });
+    let decoded: jwt.Jwt | null;
+    try {
+      decoded = jwt.decode(token, { complete: true });
+    } catch {
+      // A header with `typ` "JWT" makes the payload be parsed as JSON, which
+      // throws if it isn't. The parse error quotes the payload, so drop it.
+      throw fail("not a JWT");
+    }
     if (!decoded) {
       throw fail("not a JWT");
     }

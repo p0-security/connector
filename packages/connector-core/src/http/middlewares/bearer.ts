@@ -10,11 +10,11 @@ import { AuthError } from "../types/error.ts";
 export type TokenVerifier = (token: string) => Promise<boolean>;
 
 /**
- * Thrown by a `TokenVerifier` to refuse a token, with a message that names the
- * failed check and never contains the token. `bearerAuthzMiddleware` keeps
- * this message as the cause of its `AuthError`. Any other error a verifier
- * throws becomes "Token verification failed", since a library's message may
- * quote the token.
+ * Thrown by a `TokenVerifier` to refuse a token, with a fixed message that
+ * names the failed check and never contains the token or any of its claims.
+ * `bearerAuthzMiddleware` keeps this message as the cause of its `AuthError`.
+ * Any other error a verifier throws becomes "Token verification failed", since
+ * a library's message may quote the token.
  */
 export class TokenRefusal extends Error {
   constructor(message: string) {
@@ -24,11 +24,25 @@ export class TokenRefusal extends Error {
 }
 
 /**
+ * Names the check a verifier library's error reports: the name paired with the
+ * first prefix its message starts with, or `undefined` if none does. Only the
+ * name is returned, never any of the message, which may quote the token.
+ */
+export const failedCheck = (
+  err: unknown,
+  checks: readonly (readonly [prefix: string, check: string])[]
+): string | undefined =>
+  err instanceof Error
+    ? checks.find(([prefix]) => err.message.startsWith(prefix))?.[1]
+    : undefined;
+
+/**
  * Admits a request whose `header` (lower case) is exactly `Bearer <token>`,
  * with a token that `handler` admits. Anything else throws an `AuthError`,
- * answered with a 403. Its cause, which the error handler logs, names the
- * failed header check or `TokenRefusal`, or else says only that verification
- * failed or the token was refused. It never contains the token.
+ * answered with a 403. Its cause, which the error handler logs, is the failed
+ * header check or the verifier's `TokenRefusal`; for any other error the
+ * verifier throws it says only "Token verification failed", and for a verifier
+ * that resolves `false`, "Token refused". It never contains the token.
  */
 export const bearerAuthzMiddleware = (
   handler: TokenVerifier,

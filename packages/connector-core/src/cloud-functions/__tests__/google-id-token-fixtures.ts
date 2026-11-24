@@ -32,17 +32,30 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", {
   modulusLength: 2048,
 });
 
-/** Mints an RS256 ID token shaped like Google's, signed with the test key. */
+/**
+ * Mints an RS256 ID token shaped like Google's, signed with the test key. A
+ * claim set to `undefined` is left out.
+ */
 export const mintToken = (
-  claims: { aud: string; email: string; iat?: number; exp?: number },
-  signingKey: KeyObject = privateKey
+  claims: {
+    aud: string;
+    email?: string;
+    iss?: string;
+    iat?: number;
+    exp?: number;
+  },
+  signingKey: KeyObject = privateKey,
+  kid = KEY_ID
 ) => {
   const now = Math.floor(Date.now() / 1000);
   const encode = (part: object) =>
     Buffer.from(JSON.stringify(part)).toString("base64url");
-  const signed = `${encode({ alg: "RS256", kid: KEY_ID, typ: "JWT" })}.${encode(
-    { iss: "https://accounts.google.com", iat: now, exp: now + 3600, ...claims }
-  )}`;
+  const signed = `${encode({ alg: "RS256", kid, typ: "JWT" })}.${encode({
+    iss: "https://accounts.google.com",
+    iat: now,
+    exp: now + 3600,
+    ...claims,
+  })}`;
   const signature = sign("RSA-SHA256", Buffer.from(signed), signingKey);
   return `${signed}.${signature.toString("base64url")}`;
 };

@@ -118,6 +118,17 @@ describe("newP0IdentityTokenVerifier", () => {
   const refusals: [string, () => string, RegExp][] = [
     ["not a JWT", () => "not-a-jwt", /not a JWT/],
     [
+      "a JWT header over a payload that isn't JSON",
+      () => {
+        const encode = (part: string) =>
+          Buffer.from(part).toString("base64url");
+        return `${encode(
+          JSON.stringify({ alg: "RS256", typ: "JWT", kid: "key-a" })
+        )}.${encode("not json")}.${encode("signature")}`;
+      },
+      /^P0 identity token refused: not a JWT$/,
+    ],
+    [
       "an unknown kid",
       () => signIdentityToken({}, { kid: "key-c" }),
       /unknown kid/,

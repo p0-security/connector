@@ -1,9 +1,10 @@
+import { OAuth2Client } from "google-auth-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type * as http from "../../http/index.ts";
 import { runExpressApp } from "../../http/index.ts";
+import { TokenRefusal } from "../../http/middlewares/bearer.ts";
 import { AuthError } from "../../http/types/error.ts";
-import { newGoogleIdTokenVerifier } from "../google-id-token-connector.ts";
 import { runHttpConnector } from "../http-connector.ts";
 import {
   AUDIENCE,
@@ -184,24 +185,175 @@ describe("the bearer check runHttpConnector serves", () => {
   it("keeps a refused token out of the error, the log and the response", async () => {
     const token = mintTokenWithBadSignature(AUDIENCE);
     // google-auth-library's own error quotes the token.
-    await expect(newGoogleIdTokenVerifier(AUDIENCE)(token)).rejects.toThrow(
-      token
+    await expect(
+      new OAuth2Client().verifyIdToken({ idToken: token, audience: AUDIENCE })
+    ).rejects.toThrow(token);
+
+    const { error, response } = await refuse(token);
+
+    expectTokenKeptOut(token, error, response);
+    expect(String(error.cause)).toBe(
+      "TokenRefusal: Google ID token refused: invalid signature"
     );
-    const { routes, middlewares } = start();
+  });
+});
 
-    const error = (await authorize(middlewares[0]!, token)) as AuthError;
-    const response = await fetchPing(routes, middlewares, {
-      Authorization: `Bearer ${token}`,
-    });
+/** Sends `token` to a fresh connector; returns the refusal and the response. */
+const refuse = async (token: string) => {
+  const { routes, middlewares } = start();
+  const error = await authorize(middlewares[0]!, token);
+  const response = await fetchPing(routes, middlewares, {
+    Authorization: `Bearer ${token}`,
+  });
+  expect(error).toBeInstanceOf(AuthError);
+  return { error: error as AuthError, response };
+};
 
-    expect(error).toBeInstanceOf(AuthError);
+/**
+ * Checks that neither the refusal, its cause, the log nor the response holds
+ * the token or the invoker's email.
+ */
+const expectTokenKeptOut = (
+  token: string,
+  error: AuthError,
+  response: unknown
+) => {
+  for (const secret of [token, INVOKER]) {
+    expect(JSON.stringify(error)).not.toContain(secret);
+    expect(error.message).not.toContain(secret);
+    expect(error.stack).not.toContain(secret);
+    expect(String((error.cause as Error).stack)).not.toContain(secret);
+    expect(loggedErrors()).not.toContain(secret);
+  }
+  expect(response).toEqual({ status: 403, body: REFUSED_BODY });
+};
+
+describe("the log for a Google ID token runHttpConnector refuses", () => {
+  const now = () => Math.floor(Date.now() / 1000);
+  const encode = (part: string) => Buffer.from(part).toString("base64url");
+
+  it.each([
+    ["a token without three segments", () => "not-a-jwt", "malformed token"],
+    [
+      "a header that isn't JSON",
+      () => `${encode("header")}.${encode("{}")}.${encode("signature")}`,
+      "malformed token",
+    ],
+    [
+      "a payload that isn't JSON",
+      () =>
+        `${encode('{"alg":"RS256","typ":"JWT"}')}.${encode("payload")}.${encode("signature")}`,
+      "malformed token",
+    ],
+    [
+      "an unknown kid",
+      () => mintToken({ aud: AUDIENCE, email: INVOKER }, undefined, "other"),
+      "unknown kid",
+    ],
+    [
+      "a bad signature",
+      () => mintTokenWithBadSignature(AUDIENCE),
+      "invalid signature",
+    ],
+    [
+      "no exp",
+      () => mintToken({ aud: AUDIENCE, email: INVOKER, exp: undefined }),
+      "no iat or exp",
+    ],
+    [
+      "an exp more than a day ahead",
+      () =>
+        mintToken({ aud: AUDIENCE, email: INVOKER, exp: now() + 2 * 86400 }),
+      "lives too long",
+    ],
+    [
+      "an iat ten minutes ahead",
+      () =>
+        mintToken({
+          aud: AUDIENCE,
+          email: INVOKER,
+          iat: now() + 600,
+          exp: now() + 1200,
+        }),
+      "not yet valid",
+    ],
+    ["an expired token", () => mintExpiredToken(AUDIENCE), "expired"],
+    [
+      "another issuer",
+      () =>
+        mintToken({
+          aud: AUDIENCE,
+          email: INVOKER,
+          iss: "https://issuer.example.com",
+        }),
+      "wrong iss",
+    ],
+    [
+      "another audience",
+      () => mintToken({ aud: OTHER_AUDIENCE, email: INVOKER }),
+      "wrong aud",
+    ],
+    [
+      "no email",
+      () => mintToken({ aud: AUDIENCE, email: undefined }),
+      "no email claim",
+    ],
+    [
+      "another service account",
+      () =>
+        mintToken({
+          aud: AUDIENCE,
+          email: "someone-else@p0-prod.iam.gserviceaccount.com",
+        }),
+      "wrong email",
+    ],
+  ])("names the check for %s", async (_name, mint, check) => {
+    const token = mint();
+
+    const { error, response } = await refuse(token);
+
+    expectTokenKeptOut(token, error, response);
+    expect(loggedErrors()).not.toContain("someone-else");
+    expect(error.cause).toBeInstanceOf(TokenRefusal);
+    expect((error.cause as Error).message).toBe(
+      `Google ID token refused: ${check}`
+    );
+    expect(loggedErrors()).toContain(`Google ID token refused: ${check}`);
+  });
+
+  it("names a failed certificate fetch", async () => {
+    vi.mocked(
+      OAuth2Client.prototype.getFederatedSignonCertsAsync
+    ).mockRestore();
+    // The library's own transport, so its message is the real one.
+    vi.spyOn(
+      Object.getPrototypeOf(new OAuth2Client().transporter),
+      "request"
+    ).mockRejectedValue(new Error("connect ECONNREFUSED"));
+    const token = mintToken({ aud: AUDIENCE, email: INVOKER });
+
+    const { error, response } = await refuse(token);
+
+    expect((error.cause as Error).message).toBe(
+      "Google ID token refused: certificate fetch failed"
+    );
+    expect(loggedErrors()).not.toContain("ECONNREFUSED");
+    expectTokenKeptOut(token, error, response);
+  });
+
+  it("logs only that verification failed for an error it doesn't recognise", async () => {
+    const token = mintToken({ aud: AUDIENCE, email: INVOKER });
+    vi.spyOn(OAuth2Client.prototype, "verifyIdToken").mockRejectedValue(
+      new Error(`A failure added in a later release: ${token}`)
+    );
+
+    const { error, response } = await refuse(token);
+
+    expect(error.cause).not.toBeInstanceOf(TokenRefusal);
     expect(String(error.cause)).toBe("Error: Token verification failed");
-    expect(JSON.stringify(error)).not.toContain(token);
-    expect(error.message).not.toContain(token);
-    expect(error.stack).not.toContain(token);
-    expect(response).toEqual({ status: 403, body: REFUSED_BODY });
     expect(loggedErrors()).toContain("Token verification failed");
-    expect(loggedErrors()).not.toContain(token);
+    expect(loggedErrors()).not.toContain("later release");
+    expectTokenKeptOut(token, error, response);
   });
 });
 

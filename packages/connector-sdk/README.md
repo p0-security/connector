@@ -154,7 +154,8 @@ run();
   expired, must not have an `iat` in the future, and must live at most 15 minutes (`exp` minus
   `iat`); the connector allows 60 seconds of clock skew, so keep the host's clock in sync. Every
   path except `GET /health` needs the token, so a request without a valid one gets a `403`, on an
-  unknown path too. The `403` body is only
+  unknown path too. A JSON body is parsed before the token is checked, though, so one that isn't
+  valid JSON gets a `400`, and one over 5 MB a `413`, whatever the token. The `403` body is only
   `{"error": {"message": "Unauthorized", "publicMessage": "P0 could not properly identify you."}}`;
   the log says which check failed, never the token. The connector fetches nothing to check the
   token, and `INVOKER_SA_EMAIL` isn't needed. `run()` throws before binding a port if either
