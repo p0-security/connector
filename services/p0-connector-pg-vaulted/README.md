@@ -1,8 +1,7 @@
 # p0-connector-pg-vaulted
 
-> **Contract only.** This package defines the contract of install validation. The operation is
-> a stub that throws, and the connector has no access type yet. See
-> [Not implemented yet](#not-implemented-yet).
+> **Not usable yet.** Install validation is a stub that throws, and the `role` access can't sign in
+> to a database yet. See [Not implemented yet](#not-implemented-yet).
 
 Vaulted PostgreSQL connector, for PostgreSQL on AWS RDS that does not use IAM database
 authentication. For each access grant, the connector is to create a PostgreSQL login of the
@@ -62,11 +61,23 @@ The operation is to run these checks in order, and a failure names its check in 
 
 Once every check has passed it returns `{ grantableRoles }`.
 
+### Role access
+
+The `role` access is copied from `p0-connector-pg`, with its IAM sign-in, Cloud SQL support and
+`sql` access left out. It runs on the resource-hierarchy perimeter: P0 creates an access role that
+can't log in, grants the approved roles to it, then grants it to the user's login. It acts only
+on names that start with `p0`, and never on the manager or a role the manager inherits.
+
+`scripts/compare-with-pg.sh` prints how each copied file differs from its original.
+
 ## Not implemented yet
 
 - `install.validation.get` parses its input and then throws
   `pg-vaulted install.validation.get is not implemented`.
-- The connector has no access type: `accesses` is empty.
+- The manager can't sign in on RDS. The client throws
+  `pg-vaulted manager sign-in is not implemented`, because nothing reads the manager secret yet.
+- `createUser` makes a login with no password, as in `p0-connector-pg`. Logins with a password
+  kept in Secrets Manager are not built.
 - The manager secret's value has no format yet.
-- The package depends on no PostgreSQL driver and no Secrets Manager client.
+- The package depends on no Secrets Manager client.
 - No image is built: the service is not in `.github/workflows/docker.yaml`.

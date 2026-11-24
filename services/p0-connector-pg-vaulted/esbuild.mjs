@@ -9,6 +9,17 @@ esbuild
     bundle: true,
     minify: true,
     sourcemap: true,
+    // copy of `external` in services/p0-connector-pg/esbuild.mjs: knex's
+    // drivers for other databases, which it requires only when asked for.
+    external: [
+      "oracledb",
+      "mysql",
+      "tedious",
+      "better-sqlite3",
+      "sqlite3",
+      "pg-query-stream",
+      "mariadb",
+    ],
     banner: {
       js: "import { createRequire } from 'module';const require = createRequire(import.meta.url);",
     },
