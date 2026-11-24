@@ -144,8 +144,9 @@ this:
   2. It refuses, with `validation_error`, a policy whose role is not a
      [grantable role](#grantable-roles) at that moment.
   3. It makes the roles the manager granted the login equal the policies: it grants the ones
-     that are missing and revokes the others. It leaves a membership the manager did not
-     grant. See [The manager's grants](#the-managers-grants).
+     that are missing and revokes the others, then reads the memberships again and throws
+     `dependency_violation`, with `{ login }`, when a role it revoked is still held. It leaves
+     a membership the manager did not grant. See [The manager's grants](#the-managers-grants).
   4. It sets the login to `LOGIN`, `VALID UNTIL` the deadline.
 
   It never changes a password, and running it again changes nothing.
@@ -314,14 +315,31 @@ hold:
 
 `setPoliciesForUser` revokes only a membership the manager granted
 (`MANAGER_GRANTED_ROLES_SQL`): one whose grantor is the manager, or a role whose privileges the
-manager holds.
+manager holds. The query returns one row for each role and grantor.
 
 - From PostgreSQL 16, a membership's grantor is the role whose `ADMIN OPTION` the `GRANT` used.
   When the manager holds `ADMIN OPTION` on `reporting` only through `it_group`, its grant of
-  `reporting` is recorded as granted by `it_group`, and the manager's `REVOKE` removes it.
-  PostgreSQL 16.16 refused the manager's `REVOKE` of a membership a superuser granted.
-- Before PostgreSQL 16, the grantor is the login that ran the `GRANT`. PostgreSQL 14.25 let
-  the manager revoke a membership a superuser granted. The connector does not try.
+  `reporting` is recorded as granted by `it_group`. A role can be held through several
+  grantors at once. PostgreSQL 16.16 refused the manager's `REVOKE` of a membership a superuser
+  granted.
+- From PostgreSQL 16, a `REVOKE` without `GRANTED BY` removes only the membership whose
+  grantor PostgreSQL infers when it runs, and when none matches it prints a `WARNING` and
+  removes nothing, with no error. As measured on 16.16, that happens when the manager's path
+  to the role changed since the grant: the connector granted `reporting` through `it_group`,
+  and the customer later granted `reporting` to the manager `WITH ADMIN OPTION`. The manager's
+  `REVOKE reporting FROM <login>` then left the membership recorded as granted by `it_group`.
+  So from 16 the connector revokes each membership as its recorded grantor,
+  `REVOKE <role> FROM <login> GRANTED BY <grantor>`. As measured on 16.16, a manager that is
+  not superuser can do that when the grantor is itself, or a role whose privileges it
+  inherits, whether or not it can `SET ROLE` to it. For a grantor whose privileges it does not
+  inherit, PostgreSQL refused it, and the query does not return such a membership.
+- Before PostgreSQL 16, the grantor is the login that ran the `GRANT`, and a role is held
+  once. As measured on 14.25, a plain `REVOKE` by the manager removed the membership whatever
+  its grantor, and `GRANTED BY` made no difference. The connector revokes without it.
+- Either way, the connector reads the manager-granted memberships again after the revokes. A
+  role it revoked and that is still held fails the call with `dependency_violation`, so that
+  a revoke that removed nothing is never taken for one that did. A membership whose grantor's
+  name is not one a statement can hold is not revoked, and fails the same way.
 
 ### Manager privileges
 

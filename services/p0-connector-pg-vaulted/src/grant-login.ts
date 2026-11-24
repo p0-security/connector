@@ -3,11 +3,12 @@ import {
   type ConnectorErrorOptions,
 } from "@p0security/connector-core";
 
+import { isIdentifier } from "./identifier.ts";
 import {
   IS_GRANTABLE_ROLE_SQL,
   findLogin,
   holds,
-  listManagerGrantedRoles,
+  listManagerGrants,
 } from "./postgres/catalog.ts";
 import type { PgQuery } from "./postgres/client.ts";
 import { execute } from "./postgres/statement.ts";
@@ -131,6 +132,53 @@ export const prepareGrantLogin = async (
 };
 
 /**
+ * Revokes the memberships the manager granted `login` in the roles for which
+ * `isRevoked` holds, then reads them again and throws `dependency_violation`
+ * if one is left. A `REVOKE` can remove nothing and report success: from
+ * PostgreSQL 16 it removes only the membership whose grantor PostgreSQL
+ * infers, which is no longer the recorded one when the manager's path to the
+ * role has changed since the grant. So each is revoked as its recorded
+ * grantor, and the read decides whether the login is clear. A membership
+ * whose grantor's name no statement can hold is left to that read. Returns
+ * the roles it revoked.
+ */
+export const revokeManagerGrants = async (
+  query: PgQuery,
+  login: string,
+  isRevoked: (role: string) => boolean
+) => {
+  const doomed = (await listManagerGrants(query, login)).filter(({ role }) =>
+    isRevoked(role)
+  );
+  if (doomed.length === 0) return [];
+  for (const { role, grantor } of doomed) {
+    if (grantor === null) {
+      await execute(query, {
+        template: "REVOKE %I FROM %I",
+        args: [role, login],
+      });
+    } else if (isIdentifier(grantor)) {
+      await execute(query, {
+        template: "REVOKE %I FROM %I GRANTED BY %I",
+        args: [role, login, grantor],
+      });
+    }
+  }
+  const left = (await listManagerGrants(query, login)).filter(({ role }) =>
+    isRevoked(role)
+  );
+  if (left.length > 0) {
+    throw new ConnectorError({
+      type: "dependency_violation",
+      message:
+        "PostgreSQL did not remove a role the connector revoked from the grant login.",
+      payload: { login },
+    });
+  }
+  return [...new Set(doomed.map(({ role }) => role))];
+};
+
+/**
  * Makes the roles the manager granted the grant login equal `roles`, then
  * activates the login until the deadline. It leaves the login's password,
  * and any membership the manager did not grant, as they are. Returns the
@@ -153,18 +201,16 @@ export const activateGrantLogin = async (
       });
     }
   }
-  const held = await listManagerGrantedRoles(query, login);
+  const held = (await listManagerGrants(query, login)).map(({ role }) => role);
   const granted = roles.filter((role) => !held.includes(role));
-  const revoked = held.filter((role) => !roles.includes(role));
   for (const role of granted) {
     await execute(query, { template: "GRANT %I TO %I", args: [role, login] });
   }
-  for (const role of revoked) {
-    await execute(query, {
-      template: "REVOKE %I FROM %I",
-      args: [role, login],
-    });
-  }
+  const revoked = await revokeManagerGrants(
+    query,
+    login,
+    (role) => !roles.includes(role)
+  );
   await execute(query, { template, args: [login, deadline] });
   return { from, granted, revoked };
 };

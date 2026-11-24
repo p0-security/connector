@@ -513,6 +513,7 @@ describe("setPoliciesForUser with policies", () => {
       ["managerGrantedRoles", LOGIN],
       ["format", "GRANT %I TO %I", "analyst", LOGIN],
       `GRANT analyst TO ${LOGIN}`,
+      ["managerGrantedRoles", LOGIN],
       [
         "format",
         "ALTER ROLE %I LOGIN VALID UNTIL %L",
@@ -531,7 +532,12 @@ describe("setPoliciesForUser with policies", () => {
       comment: "an earlier comment",
     });
     expect(db.memberships).toEqual([
-      { role: "analyst", member: LOGIN, byManager: true },
+      {
+        role: "analyst",
+        member: LOGIN,
+        byManager: true,
+        grantor: "p0_manager",
+      },
     ]);
   });
 
@@ -548,6 +554,7 @@ describe("setPoliciesForUser with policies", () => {
       "BEGIN",
       ["login", LOGIN],
       ["isGrantableRole", "analyst"],
+      ["managerGrantedRoles", LOGIN],
       ["managerGrantedRoles", LOGIN],
       [
         "format",
@@ -630,8 +637,16 @@ describe("setPoliciesForUser with policies", () => {
       ["managerGrantedRoles", LOGIN],
       ["format", "GRANT %I TO %I", "analyst", LOGIN],
       `GRANT analyst TO ${LOGIN}`,
-      ["format", "REVOKE %I FROM %I", "reporting", LOGIN],
-      `REVOKE reporting FROM ${LOGIN}`,
+      ["managerGrantedRoles", LOGIN],
+      [
+        "format",
+        "REVOKE %I FROM %I GRANTED BY %I",
+        "reporting",
+        LOGIN,
+        "p0_manager",
+      ],
+      `REVOKE reporting FROM ${LOGIN} GRANTED BY p0_manager`,
+      ["managerGrantedRoles", LOGIN],
       [
         "format",
         "ALTER ROLE %I LOGIN VALID UNTIL %L",
@@ -643,7 +658,12 @@ describe("setPoliciesForUser with policies", () => {
     expect(db.memberships).toEqual([
       { role: "dba_team", member: LOGIN, byManager: false },
       { role: "reporting", member: OTHER_LOGIN, byManager: true },
-      { role: "analyst", member: LOGIN, byManager: true },
+      {
+        role: "analyst",
+        member: LOGIN,
+        byManager: true,
+        grantor: "p0_manager",
+      },
     ]);
   });
 
@@ -653,8 +673,18 @@ describe("setPoliciesForUser with policies", () => {
     await grant("reporting", "analyst", "reporting");
 
     expect(db.memberships).toEqual([
-      { role: "reporting", member: LOGIN, byManager: true },
-      { role: "analyst", member: LOGIN, byManager: true },
+      {
+        role: "reporting",
+        member: LOGIN,
+        byManager: true,
+        grantor: "p0_manager",
+      },
+      {
+        role: "analyst",
+        member: LOGIN,
+        byManager: true,
+        grantor: "p0_manager",
+      },
     ]);
   });
 
@@ -666,7 +696,12 @@ describe("setPoliciesForUser with policies", () => {
 
     expect(db.calls).toContain(`GRANT "Reporting.read-only" TO ${LOGIN}`);
     expect(db.memberships).toEqual([
-      { role: "Reporting.read-only", member: LOGIN, byManager: true },
+      {
+        role: "Reporting.read-only",
+        member: LOGIN,
+        byManager: true,
+        grantor: "p0_manager",
+      },
     ]);
   });
 
@@ -686,6 +721,112 @@ describe("setPoliciesForUser with policies", () => {
       expect(db.calls.slice(-2)).toEqual(["ROLLBACK", "close"]);
     }
   );
+
+  describe("when a membership's grantor is not the manager", () => {
+    it("revokes each membership as the grantor it records, from PostgreSQL 16", async () => {
+      given("active", "filled");
+      db.memberships.push(
+        {
+          role: "reporting",
+          member: LOGIN,
+          byManager: true,
+          grantor: "it_group",
+        },
+        { role: "reporting", member: LOGIN, byManager: true },
+        { role: "dba_team", member: LOGIN, byManager: false }
+      );
+
+      await grant("analyst");
+
+      expect(
+        db.calls.filter(
+          (call) => typeof call === "string" && call.startsWith("REVOKE")
+        )
+      ).toEqual([
+        `REVOKE reporting FROM ${LOGIN} GRANTED BY it_group`,
+        `REVOKE reporting FROM ${LOGIN} GRANTED BY p0_manager`,
+      ]);
+      expect(db.memberships).toEqual([
+        { role: "dba_team", member: LOGIN, byManager: false },
+        {
+          role: "analyst",
+          member: LOGIN,
+          byManager: true,
+          grantor: "p0_manager",
+        },
+      ]);
+    });
+
+    it("revokes without naming the grantor before PostgreSQL 16, where it is not recorded", async () => {
+      db = fakeDatabase({ hasGrantOptions: false }, journal);
+      given("active", "filled");
+      db.memberships.push({
+        role: "reporting",
+        member: LOGIN,
+        byManager: true,
+      });
+
+      await grant("analyst");
+
+      expect(
+        db.calls.filter(
+          (call) => typeof call === "string" && call.startsWith("REVOKE")
+        )
+      ).toEqual([`REVOKE reporting FROM ${LOGIN}`]);
+      expect(db.memberships).toEqual([
+        {
+          role: "analyst",
+          member: LOGIN,
+          byManager: true,
+          grantor: "p0_manager",
+        },
+      ]);
+    });
+  });
+
+  describe("when a REVOKE removes nothing", () => {
+    it.each([true, false])(
+      "throws dependency_violation with only the login, and takes everything back (PostgreSQL 16 or later: %s)",
+      async (hasGrantOptions) => {
+        db = fakeDatabase({ hasGrantOptions, ignoresRevoke: true }, journal);
+        given("active", "filled");
+        db.memberships.push({
+          role: "reporting",
+          member: LOGIN,
+          byManager: true,
+        });
+        const before = everything();
+
+        const data = await dataOf(grant("analyst"));
+
+        expect(data.type).toBe("dependency_violation");
+        expect(data.payload).toEqual({ login: LOGIN });
+        expect(everything()).toEqual(before);
+        expect(db.calls.slice(-2)).toEqual(["ROLLBACK", "close"]);
+        expect(db.calls).not.toContain("COMMIT");
+      }
+    );
+
+    it("throws when the grantor's name is one no statement can hold, and runs no REVOKE", async () => {
+      given("active", "filled");
+      db.memberships.push({
+        role: "reporting",
+        member: LOGIN,
+        byManager: true,
+        grantor: "IT Group",
+      });
+
+      const data = await dataOf(grant("analyst"));
+
+      expect(data.type).toBe("dependency_violation");
+      expect(data.payload).toEqual({ login: LOGIN });
+      expect(
+        db.calls.filter(
+          (call) => typeof call === "string" && call.startsWith("REVOKE")
+        )
+      ).toEqual([]);
+    });
+  });
 
   it("reaches Secrets Manager only for the manager secret", async () => {
     given("prepared", "filled");
@@ -712,7 +853,14 @@ describe("a grant, from provisionUser to setPoliciesForUser", () => {
 
     expect(everything()).toEqual({
       roles: [[LOGIN, { ...PREPARED_BY_THE_FIRST_CALL, canLogin: true }]],
-      memberships: [{ role: "analyst", member: LOGIN, byManager: true }],
+      memberships: [
+        {
+          role: "analyst",
+          member: LOGIN,
+          byManager: true,
+          grantor: "p0_manager",
+        },
+      ],
       secret: [FIRST_PASSWORD.password],
     });
   });

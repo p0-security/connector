@@ -272,11 +272,14 @@ export type FakeRole = {
   comment?: string;
 };
 
-/** One role's membership in another, and whether the manager granted it. */
+/** One role's membership in another, and whether the manager granted it:
+ * the manager is, or holds the privileges of, the grantor. The grantor is
+ * the manager unless it says otherwise, and PostgreSQL 16 and later keep it. */
 export type FakeMembership = {
   role: string;
   member: string;
   byManager: boolean;
+  grantor?: string;
 };
 
 /** What the manager can do, and what the target holds. */
@@ -285,6 +288,9 @@ type FakeTarget = {
   canSignalBackend: boolean;
   /** PostgreSQL 16 or later. */
   hasGrantOptions: boolean;
+  /** A `REVOKE` prints a warning and removes nothing, as PostgreSQL 16's
+   * does when it infers another grantor than the recorded one. */
+  ignoresRevoke: boolean;
   grantableRoles: string[];
   databases: string[];
 };
@@ -341,7 +347,11 @@ const existing = ({ roles }: FakeCatalog, quoted?: string) => {
  * catalog, given the names and literals the shape captured, as written. */
 const STATEMENTS: {
   shape: RegExp;
-  run: (catalog: FakeCatalog, captured: (string | undefined)[]) => void;
+  run: (
+    catalog: FakeCatalog,
+    captured: (string | undefined)[],
+    is: FakeTarget
+  ) => void;
 }[] = [
   {
     shape: new RegExp(
@@ -402,20 +412,37 @@ const STATEMENTS: {
       const [role, member] = [nameOf(quotedRole), nameOf(quotedMember)];
       const { memberships } = catalog;
       if (!memberships.some((m) => m.role === role && m.member === member)) {
-        memberships.push({ role, member, byManager: true });
+        memberships.push({
+          role,
+          member,
+          byManager: true,
+          grantor: MANAGER.username,
+        });
       }
     },
   },
   {
-    shape: new RegExp(`^REVOKE ${NAME} FROM ${NAME}$`),
-    run: (catalog, [quotedRole, quotedMember]) => {
+    shape: new RegExp(`^REVOKE ${NAME} FROM ${NAME}(?: GRANTED BY ${NAME})?$`),
+    run: (catalog, [quotedRole, quotedMember, quotedGrantor], is) => {
       existing(catalog, quotedMember);
       const [role, member] = [nameOf(quotedRole), nameOf(quotedMember)];
       const { memberships } = catalog;
+      // PostgreSQL 16 removes the membership of the grantor it names, or
+      // else of the one it infers, which here is the manager. Before 16 the
+      // membership is removed whoever granted it.
+      const grantor = quotedGrantor
+        ? nameOf(quotedGrantor)
+        : is.hasGrantOptions
+          ? MANAGER.username
+          : undefined;
       const at = memberships.findIndex(
-        (m) => m.role === role && m.member === member && m.byManager
+        (m) =>
+          m.role === role &&
+          m.member === member &&
+          m.byManager &&
+          (grantor === undefined || (m.grantor ?? MANAGER.username) === grantor)
       );
-      if (at >= 0) memberships.splice(at, 1);
+      if (at >= 0 && !is.ignoresRevoke) memberships.splice(at, 1);
     },
   },
 ];
@@ -435,6 +462,7 @@ export const fakeDatabase = (
     canCreateRole: true,
     canSignalBackend: true,
     hasGrantOptions: true,
+    ignoresRevoke: false,
     grantableRoles: ["analyst", "reporting"],
     databases: ["orders", "postgres"],
     ...overrides,
@@ -479,12 +507,14 @@ export const fakeDatabase = (
     [MANAGER_GRANTED_ROLES_SQL]: {
       call: "managerGrantedRoles",
       rows: ([login]) =>
-        named(
-          catalog.memberships
-            .filter(({ member, byManager }) => member === login && byManager)
-            .map(({ role }) => role)
-            .sort()
-        ),
+        catalog.memberships
+          .filter(({ member, byManager }) => member === login && byManager)
+          .map(({ role, grantor = MANAGER.username }) => ({
+            name: role,
+            grantor: is.hasGrantOptions ? grantor : null,
+          }))
+          // As `COLLATE "C"` sorts.
+          .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0)),
     },
   };
 
@@ -505,7 +535,7 @@ export const fakeDatabase = (
     for (const { shape, run: change } of STATEMENTS) {
       const [matched, ...captured] = shape.exec(sql) ?? [];
       if (matched === undefined) continue;
-      change(catalog, captured);
+      change(catalog, captured, is);
       return [];
     }
     throw pgError("42601", sql);

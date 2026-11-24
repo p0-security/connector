@@ -582,6 +582,31 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
         "analyst by it_manager",
       ]);
     });
+
+    it("takes back a role the manager reaches another way since the grant, whose grantor is no longer the one PostgreSQL infers", async () => {
+      await asSuperuser(
+        `REVOKE reporting FROM ${MANAGER.username}`,
+        "GRANT reporting TO it_group WITH ADMIN OPTION",
+        `GRANT it_group TO ${MANAGER.username}`
+      );
+      const grantor = version >= 16 ? "it_group" : "it_manager";
+      await provision();
+      await approve(["reporting"]);
+      expect((await grantLogin()).memberships).toEqual([
+        `reporting by ${grantor}`,
+      ]);
+      // A plain REVOKE by the manager now only prints a warning on
+      // PostgreSQL 16 and later, and leaves the membership of it_group.
+      await asSuperuser(
+        `GRANT reporting TO ${MANAGER.username} WITH ADMIN OPTION`
+      );
+
+      await approve(["analyst"]);
+
+      expect((await grantLogin()).memberships).toEqual([
+        "analyst by it_manager",
+      ]);
+    });
   });
 
   describe("sign_in", () => {
