@@ -17,10 +17,10 @@ import type { Dependencies } from "../../dependencies.ts";
 import {
   activateGrantLogin,
   endGrantLoginSessions,
-  handOverOwned,
   prepareGrantLogin,
   readCleanup,
   readGrantLoginState,
+  releaseOwned,
   retireGrantLogin,
   takeGrantLoginPrivileges,
 } from "../../grant-login.ts";
@@ -177,11 +177,21 @@ export const newRolePrimitives = (
           // Each of these statements is its own transaction. The grant is
           // committed here because every database below needs it.
           await takeGrantLoginPrivileges(query, login);
+          // With no owner to hand objects to, `DROP OWNED` below drops
+          // whatever the login owns. It checks that the login owns nothing,
+          // so no session of the login may still be able to create something.
+          if (!cleanup.ownerIsGrantable) {
+            await endGrantLoginSessions(query, login, wait);
+          }
           const connectable = await listConnectableDatabases(query);
           for (const database of connectable) {
             await inDatabase(database, (there) =>
               there.committed((inTransaction) =>
-                handOverOwned(inTransaction, { login, owner })
+                releaseOwned(inTransaction, {
+                  login,
+                  owner,
+                  ownerIsGrantable: cleanup.ownerIsGrantable,
+                })
               )
             );
           }

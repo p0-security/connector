@@ -7,6 +7,8 @@ import { isIdentifier } from "./identifier.ts";
 import {
   HAS_GRANT_OPTIONS_SQL,
   IS_GRANTABLE_ROLE_SQL,
+  OWNS_ANYTHING_SQL,
+  OWNS_HERE_SQL,
   SET_LOCK_TIMEOUT_SQL,
   countSessions,
   endSessions,
@@ -141,6 +143,14 @@ const templateOf = (step: Step, state: GrantLoginState, login: string) => {
   return step.template;
 };
 
+/** The refusal of `role`, which is not a grantable role. */
+const notGrantable = (login: string, role: string) =>
+  new ConnectorError({
+    type: "validation_error",
+    message: `The role ${role} is not a grantable role of this target.`,
+    payload: { login, rolename: role },
+  });
+
 /** Throws unless `role` is a grantable role, by the rule `list` offers roles
  * by. */
 const requireGrantable = async (
@@ -148,12 +158,9 @@ const requireGrantable = async (
   login: string,
   role: string
 ) => {
-  if (await holds(query, IS_GRANTABLE_ROLE_SQL, [role])) return;
-  throw new ConnectorError({
-    type: "validation_error",
-    message: `The role ${role} is not a grantable role of this target.`,
-    payload: { login, rolename: role },
-  });
+  if (!(await holds(query, IS_GRANTABLE_ROLE_SQL, [role]))) {
+    throw notGrantable(login, role);
+  }
 };
 
 /**
@@ -359,21 +366,33 @@ export const retireGrantLogin = async (
 
 /**
  * What the cleanup is to do with the grant login, which it reads and does
- * not change: the state the login is in, and the statement that drops it,
- * or none when there is no login. It throws for a login that has not been
- * cut off, and for an `owner` that is not a grantable role.
+ * not change: the state the login is in, the statement that drops it, or
+ * none when there is no login, and whether `owner` is a grantable role. It
+ * throws for a login that has not been cut off.
+ *
+ * An `owner` that is not a grantable role cannot take over anything, so the
+ * login must own nothing, in any database. When it owns something, this
+ * throws, before the cleanup writes anything: the cleanup never drops an
+ * object.
  */
 export const readCleanup = async (
   query: PgQuery,
   grant: { login: string; owner: string }
-): Promise<{ from: GrantLoginState; drop?: Statement }> => {
+): Promise<{
+  from: GrantLoginState;
+  drop?: Statement;
+  ownerIsGrantable: boolean;
+}> => {
   const { login, owner } = grant;
   const from = await readGrantLoginState(query, login);
   const step = LIFECYCLE[from].drop;
-  if (step === NOTHING) return { from };
+  if (step === NOTHING) return { from, ownerIsGrantable: false };
   const template = templateOf(step, from, login);
-  await requireGrantable(query, login, owner);
-  return { from, drop: { template, args: [login] } };
+  const ownerIsGrantable = await holds(query, IS_GRANTABLE_ROLE_SQL, [owner]);
+  if (!ownerIsGrantable && (await holds(query, OWNS_ANYTHING_SQL, [login]))) {
+    throw notGrantable(login, owner);
+  }
+  return { from, drop: { template, args: [login] }, ownerIsGrantable };
 };
 
 /**
@@ -387,15 +406,25 @@ export const takeGrantLoginPrivileges = async (query: PgQuery, login: string) =>
   );
 
 /**
- * Hands what the grant login owns in the connected database to `owner`,
- * then drops the privileges it was granted there, so that nothing in the
- * database depends on the login. It is to run in one transaction.
+ * Clears the grant login from the connected database, so that nothing in it
+ * depends on the login: it hands what the login owns to `owner`, then drops
+ * the privileges the login was granted. It is to run in one transaction.
+ *
+ * With an `owner` that is not a grantable role there is nothing to hand
+ * over, and `DROP OWNED` would drop what the login owns. So it drops only
+ * after reading that the login owns nothing here, and throws otherwise. The
+ * login's sessions are to be gone by then, so that nothing creates an object
+ * between the read and the drop.
  */
-export const handOverOwned = async (
+export const releaseOwned = async (
   query: PgQuery,
-  grant: { login: string; owner: string }
+  grant: { login: string; owner: string; ownerIsGrantable: boolean }
 ) => {
-  const { login, owner } = grant;
-  await execute(query, reassignOwnedStatement(login, owner));
+  const { login, owner, ownerIsGrantable } = grant;
+  if (ownerIsGrantable) {
+    await execute(query, reassignOwnedStatement(login, owner));
+  } else if (await holds(query, OWNS_HERE_SQL, [login])) {
+    throw notGrantable(login, owner);
+  }
   await execute(query, { template: "DROP OWNED BY %I", args: [login] });
 };

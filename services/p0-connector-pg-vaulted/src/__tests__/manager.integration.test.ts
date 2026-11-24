@@ -867,9 +867,11 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
         await expect(signIn(password)).resolves.toBe(GRANTED_LOGIN);
       });
 
-      it("refuses an objectOwner that is not grantable before it deletes the secret, and the cleanup then finishes with one that is", async () => {
+      it("refuses an objectOwner that is not grantable for a login that owns a table, before it deletes the secret, and keeps the table", async () => {
         await provision();
         await approve(["analyst"]);
+        const idle = await openSession();
+        await idle.client.query("CREATE TABLE it_work.notes (id int)");
         await cutOff();
         const retired = await grantLogin();
 
@@ -883,9 +885,53 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
 
         expect(await grantLogin()).toEqual(retired);
         expect(vault.secrets.has(GRANT_SECRET)).toBe(true);
+        expect(await tableOwners()).toEqual([
+          { tablename: "notes", tableowner: GRANTED_LOGIN },
+        ]);
 
         await expect(cleanUp()).resolves.toBe(null);
+
         await expect(identify()).resolves.toBe(null);
+        expect(await tableOwners()).toEqual([
+          { tablename: "notes", tableowner: "analyst" },
+        ]);
+      });
+
+      it("refuses an objectOwner that is not grantable for a login that owns a schema, which is not a table", async () => {
+        await provision();
+        await approve(["analyst"]);
+        await asSuperuser(
+          `CREATE SCHEMA it_owned AUTHORIZATION "${GRANTED_LOGIN}"`
+        );
+        await cutOff();
+
+        await expect(
+          dataOf(cleanUp({ objectOwner: "unshared" }))
+        ).resolves.toMatchObject({ type: "validation_error" });
+
+        expect(
+          await asSuperuser(
+            "SELECT nspowner::regrole::text AS owner FROM pg_namespace WHERE nspname = 'it_owned'"
+          )
+        ).toEqual([{ owner: GRANTED_LOGIN }]);
+        await asSuperuser("DROP SCHEMA it_owned");
+        await expect(cleanUp({ objectOwner: "unshared" })).resolves.toBe(null);
+      });
+
+      it("cleans up a login that owns nothing with an objectOwner that is not grantable, as after a grant that failed on its role", async () => {
+        const before = await rolesAndMemberships();
+        await provision();
+        await expect(
+          dataOf(approve(["unshared"], { objectOwner: "unshared" }))
+        ).resolves.toMatchObject({ type: "validation_error" });
+        await expect(identify()).resolves.toBe(GRANTED_LOGIN);
+
+        await expect(cutOff()).resolves.toBe(null);
+        await expect(cleanUp({ objectOwner: "unshared" })).resolves.toBe(null);
+
+        await expect(identify()).resolves.toBe(null);
+        expect(vault.secrets.has(GRANT_SECRET)).toBe(false);
+        expect(await rolesAndMemberships()).toEqual(before);
       });
 
       it("finishes the cleanup of a retired login whose secret is already gone", async () => {

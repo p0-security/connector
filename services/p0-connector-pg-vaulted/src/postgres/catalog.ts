@@ -122,6 +122,29 @@ export const CONNECTABLE_DATABASES_SQL = `SELECT datname AS name
     AND datname <> 'rdsadmin'
   ORDER BY datname COLLATE "C"`;
 
+/**
+ * Whether the role named `$1` owns anything: in any database, or a shared
+ * object such as a database. `pg_shdepend` is one catalog for the whole
+ * server, so the manager sees the ownership recorded in every database from
+ * any connection, including the databases it cannot connect to. `deptype`
+ * `o` is ownership. A privilege granted to the role is `a`, and `DROP OWNED`
+ * takes that.
+ */
+export const OWNS_ANYTHING_SQL = `SELECT EXISTS (
+  SELECT 1 FROM pg_shdepend d JOIN pg_roles r ON r.oid = d.refobjid
+  WHERE d.deptype = 'o'
+    AND d.refclassid = 'pg_authid'::regclass
+    AND r.rolname = $1) AS allowed`;
+
+/** Whether the role named `$1` owns anything in the connected database, or a
+ * shared object: what `DROP OWNED` run there would drop. */
+export const OWNS_HERE_SQL = `SELECT EXISTS (
+  SELECT 1 FROM pg_shdepend d JOIN pg_roles r ON r.oid = d.refobjid
+  WHERE d.deptype = 'o'
+    AND d.refclassid = 'pg_authid'::regclass
+    AND d.dbid IN (0, (SELECT oid FROM pg_database WHERE datname = current_database()))
+    AND r.rolname = $1) AS allowed`;
+
 /** Sets, for the transaction, how long a statement waits for a lock: `$1`
  * is the duration, as `2000ms`. `SET` takes no binding, `set_config` does. */
 export const SET_LOCK_TIMEOUT_SQL = `SELECT set_config('lock_timeout', $1, true)`;

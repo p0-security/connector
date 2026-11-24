@@ -23,6 +23,8 @@ import {
   IS_GRANTABLE_ROLE_SQL,
   LOGIN_SQL,
   MANAGER_GRANTED_ROLES_SQL,
+  OWNS_ANYTHING_SQL,
+  OWNS_HERE_SQL,
   PING_SQL,
   SET_LOCK_TIMEOUT_SQL,
 } from "../postgres/catalog.ts";
@@ -614,7 +616,10 @@ export const fakeDatabase = (
   const named = (names: string[]) => names.map((name) => ({ name }));
   const answers: Record<
     string,
-    { call: string; rows: (bindings: readonly string[]) => unknown[] }
+    {
+      call: string;
+      rows: (bindings: readonly string[], database: string) => unknown[];
+    }
   > = {
     [PING_SQL]: { call: "ping", rows: () => [{ "?column?": 1 }] },
     [CAN_CREATE_ROLE_SQL]: {
@@ -671,6 +676,22 @@ export const fakeDatabase = (
           },
         ];
       },
+    },
+    [OWNS_ANYTHING_SQL]: {
+      call: "ownsAnything",
+      rows: ([login]) => [
+        { allowed: catalog.objects.some(({ owner }) => owner === login) },
+      ],
+    },
+    [OWNS_HERE_SQL]: {
+      call: "ownsHere",
+      rows: ([login], database) => [
+        {
+          allowed: catalog.objects.some(
+            (object) => object.owner === login && object.database === database
+          ),
+        },
+      ],
     },
     [IS_GRANTABLE_ROLE_SQL]: {
       call: "isGrantableRole",
@@ -744,7 +765,7 @@ export const fakeDatabase = (
       const answer = answers[sql];
       const name = answer?.call ?? (FORMAT_SQL.test(sql) ? "format" : sql);
       called(name, sql, bindings);
-      if (answer) return answer.rows(bindings);
+      if (answer) return answer.rows(bindings, database);
       if (name === "format") {
         const [template = "", ...args] = bindings;
         return [{ statement: format(template, args) }];

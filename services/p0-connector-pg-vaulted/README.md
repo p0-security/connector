@@ -40,7 +40,7 @@ scopes the secrets it can write.
 - **Retired login**: a grant login after database cutoff and before cleanup drops it. It is not
   reactivated.
 - **Cleanup**: what follows the database cutoff. It deletes the grant secret, hands what the
-  login owns to `objectOwner`, and drops the login.
+  login owns to `objectOwner`, and drops the login. A login that owns nothing needs no owner.
 
 ## Contract
 
@@ -186,25 +186,35 @@ a grant's lifecycle like this:
 - `deleteUser` performs the cleanup. It refuses a login that has not been cut off, prepared or
   active, with `dependency_violation`, and changes nothing. With no login it deletes the grant
   secret, if there is one, and succeeds. For a retired login, in this order:
-  1. It refuses, with `validation_error`, an `objectOwner` that is not a
-     [grantable role](#grantable-roles) at that moment. Nothing is written before this.
+  1. It checks `objectOwner` against the [grantable roles](#grantable-roles) at that moment.
+     When it is not one, the owner cannot take anything over, so it reads
+     [what the login owns](#what-the-login-owns). When the login owns something, in any
+     database, it refuses with `validation_error`, and the cleanup never drops an object.
+     Nothing is written before this. A login that owns nothing goes on to step 2, which is how
+     a grant that failed because its role was not grantable gets cleaned up: the app sends that
+     role as `objectOwner`.
   2. It deletes the grant secret, at once and with no recovery window. A secret that is already
      gone is deleted.
   3. It grants the login to the manager. See
      [What the connector grants itself](#what-the-connector-grants-itself).
-  4. In every database of the target that the manager can connect to, it runs
-     `REASSIGN OWNED BY <grant login> TO <objectOwner>`, then `DROP OWNED BY <grant login>`, in
-     one transaction. It signs in to each with the manager's credential, which it reads once.
-     The databases are the ones that are not templates, allow connections, and give the
-     manager `CONNECT`. `rdsadmin` is never one.
-  5. It ends any session of the login that is still open, the way the cutoff does, and throws
+  4. With an `objectOwner` that is not a grantable role, it ends the login's sessions, the way
+     the cutoff does, so that nothing can create an object from here on.
+  5. In every database of the target that the manager can connect to, in one transaction each,
+     it runs `REASSIGN OWNED BY <grant login> TO <objectOwner>`, then
+     `DROP OWNED BY <grant login>`. With an `objectOwner` that is not a grantable role it
+     skips the `REASSIGN OWNED`, and reads again what the login owns in that database: when it
+     owns something, it refuses as in step 1 and drops nothing, and otherwise `DROP OWNED`
+     takes only the privileges the login was granted. It signs in to each with the manager's
+     credential, which it reads once. The databases are the ones that are not templates, allow
+     connections, and give the manager `CONNECT`. `rdsadmin` is never one.
+  6. It ends any session of the login that is still open, the way the cutoff does, and throws
      `upstream_unavailable` when one will not end. See [Sessions](#sessions).
-  6. It drops the login, and with it the grant of step 3.
+  7. It drops the login, and with it the grant of step 3.
 
   A step that fails throws, and the next call starts from the state it finds. `getUser` finds a
   retired login without its secret, so a cleanup that stops after step 2 is found and finished.
 
-  PostgreSQL refuses step 6 while anything still depends on the login, and `deleteUser` then
+  PostgreSQL refuses step 7 while anything still depends on the login, and `deleteUser` then
   throws `dependency_violation`. The login stays retired. Two things cause it, as measured:
   - The login owns something in a database the cleanup did not reach, because the manager
     cannot connect to it.
@@ -377,6 +387,27 @@ role, so the manager already holds what the reassign needs.
 `setPoliciesForUser` checks each policy's role by the same rule, with the name as a binding
 (`IS_GRANTABLE_ROLE_SQL`), so a grant never reaches a role `list` would not offer. `deleteUser`
 checks `objectOwner` by it too.
+
+### What the login owns
+
+The cleanup tells whether the grant login owns anything from `pg_shdepend`
+(`OWNS_ANYTHING_SQL` and `OWNS_HERE_SQL` in `src/postgres/catalog.ts`): a row with `deptype`
+`o`, `refclassid` `pg_authid` and `refobjid` the login's oid is an ownership. As measured on
+PostgreSQL 14.25 and 16.16, as a manager that is not superuser and has `CREATEROLE`:
+
+- The manager can read `pg_shdepend`. It is one catalog for the whole server, and the manager
+  sees the rows of every database from any connection, whether or not it can connect to that
+  database. `dbid` is the database, and `0` marks a shared object such as a database.
+- It showed the ownership of a schema, a table, a sequence, a view, a function, an enum type, a
+  domain, a default privileges entry, a large object, a table in a second database and an owned
+  database. A privilege granted to the login is `deptype` `a`, which `DROP OWNED` takes and is
+  not an ownership.
+- A login that owns nothing has no row of type `o`.
+
+The cleanup reads it for every database before it writes anything, and again in each database
+inside the transaction that runs `DROP OWNED`. Nothing has measured it on RDS, where the
+installer is not superuser. If the manager cannot read it, the read fails, and the cleanup
+throws `insufficient_privileges` and drops nothing.
 
 ### The manager's grants
 
@@ -597,3 +628,6 @@ Every primitive is implemented. What is not done, or not measured:
   granted the login, and cannot reach a database the manager cannot connect to. In both cases
   `deleteUser` throws `dependency_violation` on every call until someone with the privilege
   steps in. Nothing tells the customer which object it is: the error holds only the SQLSTATE.
+- A grant login that owns an object while `objectOwner` is not a grantable role is refused, on
+  every call, with `validation_error`. The cleanup never drops an object, so the login and its
+  secret stay until someone hands the objects to another role, or the owner becomes grantable.

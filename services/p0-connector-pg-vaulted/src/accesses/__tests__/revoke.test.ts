@@ -795,26 +795,152 @@ describe("deleteUser", () => {
     }
   );
 
-  it("refuses an objectOwner that is not a grantable role, before it writes anything", async () => {
-    given("retired");
-    db.objects.push(owned("orders", "orders.public.drafts"));
-    const before = everything();
+  describe("with an objectOwner that is not a grantable role", () => {
+    const UNGRANTABLE = { objectOwner: "postgres" };
 
-    await expect(dataOf(cleanUp({ objectOwner: "postgres" }))).resolves.toEqual(
-      {
+    it("refuses a login that owns an object, before it writes anything, and keeps the object", async () => {
+      given("retired");
+      db.objects.push(owned("orders", "orders.public.drafts"));
+      const before = everything();
+
+      await expect(dataOf(cleanUp(UNGRANTABLE))).resolves.toEqual({
         type: "validation_error",
         message: "The role postgres is not a grantable role of this target.",
         payload: { login: LOGIN, rolename: "postgres" },
-      }
-    );
+      });
 
-    expect(everything()).toEqual(before);
-    expect(journal).toEqual([
-      `getSecretValue ${MANAGER_SECRET_ARN}`,
-      ["login", LOGIN],
-      ["isGrantableRole", "postgres"],
-      "close",
-    ]);
+      expect(everything()).toEqual(before);
+      expect(journal).toEqual([
+        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        ["login", LOGIN],
+        ["isGrantableRole", "postgres"],
+        ["ownsAnything", LOGIN],
+        "close",
+      ]);
+    });
+
+    it("refuses a login that owns an object in a database the manager cannot connect to", async () => {
+      db = fakeDatabase(
+        {
+          databases: ["billing", "orders", "postgres"],
+          closedDatabases: ["billing"],
+        },
+        journal
+      );
+      given("retired");
+      db.objects.push(owned("billing", "billing.public.ledger"));
+      const before = everything();
+
+      await expect(dataOf(cleanUp(UNGRANTABLE))).resolves.toMatchObject({
+        type: "validation_error",
+        payload: { login: LOGIN, rolename: "postgres" },
+      });
+
+      expect(everything()).toEqual(before);
+    });
+
+    it("cleans up a login that owns nothing: it drops the privileges the login was granted, in each database, and the login", async () => {
+      given("retired");
+      db.objects.push({
+        database: "orders",
+        name: "orders.public.invoices",
+        owner: "billing",
+        grantees: [LOGIN, "analyst"],
+      });
+
+      await expect(cleanUp(UNGRANTABLE)).resolves.toBe(null);
+
+      expect(journal).toEqual([
+        `getSecretValue ${MANAGER_SECRET_ARN}`,
+        ["login", LOGIN],
+        ["isGrantableRole", "postgres"],
+        ["ownsAnything", LOGIN],
+        `deleteSecret ${SECRET}`,
+        "hasGrantOptions",
+        ["format", "GRANT %I TO current_user WITH INHERIT TRUE", LOGIN],
+        `GRANT ${LOGIN} TO current_user WITH INHERIT TRUE`,
+        ...LAST_LOOKS,
+        "connectableDatabases",
+        ...["orders", "postgres"].flatMap(() => [
+          "BEGIN",
+          ["ownsHere", LOGIN],
+          ["format", "DROP OWNED BY %I", LOGIN],
+          `DROP OWNED BY ${LOGIN}`,
+          "COMMIT",
+          "close",
+        ]),
+        ...LAST_LOOKS,
+        ["format", "DROP ROLE %I", LOGIN],
+        `DROP ROLE ${LOGIN}`,
+        "close",
+      ]);
+      expect(db.calls).not.toContain(`REASSIGN OWNED BY ${LOGIN} TO postgres`);
+      expect(everything()).toEqual({
+        roles: [],
+        memberships: [],
+        objects: [
+          {
+            database: "orders",
+            name: "orders.public.invoices",
+            owner: "billing",
+            grantees: ["analyst"],
+          },
+        ],
+        sessions: [],
+        secret: undefined,
+      });
+    });
+
+    it("refuses, and drops nothing, when the login comes to own something after the first read", async () => {
+      given("retired");
+      // A session that outlived the cutoff creates a table while the cleanup
+      // waits for it to end.
+      db.sessions.push({ usename: LOGIN, outlives: 1 });
+      wait = async (ms) => {
+        journal.push(`wait ${ms}`);
+        if (db.objects.length === 0) {
+          db.objects.push(owned("orders", "orders.public.late"));
+        }
+      };
+
+      await expect(dataOf(cleanUp(UNGRANTABLE))).resolves.toEqual({
+        type: "validation_error",
+        message: "The role postgres is not a grantable role of this target.",
+        payload: { login: LOGIN, rolename: "postgres" },
+      });
+
+      expect(db.objects).toEqual([owned("orders", "orders.public.late")]);
+      expect(db.calls).not.toContain(`DROP OWNED BY ${LOGIN}`);
+      expect(db.roles.get(LOGIN)).toEqual(RETIRED);
+    });
+
+    it("lets a revoke finish after a grant that failed because its role is not grantable", async () => {
+      const ungrantable = { ...context, objectOwner: "postgres" };
+      await role().provisionUser({ userBody: LOGIN, context: ungrantable });
+      await expect(
+        dataOf(
+          role().setPoliciesForUser({
+            ...user,
+            policies: [{ type: "role", rolename: "postgres" }],
+            context: ungrantable,
+          })
+        )
+      ).resolves.toMatchObject({ type: "validation_error" });
+      await expect(identify()).resolves.toBe(LOGIN);
+
+      await expect(
+        role().setPoliciesForUser({
+          ...user,
+          policies: [],
+          context: ungrantable,
+        })
+      ).resolves.toBe(null);
+      await expect(cleanUp(UNGRANTABLE)).resolves.toBe(null);
+
+      await expect(identify()).resolves.toBe(null);
+      expect(vault.secrets.has(SECRET)).toBe(false);
+      expect([...db.roles]).toEqual([]);
+    });
   });
 
   it("finishes a retired login whose grant secret is already gone", async () => {
