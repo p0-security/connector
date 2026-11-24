@@ -424,7 +424,10 @@ PostgreSQL through fakes that the routers take as `dependencies`.
 The integration tests (`src/**/*.integration.test.ts`) run install validation, `list` and the
 grant path against PostgreSQL 14 and 16 in Docker, as a manager that is not superuser. They
 sign in as the grant login with the password the connector stored, which the images check by
-SCRAM-SHA-256. CI does not run them. To run them, from this directory:
+SCRAM-SHA-256. CI runs them in `.github/workflows/test-pg-vaulted-integration.yaml`, on a pull
+request that changes this service, `connector-core` or `secret-manager-client`. The unit tests'
+fake answers a catalog query by the identity of its SQL constant, so only these tests run the
+SQL. To run them yourself, from this directory:
 
 ```sh
 ./scripts/integration-db.sh up
