@@ -26,8 +26,9 @@ const SERVERS = [
 const HOST = "127.0.0.1";
 
 const MANAGER = { username: "it_manager", password: "it-manager-password" };
-const ARN =
-  "arn:aws:secretsmanager:us-east-1:123456789012:secret:it-manager-AbCdEf";
+const MANAGER_SECRET =
+  "p0/install/postgres/vpc-0a1b2c3d4e5f67890/it-target/p0manager";
+const CONNECTOR_ENV = { AWS_REGION: "us-east-1" };
 const GRANT_LOGIN = `p0v_${"a".repeat(32)}`;
 
 /** The grant login the grant tests prepare, which no fixture creates. */
@@ -99,7 +100,7 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
     host: HOST,
     port,
     database: "postgres",
-    managerSecretArn: ARN,
+    managerSecret: MANAGER_SECRET,
   };
 
   /** Runs statements as the server's superuser, and returns the last one's
@@ -132,8 +133,9 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
         WHERE r.rolname !~ '^pg_' GROUP BY r.rolname ORDER BY r.rolname`
     );
 
-  let vault = fakeSecretStore({ [ARN]: JSON.stringify(MANAGER) });
+  let vault = fakeSecretStore({ [MANAGER_SECRET]: JSON.stringify(MANAGER) });
   const dependencies = (): Dependencies => ({
+    env: CONNECTOR_ENV,
     connectSecretManager: vault.connectSecretManager,
     secretsManagerSdk: vault.secretsManagerSdk,
     connect: connectWith(false),
@@ -153,7 +155,7 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
   const GRANTABLE = ["analyst", "reporting"];
 
   beforeEach(async () => {
-    vault = fakeSecretStore({ [ARN]: JSON.stringify(MANAGER) });
+    vault = fakeSecretStore({ [MANAGER_SECRET]: JSON.stringify(MANAGER) });
     await asSuperuser(
       // First, so that the memberships the manager granted it go with it.
       `DROP ROLE IF EXISTS "${GRANTED_LOGIN}"`,
@@ -637,7 +639,10 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
   describe("sign_in", () => {
     it("fails as insufficient privileges with the wrong password", async () => {
       const wrong = fakeSecretStore({
-        [ARN]: JSON.stringify({ ...MANAGER, password: "not-the-password" }),
+        [MANAGER_SECRET]: JSON.stringify({
+          ...MANAGER,
+          password: "not-the-password",
+        }),
       });
 
       const data = await dataOf(
@@ -678,10 +683,13 @@ describe.each(SERVERS)("PostgreSQL $version", ({ version, port }) => {
 
 describe("a target nothing listens on", () => {
   it("fails at sign_in as unavailable", async () => {
-    const vault = fakeSecretStore({ [ARN]: JSON.stringify(MANAGER) });
+    const vault = fakeSecretStore({
+      [MANAGER_SECRET]: JSON.stringify(MANAGER),
+    });
 
     const data = await dataOf(
       validationRouter(t, {
+        env: CONNECTOR_ENV,
         connectSecretManager: vault.connectSecretManager,
         connect: connectWith(false),
       })
@@ -691,7 +699,7 @@ describe("a target nothing listens on", () => {
             host: HOST,
             port: 1,
             database: "postgres",
-            managerSecretArn: ARN,
+            managerSecret: MANAGER_SECRET,
           },
         })
     );

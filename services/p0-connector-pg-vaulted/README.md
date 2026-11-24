@@ -59,7 +59,7 @@ Every access call carries this context (`src/context.ts`):
 | Field         | Value                                                                                                                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `requestId`   | The P0 request, a non-empty string.                                                                                                                                                               |
-| `target`      | `{ host, port, database, managerSecretArn }`: the target, the database the manager connects to, and the full ARN of the target's manager secret.                                                  |
+| `target`      | `{ host, port, database, managerSecret }`: the target, the database the manager connects to, and the target's manager secret.                                                                     |
 | `targetId`    | P0's id of the target: `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`, the pattern of the `<target id>` segment of a grant secret's name. See [Names](#names).                                                 |
 | `secrets`     | `{ manager: "aws", region }`: where the grant secret is written. `manager` here is the secret manager, not the manager login.                                                                     |
 | `secretName`  | The grant secret's name. See [Names](#names).                                                                                                                                                     |
@@ -67,30 +67,44 @@ Every access call carries this context (`src/context.ts`):
 | `comment`     | Who asked and for which request. Written with `COMMENT ON ROLE`, so the customer's own database audit resolves the grant login without P0.                                                        |
 | `objectOwner` | The role that takes over what the grant login owns before the login is dropped. P0 sends exactly one policy, and this is its `rolename`, repeated here because `deleteUser` receives no policies. |
 
-The P0 control plane names the manager secret, as it names the private key secret of the
-Snowflake (AI) and GitHub (AI) connectors. The connector's IAM, which the install's Terraform
-writes, limits which secrets the connector can read, so a request can name only a secret the
-customer gave the connector. `managerSecretArn` must be a full Secrets Manager ARN in the `aws`,
-`aws-cn` or `aws-us-gov` partition, and a secret's name alone is refused. An ARN whose secret
-name starts with `p0/postgres-ai/` is refused too: that is where grant secrets live, which the
-connector writes and never reads.
+The manager secret is in one of two forms:
+
+- A secret P0 names. `managerSecret` is its name, with no ARN:
+  `p0/install/postgres/<vpc id>/<target id>/p0manager` (`MANAGER_SECRET_NAME_PATTERN`). The
+  `<vpc id>` is `vpc-` and 8 to 17 lowercase hex digits, and the `<target id>` is P0's id of the
+  target, `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`. The customer creates this secret.
+- A secret RDS manages. `managerSecret` is its full ARN, in the `aws`, `aws-cn` or `aws-us-gov`
+  partition: `arn:<partition>:secretsmanager:<region>:<account>:secret:rds!db-<uuid>-<suffix>`,
+  or `rds!cluster-` in place of `rds!db-` (`RDS_MANAGER_SECRET_ARN_PATTERN`). The `<uuid>` is
+  lowercase, and the `<suffix>` is the 6 letters and digits Secrets Manager adds.
+
+Anything else is refused: the ARN of any other secret, any other name, and a name without its
+`p0manager` leaf. The connector's IAM, which the install's Terraform writes, limits which
+secrets the connector can read, so a request can name only a secret the customer gave the
+connector.
 
 Revoke parses the same context as grant, so the parser accepts a past `deadline` and truncates
 a `comment` over 1000 characters.
 
 ### Names
 
-P0 chooses both names. The connector only checks them, and refuses any other.
+P0 chooses these names. The connector only checks them, and refuses any other.
 
 - Grant login: `^p0v_[0-9a-f]{32}$` (`GRANT_LOGIN_PATTERN`).
-- Grant secret: `p0/postgres-ai/<vpc id>/<target id>/<grant login>`, that is
-  `^p0/postgres-ai/vpc-[0-9a-f]{8,17}/[A-Za-z0-9][A-Za-z0-9-]{0,62}/p0v_[0-9a-f]{32}$`
+- Grant secret: `p0/secrets/postgres/<vpc id>/<target id>/<grant login>`, that is
+  `^p0/secrets/postgres/vpc-[0-9a-f]{8,17}/[A-Za-z0-9][A-Za-z0-9-]{0,62}/p0v_[0-9a-f]{32}$`
   (`GRANT_SECRET_NAME_PATTERN`).
+- Manager secret, when P0 names it: `p0/install/postgres/<vpc id>/<target id>/p0manager`, that
+  is `^p0/install/postgres/vpc-[0-9a-f]{8,17}/[A-Za-z0-9][A-Za-z0-9-]{0,62}/p0manager$`
+  (`MANAGER_SECRET_NAME_PATTERN`).
+
+No manager secret is a grant secret. The two names start differently, and a secret RDS manages
+is sent as an ARN, never as a name.
 
 The last segment of a grant secret's name is the grant login. The schema cannot compare the two,
 because the login arrives as the user, outside the context, so the user namespace check does:
 it refuses a login whose grant secret is another login's. With the connector's IAM scoped to
-`p0/postgres-ai/<its vpc>/`, that keeps one grant's secret from being another's.
+`p0/secrets/postgres/<its vpc>/`, that keeps one grant's secret from being another's.
 
 The `<target id>` segment must be the request's `targetId`. A grant call whose `secretName`
 names another target, `getUser`, `createUser` and `setPoliciesForUser` alike, is refused with
@@ -99,6 +113,11 @@ PostgreSQL. That catches a request that pairs one target with another target's g
 mistake. It cannot stop a control plane that sends both wrong together: both fields come from
 the same request, so a request that names another target in `targetId` and in `secretName`
 passes the check.
+
+The grant path is to refuse, the same way, a manager secret P0 names whose `<vpc id>` is not
+`secretName`'s, or whose `<target id>` is not `targetId`. A secret RDS manages names no target,
+so nothing ties it to one. Install validation and `list` take a target with no `targetId` or
+`secretName`, so only the manager secret's pattern applies there.
 
 ### Lifecycle
 
@@ -209,8 +228,9 @@ The connector puts no value into SQL itself (`src/postgres/statement.ts`):
 context's. It runs these checks in order and stops at the first that fails
 (`PG_VAULTED_INSTALL_STEPS`):
 
-1. `manager_secret`: the connector reads the manager secret that `target.managerSecretArn`
-   names, and its value parses. See [Manager secret](#manager-secret).
+1. `manager_secret`: the connector reads `target.managerSecret`, in the region that
+   [The manager secret in the request](#the-manager-secret-in-the-request) names, and its value
+   parses. See [Manager secret](#manager-secret).
 2. `sign_in`: the manager authenticates to the target and runs `SELECT 1`.
 3. `create_role`: the manager can create roles. It has `CREATEROLE` or is superuser.
 4. `signal_backend`: the manager can end other logins' sessions. It has the privileges of
@@ -230,7 +250,7 @@ network or TLS failure has the error's code in `code`. The error's type is one o
 
 | Type                      | When                                                                                                                                                            |
 | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `validation_error`        | The manager secret's value does not parse.                                                                                                                      |
+| `validation_error`        | The manager secret's value does not parse, or the manager secret is one P0 names and the connector's `AWS_REGION` is not set.                                   |
 | `object_not_found`        | The manager secret does not exist, or the target's database does not.                                                                                           |
 | `insufficient_privileges` | The connector's role may not read the manager secret, PostgreSQL refuses the manager's sign-in, or the manager lacks a privilege.                               |
 | `upstream_unavailable`    | The connector cannot reach Secrets Manager or PostgreSQL, the server's certificate is not one AWS signed, or a statement ran longer than the statement timeout. |
@@ -240,24 +260,29 @@ network or TLS failure has the error's code in `code`. The error's type is one o
 
 ### The manager secret in the request
 
-Each request names its target's manager secret in `target.managerSecretArn`, the secret's full
-ARN. The connector reads that secret on each call that signs in as the manager, in the region
-its ARN names.
+Each request names its target's manager secret in `target.managerSecret`, in one of the two
+forms under [Request context](#request-context). The connector reads that secret on each call
+that signs in as the manager:
 
-- The P0 control plane chooses the secret, as it chooses the private key secret of the
-  Snowflake (AI) and GitHub (AI) connectors. One connector serves every target in its VPC, and
+- A secret P0 names, in the connector's own region: the `AWS_REGION` that Lambda sets. When
+  `AWS_REGION` is not set, the call fails at `manager_secret` with `validation_error`, and reads
+  nothing.
+- A secret RDS manages, in the region its ARN names.
+
+More about the secret:
+
+- The P0 control plane chooses the secret. One connector serves every target in its VPC, and
   keeps no list of targets of its own.
 - What keeps a request from naming any other secret is the connector's IAM, not the connector:
   its role can read only the manager secrets the install's Terraform gives it. See [IAM](#iam).
   Secrets Manager refuses a request that names another secret.
-- The ARN must be in the `aws`, `aws-cn` or `aws-us-gov` partition, with a region and a 12-digit
-  account. A secret's name alone is refused, and so is an ARN whose secret name starts with
-  `p0/postgres-ai/`, where grant secrets live.
-- The connector calls Secrets Manager in the manager secret's region, and writes grant secrets
-  in `secrets.region`. Both regions must be reachable from the connector's VPC. From a VPC with
-  no NAT, only the region of its Secrets Manager interface endpoint is reachable, since an
-  endpoint's private DNS covers only its own region. P0 sends the database's own region for
-  both.
+- Any other ARN or name is refused before the connector calls Secrets Manager.
+- The connector runs in the target's region, and so do the grant secrets: it writes them in
+  `secrets.region`, for which P0 sends the database's region. A secret P0 names is read in that
+  region too. A secret RDS manages is read in the region its ARN names, which must also be
+  reachable from the connector's VPC. From a VPC with no NAT, only the region of its Secrets
+  Manager interface endpoint is reachable, since an endpoint's private DNS covers only its own
+  region.
 - Nothing ties the secret to `target.host`. A request that pairs one target's host with another
   target's manager secret signs in to that host with the other target's credential, which the
   host refuses unless both targets share the login.
@@ -265,7 +290,8 @@ its ARN names.
 ### Manager secret
 
 The manager secret's value is JSON with `username` and `password`, both non-empty strings. AWS
-writes this shape for a secret that RDS manages and for an "RDS database credentials" secret.
+writes this shape for a secret that RDS manages, and the customer writes it to a secret P0
+names.
 The connector ignores every other key, `host` and `port` included: the target comes from the
 request.
 
@@ -407,16 +433,20 @@ on the real target, which no catalog query stands in for.
 
 The connector's execution role needs:
 
-- `secretsmanager:GetSecretValue` on the manager's secrets, and on no other secret. A manager
-  secret encrypted with a customer-managed KMS key also needs `kms:Decrypt` on that key.
+- `secretsmanager:GetSecretValue` on
+  `arn:<partition>:secretsmanager:<region>:<account>:secret:p0/install/postgres/<vpc id>/*`,
+  plus the ARN of each RDS-managed manager secret that the VPC's targets use, and on no other
+  secret. A manager secret that a customer-managed KMS key encrypts also needs `kms:Decrypt` on
+  that key.
 - `secretsmanager:CreateSecret`, `secretsmanager:PutSecretValue` and
-  `secretsmanager:DescribeSecret` on secrets under `p0/postgres-ai/<vpc id>/`. A grant makes
-  all three calls, in the region the request names.
+  `secretsmanager:DescribeSecret` only on
+  `arn:<partition>:secretsmanager:<region>:<account>:secret:p0/secrets/postgres/<vpc id>/*`. A
+  grant makes all three calls, in the region the request names.
 - `secretsmanager:DeleteSecret` on the same secrets, for the cleanup, which is not implemented
   yet.
 
-It must not be able to read a secret under `p0/postgres-ai/<vpc id>/`. The connector has no
-code that reads one.
+The `*` covers the suffix Secrets Manager adds to each secret's name. The role must not be able to
+read a secret under `p0/secrets/postgres/<vpc id>/`. The connector has no code that reads one.
 
 A manager secret must be in the connector's account. A secret in another account is readable only
 with a resource policy on the secret that lets the connector's role read it, and only when a

@@ -15,6 +15,8 @@ export { connectorSpec as PgVaultedConnectorSpec } from "./spec.ts";
 export {
   GRANT_LOGIN_PATTERN,
   GRANT_SECRET_NAME_PATTERN,
+  MANAGER_SECRET_NAME_PATTERN,
+  RDS_MANAGER_SECRET_ARN_PATTERN,
   type InstallContext as PgVaultedInstallContext,
   type RequestContext as PgVaultedRequestContext,
   type Target as PgVaultedTarget,
