@@ -58,6 +58,7 @@ Every access call carries this context (`src/context.ts`):
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `requestId`   | The P0 request, a non-empty string.                                                                                                                                                               |
 | `target`      | `{ host, port, database, managerSecretArn }`: the target, the database the manager connects to, and the full ARN of the target's manager secret.                                                  |
+| `targetId`    | P0's id of the target: `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`, the pattern of the `<target id>` segment of a grant secret's name. See [Names](#names).                                                 |
 | `secrets`     | `{ manager: "aws", region }`: where the grant secret is written. `manager` here is the secret manager, not the manager login.                                                                     |
 | `secretName`  | The grant secret's name. See [Names](#names).                                                                                                                                                     |
 | `deadline`    | An ISO 8601 date and time with `Z` or an offset. It becomes the grant login's `VALID UNTIL`. A deadline in the past is accepted.                                                                  |
@@ -88,6 +89,9 @@ The last segment of a grant secret's name is the grant login. The schema cannot 
 because the login arrives as the user, outside the context, so the user namespace check does:
 it refuses a login whose grant secret is another login's. With the connector's IAM scoped to
 `p0/postgres-ai/<its vpc>/`, that keeps one grant's secret from being another's.
+
+The `<target id>` segment must be the request's `targetId`. The grant path is to compare the
+two, and refuse a request whose grant secret belongs under another target.
 
 ### Lifecycle
 

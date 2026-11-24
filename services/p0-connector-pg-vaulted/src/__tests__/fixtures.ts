@@ -14,6 +14,7 @@ export const target = {
 export const context: RequestContext = {
   requestId: "r123",
   target,
+  targetId: "orders-prod",
   secrets: { manager: "aws", region: "us-east-1" },
   secretName: `p0/postgres-ai/vpc-0a1b2c3d4e5f67890/orders-prod/${LOGIN}`,
   deadline: "2026-12-01T00:00:00Z",
