@@ -14,19 +14,24 @@ type Setup = {
   accounts?: string[];
   trail?: { IsOrganizationTrail: boolean } | null;
   selectors?: Record<string, unknown>;
+  /** Whether the sample query never finishes */
+  running?: boolean;
 };
 
 const setUp = ({
   accounts = [ACCOUNT],
   trail = { IsOrganizationTrail: false },
   selectors = { EventSelectors: [{ DataResources: [] }] },
+  running = false,
 }: Setup = {}) => {
   const aws = fakeAws(() =>
-    accounts.map((account) => ({
-      recipientAccountId: account,
-      events: "120",
-      latest: "2026-11-01 13:55:01.000",
-    }))
+    running
+      ? "running"
+      : accounts.map((account) => ({
+          recipientAccountId: account,
+          events: "120",
+          latest: "2026-11-01 13:55:01.000",
+        }))
   );
   aws.on("DescribeTrailsCommand", () => ({
     trailList: trail
@@ -140,6 +145,31 @@ describe("validateInstall", () => {
     expect(result.cloudtrail?.accounts).toEqual([MEMBER, ACCOUNT].sort());
     expect(result.warnings).toEqual([
       expect.objectContaining({ check: "trail_not_found" }),
+    ]);
+  });
+
+  it("warns, not fails, when the sample doesn't finish in time", async () => {
+    const aws = setUp({ running: true });
+    const result = await validate(aws, {
+      logGroupName: LOG_GROUP,
+      coverage: "account",
+    });
+    expect(result.cloudtrail).not.toHaveProperty("accounts");
+    expect(result.cloudtrail).not.toHaveProperty("latestEventTime");
+    expect(result.warnings).toContainEqual(
+      expect.objectContaining({ check: "recent_events" })
+    );
+  });
+
+  it("passes organization coverage it can't judge when the sample doesn't finish and no trail names the group", async () => {
+    const aws = setUp({ trail: null, running: true });
+    const result = await validate(aws, {
+      logGroupName: LOG_GROUP,
+      coverage: "organization",
+    });
+    expect(result.warnings.map(({ check }) => check)).toEqual([
+      "recent_events",
+      "trail_not_found",
     ]);
   });
 
