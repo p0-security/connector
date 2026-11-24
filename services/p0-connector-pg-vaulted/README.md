@@ -57,7 +57,7 @@ Every access call carries this context (`src/context.ts`):
 | Field         | Value                                                                                                                                                                                             |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `requestId`   | The P0 request, a non-empty string.                                                                                                                                                               |
-| `target`      | `{ host, port, database, managerSecretArn }`: the target, the database the manager connects to, and the full ARN of the target's manager secret.                                                  |
+| `target`      | `{ host, port, database, managerSecret }`: the target, the database the manager connects to, and the target's manager secret.                                                                     |
 | `targetId`    | P0's id of the target: `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`, the pattern of the `<target id>` segment of a grant secret's name. See [Names](#names).                                                 |
 | `secrets`     | `{ manager: "aws", region }`: where the grant secret is written. `manager` here is the secret manager, not the manager login.                                                                     |
 | `secretName`  | The grant secret's name. See [Names](#names).                                                                                                                                                     |
@@ -65,13 +65,21 @@ Every access call carries this context (`src/context.ts`):
 | `comment`     | Who asked and for which request. Written with `COMMENT ON ROLE`, so the customer's own database audit resolves the grant login without P0.                                                        |
 | `objectOwner` | The role that takes over what the grant login owns before the login is dropped. P0 sends exactly one policy, and this is its `rolename`, repeated here because `deleteUser` receives no policies. |
 
-The P0 control plane names the manager secret, as it names the private key secret of the
-Snowflake (AI) and GitHub (AI) connectors. The connector's IAM, which the install's Terraform
-writes, limits which secrets the connector can read, so a request can name only a secret the
-customer gave the connector. `managerSecretArn` must be a full Secrets Manager ARN in the `aws`,
-`aws-cn` or `aws-us-gov` partition, and a secret's name alone is refused. An ARN whose secret
-name starts with `p0/postgres-ai/` is refused too: that is where grant secrets live, which the
-connector writes and never reads.
+The manager secret is in one of two forms:
+
+- A secret P0 names. `managerSecret` is its name, with no ARN:
+  `p0/install/postgres/<vpc id>/<target id>/p0manager` (`MANAGER_SECRET_NAME_PATTERN`). The
+  `<vpc id>` is `vpc-` and 8 to 17 lowercase hex digits, and the `<target id>` is P0's id of the
+  target, `^[A-Za-z0-9][A-Za-z0-9-]{0,62}$`. The customer creates this secret.
+- A secret RDS manages. `managerSecret` is its full ARN, in the `aws`, `aws-cn` or `aws-us-gov`
+  partition: `arn:<partition>:secretsmanager:<region>:<account>:secret:rds!db-<uuid>-<suffix>`,
+  or `rds!cluster-` in place of `rds!db-` (`RDS_MANAGER_SECRET_ARN_PATTERN`). The `<uuid>` is
+  lowercase, and the `<suffix>` is the 6 letters and digits Secrets Manager adds.
+
+Anything else is refused: the ARN of any other secret, any other name, and a name without its
+`p0manager` leaf. The connector's IAM, which the install's Terraform writes, limits which
+secrets the connector can read, so a request can name only a secret the customer gave the
+connector.
 
 Revoke parses the same context as grant, so the parser accepts a past `deadline` and truncates
 a `comment` over 1000 characters.
