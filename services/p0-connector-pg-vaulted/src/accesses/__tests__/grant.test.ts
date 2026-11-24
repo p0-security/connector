@@ -8,7 +8,6 @@ import {
   MANAGER_SECRET_ARN,
   capturingLogger,
   dataOf,
-  env,
   errorOf,
   fakeDatabase,
   fakeRandomBytes,
@@ -45,7 +44,6 @@ beforeEach(() => {
 });
 
 const dependencies = () => ({
-  env,
   connectSecretManager: vault.connectSecretManager,
   secretsManagerSdk: vault.secretsManagerSdk,
   connect: db.connect,

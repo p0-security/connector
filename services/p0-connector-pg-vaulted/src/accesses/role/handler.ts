@@ -11,6 +11,7 @@ import {
   GRANT_LOGIN_PATTERN,
   type RequestContext,
   isGrantSecretOfLogin,
+  isGrantSecretOfTarget,
 } from "../../context.ts";
 import type { Dependencies } from "../../dependencies.ts";
 import {
@@ -19,11 +20,7 @@ import {
   readGrantLoginState,
 } from "../../grant-login.ts";
 import { newGrantSecretStore } from "../../grant-secret.ts";
-import {
-  isGrantSecretOfManagerTarget,
-  managerSecretFor,
-  withManager,
-} from "../../manager.ts";
+import { readManagerCredential, withManager } from "../../manager.ts";
 import { newNotImplementedError } from "../../not-implemented.ts";
 import { listDatabases, listGrantableRoles } from "../../postgres/catalog.ts";
 import type { PgSession } from "../../postgres/client.ts";
@@ -61,12 +58,11 @@ export const newRolePrimitives = (
   const forGrant = (context: RequestContext, login: string) => {
     const { requestId, target, secrets, secretName } = context;
     const { host, port, database } = target;
-    const secret = managerSecretFor(host, dependencies.env);
-    if (!isGrantSecretOfManagerTarget(secretName, secret)) {
+    if (!isGrantSecretOfTarget(secretName, context.targetId)) {
       throw new ConnectorError({
         type: "validation_error",
         message:
-          "The grant secret's name is for another target than the request's. Its target id must be the one the connector's manager mapping holds for the target's host.",
+          "The grant secret's name is for another target than the request's. Its target id must be the request's targetId.",
         payload: { host },
       });
     }
@@ -74,8 +70,14 @@ export const newRolePrimitives = (
     return {
       logger,
       grantSecrets: newGrantSecretStore(secrets.region, dependencies),
-      asManager: <T>(run: (session: PgSession) => Promise<T>) =>
-        withManager(target, secret, dependencies, logger, run),
+      asManager: async <T>(run: (session: PgSession) => Promise<T>) =>
+        withManager(
+          target,
+          await readManagerCredential(target, dependencies),
+          dependencies,
+          logger,
+          run
+        ),
     };
   };
 
@@ -178,9 +180,10 @@ export const newRolePrimitives = (
     list: async ({ type, context: target }) => {
       const { host, port, database } = target;
       const logger = ctx.logger.child({ host, port, database, type });
+      const credential = await readManagerCredential(target, dependencies);
       const names = await withManager(
         target,
-        managerSecretFor(host, dependencies.env),
+        credential,
         dependencies,
         logger,
         ({ query }) => LISTERS[type](query)

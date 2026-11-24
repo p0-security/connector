@@ -5,10 +5,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   MANAGER,
   MANAGER_SECRET_ARN,
-  MANAGER_TARGET_ID,
   capturingLogger,
   dataOf,
-  env,
   errorOf,
   fakeDatabase,
   fakeSecretStore,
@@ -19,7 +17,6 @@ import {
 import { target } from "../../__tests__/fixtures.ts";
 import type { Dependencies } from "../../dependencies.ts";
 import { t } from "../../router.ts";
-import { installValidation } from "../definition.ts";
 import { router } from "../handler.ts";
 
 const HOST = "orders.cluster-abc123.us-east-1.rds.amazonaws.com";
@@ -36,7 +33,6 @@ beforeEach(() => {
 
 const validation = (overrides: Dependencies = {}) =>
   router(t, {
-    env,
     connectSecretManager: vault.connectSecretManager,
     connect: db.connect,
     ...overrides,
@@ -44,15 +40,6 @@ const validation = (overrides: Dependencies = {}) =>
 
 const validate = (overrides: Dependencies = {}) =>
   validation(overrides).get({ target });
-
-const mappingOf = (mapping: unknown) => ({
-  MANAGER_SECRET_ARNS: JSON.stringify(mapping),
-});
-
-const entry = (arn: string, targetId = MANAGER_TARGET_ID) => ({
-  arn,
-  targetId,
-});
 
 describe("install validation input", () => {
   it("refuses an input with no target", async () => {
@@ -66,10 +53,33 @@ describe("install validation input", () => {
     ).rejects.toThrow("port");
   });
 
-  it("the result schema accepts grantable roles", () => {
-    const validated = { grantableRoles: ["analyst", "reporting"] };
+  it.each([
+    ["a name alone", "orders-manager"],
+    [
+      "an ARN with no account",
+      "arn:aws:secretsmanager:us-east-1::secret:orders-manager-AbCdEf",
+    ],
+    [
+      "an ARN of another service",
+      "arn:aws:ssm:us-east-1:123456789012:parameter/orders-manager",
+    ],
+    [
+      "an ARN in an unknown partition",
+      "arn:aws-iso:secretsmanager:us-iso-east-1:123456789012:secret:orders-manager-AbCdEf",
+    ],
+  ])("refuses %s as the manager secret", async (_, managerSecretArn) => {
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).rejects.toThrow("managerSecretArn");
+  });
 
-    expect(installValidation.parse(validated)).toEqual(validated);
+  it("refuses a grant secret as the manager secret", async () => {
+    const managerSecretArn =
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:p0/postgres-ai/vpc-0abc1234/orders-prod/p0v_0123456789abcdef0123456789abcdef-AbCdEf";
+
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).rejects.toThrow("managerSecretArn must not name a grant secret");
   });
 });
 
@@ -167,136 +177,38 @@ describe("install validation", () => {
   });
 });
 
-describe("manager_mapping", () => {
+describe("manager_secret", () => {
   it.each([
-    ["is not set", {}],
-    ["is empty", { MANAGER_SECRET_ARNS: "" }],
-    ["is not JSON", { MANAGER_SECRET_ARNS: "{" }],
-    ["is not an object", mappingOf([MANAGER_SECRET_ARN])],
-    ["maps a host to an ARN alone", mappingOf({ [HOST]: MANAGER_SECRET_ARN })],
     [
-      "maps a host to a secret's name",
-      mappingOf({ [HOST]: entry("orders-manager") }),
+      "arn:aws:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf",
+      "us-east-1",
     ],
     [
-      "maps a host to an ARN of another service",
-      mappingOf({
-        [HOST]: entry(
-          "arn:aws:ssm:us-east-1:123456789012:parameter/orders-manager"
-        ),
-      }),
+      "arn:aws-cn:secretsmanager:cn-north-1:123456789012:secret:orders-manager-AbCdEf",
+      "cn-north-1",
     ],
     [
-      "maps a host to an ARN in an unknown partition",
-      mappingOf({
-        [HOST]: entry(
-          "arn:evil:secretsmanager:us-east-1:123456789012:secret:orders-manager-AbCdEf"
-        ),
-      }),
+      "arn:aws-us-gov:secretsmanager:us-gov-west-1:123456789012:secret:p0/orders-manager-AbCdEf",
+      "us-gov-west-1",
     ],
-    [
-      "maps a host to an ARN whose region is not a region",
-      mappingOf({
-        [HOST]: entry(
-          "arn:aws:secretsmanager:us-east-1.example.com/:123456789012:secret:orders-manager-AbCdEf"
-        ),
-      }),
-    ],
-    [
-      "maps a host to an ARN whose account is not 12 digits",
-      mappingOf({
-        [HOST]: entry(
-          "arn:aws:secretsmanager:us-east-1:12345:secret:orders-manager-AbCdEf"
-        ),
-      }),
-    ],
-    [
-      "maps a host to an ARN with more after the secret's name",
-      mappingOf({ [HOST]: entry(`${MANAGER_SECRET_ARN}:extra`) }),
-    ],
-    [
-      "maps a host to an entry with no target id",
-      mappingOf({ [HOST]: { arn: MANAGER_SECRET_ARN } }),
-    ],
-    [
-      "maps a host to an entry with no ARN",
-      mappingOf({ [HOST]: { targetId: MANAGER_TARGET_ID } }),
-    ],
-    [
-      "maps a host to an empty target id",
-      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN, "") }),
-    ],
-    [
-      "maps a host to a target id with a slash",
-      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN, "orders/prod") }),
-    ],
-    [
-      "maps a host to a target id that starts with a hyphen",
-      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN, "-orders") }),
-    ],
-    [
-      "maps a host to a target id of 64 characters",
-      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN, "a".repeat(64)) }),
-    ],
-    [
-      "maps another host to something that is not an entry",
-      mappingOf({ [HOST]: entry(MANAGER_SECRET_ARN), "other.example.com": 7 }),
-    ],
-  ])("fails as a validation error when the variable %s", async (_, env) => {
-    const data = await dataOf(validate({ env }));
+  ])("reads %s in %s", async (managerSecretArn, region) => {
+    vault = fakeSecretStore({ [managerSecretArn]: JSON.stringify(MANAGER) });
 
-    expect(data.type).toBe("validation_error");
-    expect(data.payload).toEqual({ step: "manager_mapping", host: HOST });
-    expect(data.message).toContain("MANAGER_SECRET_ARNS");
-    expect(vault.reads).toEqual([]);
-    expect(db.signIns).toEqual([]);
-  });
-
-  it("fails as not found when the mapping has no entry for the target's host", async () => {
-    const data = await dataOf(
-      validate({
-        env: mappingOf({ "billing.example.com": entry(MANAGER_SECRET_ARN) }),
-      })
-    );
-
-    expect(data.type).toBe("object_not_found");
-    expect(data.payload).toEqual({ step: "manager_mapping", host: HOST });
-    expect(vault.reads).toEqual([]);
-  });
-
-  it("finds the host whatever its case", async () => {
-    const env = mappingOf({ [HOST.toUpperCase()]: entry(MANAGER_SECRET_ARN) });
-
-    await expect(validate({ env })).resolves.toEqual({
-      grantableRoles: ["analyst", "reporting"],
-    });
-    expect(vault.reads.map(({ ref }) => ref)).toEqual([MANAGER_SECRET_ARN]);
-  });
-
-  it("reads the secret in the region of an ARN in another partition", async () => {
-    const arn =
-      "arn:aws-us-gov:secretsmanager:us-gov-west-1:123456789012:secret:p0/orders-manager-AbCdEf";
-    vault = fakeSecretStore({ [arn]: JSON.stringify(MANAGER) });
-
-    await validate({
-      env: mappingOf({ [HOST]: entry(arn) }),
-      connectSecretManager: vault.connectSecretManager,
-    });
-
+    await expect(
+      validation().get({ target: { ...target, managerSecretArn } })
+    ).resolves.toEqual({ grantableRoles: ["analyst", "reporting"] });
     expect(vault.reads).toEqual([
-      { config: { provider: "aws", region: "us-gov-west-1" }, ref: arn },
+      { config: { provider: "aws", region }, ref: managerSecretArn },
     ]);
   });
-});
 
-describe("sign_in", () => {
   it("fails as not found when the manager secret does not exist", async () => {
     vault = fakeSecretStore({});
 
     const data = await dataOf(validate());
 
     expect(data.type).toBe("object_not_found");
-    expect(data.payload).toEqual({ step: "sign_in", host: HOST });
+    expect(data.payload).toEqual({ step: "manager_secret", host: HOST });
     expect(db.signIns).toEqual([]);
   });
 
@@ -317,7 +229,7 @@ describe("sign_in", () => {
     const data = await dataOf(validate());
 
     expect(data.type).toBe(type);
-    expect(data.payload).toEqual({ step: "sign_in", host: HOST });
+    expect(data.payload).toEqual({ step: "manager_secret", host: HOST });
     expect(db.signIns).toEqual([]);
   });
 
@@ -339,7 +251,7 @@ describe("sign_in", () => {
       const data = await dataOf(validate());
 
       expect(data.type).toBe("validation_error");
-      expect(data.payload).toEqual({ step: "sign_in", host: HOST });
+      expect(data.payload).toEqual({ step: "manager_secret", host: HOST });
       expect(db.signIns).toEqual([]);
     }
   );
@@ -370,7 +282,9 @@ describe("sign_in", () => {
       },
     ]);
   });
+});
 
+describe("sign_in", () => {
   it("fails as insufficient privileges when PostgreSQL refuses the password", async () => {
     db.failOn("ping", pgError("28P01"));
 
