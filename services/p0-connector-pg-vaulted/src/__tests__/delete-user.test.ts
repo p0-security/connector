@@ -5,6 +5,7 @@ import { router } from "../accesses/role/handler.ts";
 import { t } from "../router.ts";
 import { TARGET_ID, target } from "./fixtures.ts";
 
+// The connector's own login, which the database reports as `current_user`.
 const P0_USER = "p0_iam_manager";
 
 // Roles the fake database reports as held by the connector (itself, the
@@ -34,7 +35,6 @@ const context = {
   db: {
     host: "localhost",
     port: 5432,
-    p0User: P0_USER,
     database: "postgres",
     managerSecret: target.managerSecret,
     targetId: TARGET_ID,
@@ -54,6 +54,7 @@ describe("Postgres deleteUser connector boundary", () => {
   });
 
   it("refuses to drop the connector's own user", async () => {
+    connectorHeldRoles = [P0_USER];
     await expect(
       client.deleteUser({ userId: P0_USER, userBody: P0_USER, context })
     ).rejects.toThrow("the connector's own identity");

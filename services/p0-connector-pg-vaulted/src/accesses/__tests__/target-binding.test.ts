@@ -21,7 +21,6 @@ const db = {
   host: target.host,
   port: target.port,
   database: target.database,
-  p0User: "p0_iam_manager",
   managerSecret: target.managerSecret,
   targetId: TARGET_ID,
   cloud: "rds" as const,
@@ -48,14 +47,26 @@ describe.each([
     vi.mocked(newClient).mockClear();
   });
 
+  const ENDPOINT = {
+    host: target.host,
+    port: target.port,
+    database: target.database,
+  };
+
   it("signs in with a manager secret P0 names under the request's target", async () => {
     await expect(provision({})).rejects.toThrow("db reached");
+    expect(vi.mocked(newClient).mock.calls).toEqual([
+      [{ ...ENDPOINT, managerSecret: target.managerSecret }, "rds"],
+    ]);
   });
 
   it("signs in with a secret RDS manages, which names no target", async () => {
     await expect(
       provision({ managerSecret: RDS_SECRET, targetId: "billing-prod" })
     ).rejects.toThrow("db reached");
+    expect(vi.mocked(newClient).mock.calls).toEqual([
+      [{ ...ENDPOINT, managerSecret: RDS_SECRET }, "rds"],
+    ]);
   });
 
   it.each(["billing-prod", "Orders-prod", "orders-prod2", "orders"])(

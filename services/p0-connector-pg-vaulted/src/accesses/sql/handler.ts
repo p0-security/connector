@@ -27,7 +27,7 @@ export const router = (t: AnyConnectorTRPCInstance) =>
           context,
           { resourceBody, policy },
           async ({ client, logger }) => {
-            await assertNotConnectorRole(client, context, [resourceBody]);
+            await assertNotConnectorRole(client, [resourceBody]);
             const type = policy.type;
             switch (type) {
               case "role": {
@@ -64,7 +64,7 @@ export const router = (t: AnyConnectorTRPCInstance) =>
           context,
           { resourceBody, policy },
           async ({ client, logger }) => {
-            await assertNotConnectorRole(client, context, [resourceBody]);
+            await assertNotConnectorRole(client, [resourceBody]);
             const type = policy.type;
             switch (type) {
               case "role": {

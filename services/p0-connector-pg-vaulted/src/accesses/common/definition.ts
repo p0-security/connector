@@ -10,7 +10,6 @@ import {
 
 export const pgClientParams = z
   .object({
-    p0User: z.string(),
     host: z.string(),
     // 65535 is the highest TCP port (input validation only)
     port: z.coerce.number().int().min(1).max(65535),

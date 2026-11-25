@@ -2,14 +2,13 @@ import awsCaBundle from "aws-ssl-profiles";
 import z from "zod";
 
 import type { PoolConfig, SslConfig } from "../dbclient.ts";
-import { newNotImplementedError } from "../not-implemented.ts";
+import { readManagerCredential } from "../manager.ts";
 import type { CloudConfig } from "./index.ts";
 
-/** The manager's password comes from its Secrets Manager secret, which this
- * connector does not read yet. */
-const fetchDbPassword = async (): Promise<string> => {
-  throw newNotImplementedError("manager sign-in");
-};
+const fetchCredential: CloudConfig["fetchCredential"] = (
+  { managerSecret },
+  dependencies
+) => readManagerCredential(managerSecret, dependencies);
 
 const sslConfig = async (): Promise<SslConfig> => {
   return {
@@ -51,7 +50,7 @@ const poolConfig = async (): Promise<PoolConfig> => {
 };
 
 export const awsRdsConfig: CloudConfig = {
-  fetchDbPassword,
+  fetchCredential,
   poolConfig,
   sslConfig,
 };

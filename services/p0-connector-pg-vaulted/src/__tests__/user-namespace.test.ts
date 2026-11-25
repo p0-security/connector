@@ -20,7 +20,6 @@ const context = {
   db: {
     host: "localhost",
     port: 5432,
-    p0User: "p0_iam_manager",
     database: "postgres",
     managerSecret: target.managerSecret,
     targetId: TARGET_ID,
