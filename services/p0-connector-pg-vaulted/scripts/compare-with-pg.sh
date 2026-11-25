@@ -10,6 +10,8 @@ accesses/common/definition.ts
 accesses/common/handler.ts
 accesses/role/definition.ts
 accesses/role/handler.ts
+accesses/sql/definition.ts
+accesses/sql/handler.ts
 clouds/aws-rds.ts
 clouds/index.ts
 clouds/localdev.ts
@@ -19,6 +21,7 @@ sql/__tests__/identifier.test.ts
 __tests__/delete-user.test.ts
 __tests__/role.test.ts
 __tests__/setup.ts
+__tests__/sql.test.ts
 __tests__/user-namespace.test.ts
 "
 

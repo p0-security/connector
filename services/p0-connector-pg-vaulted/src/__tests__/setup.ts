@@ -7,6 +7,8 @@ import { escapeLiteral } from "pg";
 
 import type { spec as roleSpec } from "../accesses/role/definition.ts";
 import { router as roleRouter } from "../accesses/role/handler.ts";
+import type { spec as sqlSpec } from "../accesses/sql/definition.ts";
+import { router as sqlRouter } from "../accesses/sql/handler.ts";
 import type { Cloud } from "../clouds/index.ts";
 import { t } from "../router.ts";
 
@@ -33,6 +35,8 @@ const rootClient = newPgClient();
 const connectorContext = { logger: createLogger() };
 
 export const newConnClient = () => roleRouter(t).createCaller(connectorContext);
+export const newSqlConnClient = () =>
+  sqlRouter(t).createCaller(connectorContext);
 
 export const dropRole = async (role: string) => {
   await rootClient.raw(`DROP OWNED BY ??`, [role]).catch(() => {});
@@ -110,6 +114,71 @@ export const newRoleLifecycle = async <
         context,
       });
       await newConnClient().deleteAccessResource({ resourceId, context });
+      await dropRole(userId);
+    }
+  };
+};
+
+export const newSqlLifecycle = async <
+  T extends (client: ReturnType<typeof newPgClient>) => Promise<any>,
+>(args: {
+  context: {
+    requestId: string;
+    db: {
+      host: string;
+      port: number;
+      database: string;
+      p0User: string;
+      cloud: Cloud;
+    };
+  };
+  userId: string;
+  password: string;
+  resourceId: string;
+  policies: ResourceHierarchySchemaOf<typeof sqlSpec>["Policy"][];
+}) => {
+  const { context, userId, password, resourceId, policies } = args;
+
+  return async (f: T): Promise<ReturnType<Awaited<T>>> => {
+    try {
+      await newSqlConnClient().provisionUser({
+        userBody: userId,
+        context,
+      });
+      await newSqlConnClient().createAccessResource({
+        resourceBody: resourceId,
+        context,
+      });
+      await newSqlConnClient().addPoliciesToResource({
+        resourceId,
+        policies,
+        context,
+      });
+      await newSqlConnClient().bindAccessResource({
+        userId,
+        userBody: userId,
+        resourceId,
+        context,
+      });
+
+      await setPassword(userId, password);
+
+      const testClient = newPgClient();
+
+      return await f(testClient);
+    } finally {
+      await newSqlConnClient().unbindAccessResource({
+        userId,
+        userBody: userId,
+        resourceId,
+        context,
+      });
+      await newSqlConnClient().removePoliciesFromResource({
+        resourceId,
+        policies,
+        context,
+      });
+      await newSqlConnClient().deleteAccessResource({ resourceId, context });
       await dropRole(userId);
     }
   };

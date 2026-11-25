@@ -1,7 +1,7 @@
 # p0-connector-pg-vaulted
 
-> **Not usable yet.** Install validation is a stub that throws, and the `role` access can't sign in
-> to a database yet. See [Not implemented yet](#not-implemented-yet).
+> **Not usable yet.** Install validation is a stub that throws, and the `role` and `sql` accesses
+> can't sign in to a database yet. See [Not implemented yet](#not-implemented-yet).
 
 Vaulted PostgreSQL connector, for PostgreSQL on AWS RDS that does not use IAM database
 authentication. For each access grant, the connector is to create a PostgreSQL login of the
@@ -61,12 +61,13 @@ The operation is to run these checks in order, and a failure names its check in 
 
 Once every check has passed it returns `{ grantableRoles }`.
 
-### Role access
+### Role and SQL access
 
-The `role` access is copied from `p0-connector-pg`, with its IAM sign-in, Cloud SQL support and
-`sql` access left out. It runs on the resource-hierarchy perimeter: P0 creates an access role that
-can't log in, grants the approved roles to it, then grants it to the user's login. It acts only
-on names that start with `p0`, and never on the manager or a role the manager inherits.
+The `role` and `sql` accesses are copied from `p0-connector-pg`, with its IAM sign-in and Cloud
+SQL support left out. Both run on the resource-hierarchy perimeter: P0 creates an access role that
+can't log in, grants it the approved roles (`role`) or schema and table privileges (`sql`), then
+grants it to the user's login. They act only on names that start with `p0`, and never on the
+manager or a role the manager inherits.
 
 `scripts/compare-with-pg.sh` prints how each copied file differs from its original.
 
