@@ -45,7 +45,7 @@ export const router = (t: AnyConnectorTRPCInstance) => {
           throw failedAt("manager_secret", host, {
             type: "unknown",
             message:
-              "The connector could not read the manager secret, its value is not a JSON object with a username, a password and a host, or its host is not the target's.",
+              "The connector could not read the manager secret, its value is not a JSON object with a username and a password, or the secret is not for the target's host.",
             payload: {},
           });
         }
