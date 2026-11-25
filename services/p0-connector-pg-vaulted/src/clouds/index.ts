@@ -9,6 +9,7 @@ export type Endpoint = {
   host: string;
   port: number;
   database: string;
+  managerSecret: string;
 };
 
 export type CloudConfig = {

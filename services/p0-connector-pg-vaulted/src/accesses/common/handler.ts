@@ -145,6 +145,7 @@ export const withPgClient = async <O>(
       port: params.port,
       database: params.database,
       user: params.p0User,
+      managerSecret: params.managerSecret,
     },
     params.cloud
   );
