@@ -26,6 +26,8 @@ const context = {
     database: PG_DATABASE,
     port: PG_PORT,
     p0User: PG_USER,
+    managerSecret:
+      "p0/install/postgres/vpc-0a1b2c3d4e5f67890/test-target/p0manager",
     cloud: "localhost" as const,
   },
 };

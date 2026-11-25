@@ -2,12 +2,15 @@ import { newZodResourceHierarchyParsers } from "@p0security/connector-core";
 import type { JsonValue } from "type-fest";
 import { z } from "zod";
 
+import { managerSecret } from "../../context.ts";
+
 export const pgClientParams = z.object({
   p0User: z.string(),
   host: z.string(),
   // 65535 is the highest TCP port (input validation only)
   port: z.coerce.number().int().min(1).max(65535),
   database: z.string(),
+  managerSecret,
   cloud: z.enum(["rds", "localhost"]).optional().default("rds"),
 });
 

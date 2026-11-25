@@ -20,6 +20,8 @@ const context = {
     host: "localhost",
     port: 5432,
     p0User: "p0_iam_manager",
+    managerSecret:
+      "p0/install/postgres/vpc-0a1b2c3d4e5f67890/test-target/p0manager",
     database: "postgres",
     cloud: "rds" as const,
   },

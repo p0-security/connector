@@ -1,14 +1,46 @@
+import {
+  type SecretRef,
+  createSecretManagerClient,
+} from "@p0security/connector-secret-manager-client";
 import awsCaBundle from "aws-ssl-profiles";
 import z from "zod";
 
 import type { PoolConfig, SslConfig } from "../dbclient.ts";
-import { newNotImplementedError } from "../not-implemented.ts";
-import type { CloudConfig } from "./index.ts";
+import type { CloudConfig, Endpoint } from "./index.ts";
 
-/** The manager's password comes from its Secrets Manager secret, which this
- * connector does not read yet. */
-const fetchDbPassword = async (): Promise<string> => {
-  throw newNotImplementedError("manager sign-in");
+const managerCredential = z.object({ password: z.string().min(1) });
+
+/**
+ * Reads the manager's password from the secret the request names, in the
+ * connector's own region. Errors leave out the value and the SDK's cause,
+ * since either could hold the password.
+ */
+const fetchDbPassword = async (
+  endpoint: Pick<Endpoint, "managerSecret">
+): Promise<string> => {
+  const secrets = await createSecretManagerClient({
+    provider: "aws",
+    region: process.env.AWS_REGION ?? "",
+  });
+  const { value } = await secrets
+    .getSecretValue({ ref: endpoint.managerSecret as SecretRef })
+    .catch(() => {
+      throw new Error("pg-vaulted could not read the manager secret");
+    });
+  const text = typeof value === "string" ? value : value.toString("utf8");
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = undefined;
+  }
+  const credential = managerCredential.safeParse(json);
+  if (!credential.success) {
+    throw new Error(
+      "pg-vaulted's manager secret must be a JSON object with a password"
+    );
+  }
+  return credential.data.password;
 };
 
 const sslConfig = async (): Promise<SslConfig> => {

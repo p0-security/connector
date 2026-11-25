@@ -38,7 +38,7 @@ export const RDS_MANAGER_SECRET_ARN_PATTERN = new RegExp(
  * names, or the ARN of a secret RDS manages. Anything else is refused. The
  * connector's IAM limits which secrets it can read.
  */
-const managerSecret = z
+export const managerSecret = z
   .string()
   .refine(
     (secret) =>
