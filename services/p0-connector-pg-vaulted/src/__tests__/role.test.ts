@@ -8,6 +8,7 @@ import {
   it,
 } from "vitest";
 
+import { GRANT_SECRET_PREFIX } from "./fixtures.ts";
 import {
   GRANT_ENDS_AT,
   PG_DATABASE,
@@ -23,6 +24,7 @@ import {
 const context = {
   requestId: "test-request-id",
   grantEndsAt: GRANT_ENDS_AT,
+  grantSecretPrefix: GRANT_SECRET_PREFIX,
   db: {
     host: PG_HOST,
     database: PG_DATABASE,

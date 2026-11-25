@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { router } from "../accesses/role/handler.ts";
 import { newClient } from "../dbclient.ts";
 import { t } from "../router.ts";
+import { GRANT_SECRET_PREFIX } from "./fixtures.ts";
 
 // No live DB: a call that passes validation stops when it tries to connect.
 vi.mock("../dbclient.ts", () => ({
@@ -17,6 +18,7 @@ const client = router(t).createCaller({ logger: createLogger() });
 const context = {
   requestId: "test-request-id",
   grantEndsAt: "2099-01-01T00:00:00Z",
+  grantSecretPrefix: GRANT_SECRET_PREFIX,
   db: {
     host: "localhost",
     port: 5432,

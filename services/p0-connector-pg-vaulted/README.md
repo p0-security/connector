@@ -23,6 +23,8 @@ scopes the secrets it can write.
 - **Grant key**: 32 lowercase hex digits, derived by P0 from the target and the principal.
 - **Grant login**: a login role named `p0v_<grant key>`, shared by one principal's active grants
   on one target.
+- **Grant secret**: the AWS Secrets Manager secret that holds one grant login's password, named
+  `<grantSecretPrefix>/<grant login>`. The connector writes it and never reads it back.
 
 ## Contract
 
@@ -102,14 +104,32 @@ provisions or deletes it, and the connector keeps no state about grants.
   `VALID UNTIL` and `REVOKE` act only at the next sign-in or statement, so step 2 is what ends
   access.
 
+### Grant secret
+
+- Every request to the `role` and `sql` accesses must also carry `grantSecretPrefix`:
+  `p0/secrets/postgres/<vpc id>/<target id>` (`GRANT_SECRET_PREFIX_PATTERN`). The connector
+  names the login's secret `<grantSecretPrefix>/<grant login>`, so a secret can hold only its own
+  login's password. P0 gives the requester read access to that secret. The secret is in the
+  manager secret's region: the one an RDS-managed secret's ARN names, or else the connector's own.
+- `createUser` generates a 256-bit password, writes it to the grant secret as a binary value, then
+  creates the login with it. It sends PostgreSQL the SCRAM-SHA-256 verifier, not the password, so
+  the password never reaches the server's statement log. If either step fails, the connector
+  deletes the secret. Secrets Manager finishes a delete a few seconds after it returns and
+  refuses the name until then, so `createUser` retries for up to 15 seconds.
+- A login whose secret is missing counts as missing: `provisionUser` sets a new password and
+  writes a new secret. Nobody can have read the old password. A login whose secret exists keeps its
+  password, so other grants that share it are not cut off.
+- `deleteUser` deletes the secret after it drops the login, even when a session did not end.
+- The connector's IAM, which the install's Terraform writes, needs `CreateSecret`,
+  `PutSecretValue`, `DescribeSecret` and `DeleteSecret` on `p0/secrets/postgres/<vpc id>/*`, and
+  nothing that reads a value there.
+
 ## Not implemented yet
 
 - `install.validation.get` parses its input and then throws
   `pg-vaulted install.validation.get is not implemented`.
 - The manager can't sign in on RDS. The client throws
   `pg-vaulted manager sign-in is not implemented`, because nothing reads the manager secret yet.
-- `createUser` makes a login with no password. The next PR adds the grant secret: the connector
-  is to set the login's password and store it in Secrets Manager.
 - The manager secret's value has no format yet.
 - The package depends on no Secrets Manager client.
 - No image is built: the service is not in `.github/workflows/docker.yaml`.

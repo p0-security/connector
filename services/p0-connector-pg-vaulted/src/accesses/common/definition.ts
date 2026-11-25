@@ -50,6 +50,18 @@ export const managerSecret = z
     "managerSecret must be a name p0/install/postgres/<vpc id>/<target id>/p0manager, or the ARN of a secret RDS manages"
   );
 
+/** The connector's IAM allows secret writes only under this prefix. */
+export const GRANT_SECRET_PREFIX_PATTERN = new RegExp(
+  `^p0/secrets/postgres/${VPC_ID}/${TARGET_ID}$`
+);
+
+const grantSecretPrefix = z
+  .string()
+  .regex(
+    GRANT_SECRET_PREFIX_PATTERN,
+    "grantSecretPrefix must be p0/secrets/postgres/<vpc id>/<target id>"
+  );
+
 export const pgClientParams = z.object({
   p0User: z.string(),
   host: z.string(),
@@ -65,6 +77,7 @@ export const requestContext = z.object({
   db: pgClientParams,
   /** The latest end among all active grants that share the login, not only this request's. */
   grantEndsAt: z.iso.datetime({ offset: true }),
+  grantSecretPrefix,
 });
 
 export type PgRequestContext = z.infer<typeof requestContext>;
