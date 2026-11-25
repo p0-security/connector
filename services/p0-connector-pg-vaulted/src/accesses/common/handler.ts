@@ -291,11 +291,28 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
         if (await roleExists(client, username)) {
           await client.raw(`ALTER ROLE ${ident(username)} NOLOGIN`);
           try {
-            const res = await client.raw<{ rows: { ended: boolean }[] }>(
-              "SELECT pg_terminate_backend(pid) AS ended FROM pg_stat_activity WHERE usename = ?",
+            const res = await client.raw<{
+              rows: { pid: number; ended: boolean }[];
+            }>(
+              "SELECT pid, pg_terminate_backend(pid) AS ended FROM pg_stat_activity WHERE usename = ?",
               [username]
             );
-            const notEnded = res.rows.filter((row) => !row.ended).length;
+            const unsignaled = res.rows
+              .filter((row) => !row.ended)
+              .map((row) => row.pid);
+            // `pg_terminate_backend` also returns false for a session that
+            // exited on its own after the scan, so only one still listed
+            // counts. This is a new statement, so it reads a fresh
+            // `pg_stat_activity` snapshot.
+            const notEnded =
+              unsignaled.length === 0
+                ? 0
+                : (
+                    await client.raw<{ rows: { pid: number }[] }>(
+                      "SELECT pid FROM pg_stat_activity WHERE pid = ANY(?::int[])",
+                      [unsignaled]
+                    )
+                  ).rows.length;
             if (notEnded > 0) {
               sessionsError = new ConnectorError({
                 type: "unknown",

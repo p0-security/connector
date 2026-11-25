@@ -17,6 +17,8 @@ type FakeDbArgs = {
   connectorHeldRoles?: string[];
   existingRoles?: string[];
   openSessions?: Record<string, boolean[]>;
+  // pids whose sessions exited on their own before the re-check
+  exitedPids?: number[];
   terminateFails?: boolean;
 };
 
@@ -25,6 +27,7 @@ const fakeDb = (args: FakeDbArgs = {}) => {
     connectorHeldRoles = [],
     existingRoles = [],
     openSessions = {},
+    exitedPids = [],
     terminateFails = false,
   } = args;
   return raw.mockImplementation(async (sql: string, bindings?: unknown[]) => {
@@ -44,7 +47,18 @@ const fakeDb = (args: FakeDbArgs = {}) => {
       if (terminateFails) throw new Error("permission denied");
       const [name] = (bindings ?? []) as [string];
       return {
-        rows: (openSessions[name] ?? []).map((ended) => ({ ended })),
+        rows: (openSessions[name] ?? []).map((ended, pid) => ({
+          pid,
+          ended,
+        })),
+      };
+    }
+    if (sql.includes("WHERE pid = ANY")) {
+      const [pids] = (bindings ?? []) as [number[]];
+      return {
+        rows: pids
+          .filter((pid) => !exitedPids.includes(pid))
+          .map((pid) => ({ pid })),
       };
     }
     return { rows: [] };
@@ -132,7 +146,7 @@ describe("Postgres deleteUser connector boundary", () => {
     });
     expect(filterWriteStatements()).toEqual([
       'ALTER ROLE "p0_alice" NOLOGIN',
-      "SELECT pg_terminate_backend(pid) AS ended FROM pg_stat_activity WHERE usename = ?",
+      "SELECT pid, pg_terminate_backend(pid) AS ended FROM pg_stat_activity WHERE usename = ?",
       'DROP ROLE IF EXISTS "p0_alice"',
     ]);
   });
@@ -145,6 +159,20 @@ describe("Postgres deleteUser connector boundary", () => {
     await expect(
       client.deleteUser({ userId: "p0_alice", userBody: "p0_alice", context })
     ).rejects.toThrow("failed to end its open sessions");
+    expect(filterDropStatements()).toEqual(['DROP ROLE IF EXISTS "p0_alice"']);
+  });
+
+  it("doesn't throw when a session exits on its own before it is ended", async () => {
+    fakeDb({
+      existingRoles: ["p0_alice"],
+      openSessions: { p0_alice: [true, false] },
+      exitedPids: [1],
+    });
+    await client.deleteUser({
+      userId: "p0_alice",
+      userBody: "p0_alice",
+      context,
+    });
     expect(filterDropStatements()).toEqual(['DROP ROLE IF EXISTS "p0_alice"']);
   });
 
