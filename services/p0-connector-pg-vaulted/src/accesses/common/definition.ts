@@ -63,6 +63,8 @@ export const pgClientParams = z.object({
 export const requestContext = z.object({
   requestId: z.string(),
   db: pgClientParams,
+  /** The latest end among all active grants that share the login, not only this request's. */
+  grantEndsAt: z.iso.datetime({ offset: true }),
 });
 
 export type PgRequestContext = z.infer<typeof requestContext>;

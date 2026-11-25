@@ -9,6 +9,7 @@ import {
 } from "vitest";
 
 import {
+  GRANT_ENDS_AT,
   PG_DATABASE,
   PG_HOST,
   PG_PORT,
@@ -21,6 +22,7 @@ import {
 
 const context = {
   requestId: "test-request-id",
+  grantEndsAt: GRANT_ENDS_AT,
   db: {
     host: PG_HOST,
     database: PG_DATABASE,

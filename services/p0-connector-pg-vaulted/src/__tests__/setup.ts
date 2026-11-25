@@ -18,6 +18,7 @@ export const PG_HOST = "localhost";
 // Overridable for a machine that already runs Postgres on the default port.
 export const PG_PORT = Number(process.env.PG_PORT ?? 5432);
 export const PG_DATABASE = "postgres";
+export const GRANT_ENDS_AT = "2099-01-01T00:00:00Z";
 
 export const newPgClient = () =>
   knex({
@@ -59,6 +60,7 @@ export const newRoleLifecycle = async <
 >(args: {
   context: {
     requestId: string;
+    grantEndsAt: string;
     db: {
       host: string;
       port: number;
@@ -125,6 +127,7 @@ export const newSqlLifecycle = async <
 >(args: {
   context: {
     requestId: string;
+    grantEndsAt: string;
     db: {
       host: string;
       port: number;
