@@ -16,6 +16,7 @@ const client = router(t).createCaller({ logger: createLogger() });
 
 const context = {
   requestId: "test-request-id",
+  grantEndsAt: "2099-01-01T00:00:00Z",
   db: {
     host: "localhost",
     port: 5432,

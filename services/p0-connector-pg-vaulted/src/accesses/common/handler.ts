@@ -3,6 +3,7 @@ import {
   ConnectorError,
   type Logger,
 } from "@p0security/connector-core";
+import { escapeLiteral } from "pg";
 
 import { newClient } from "../../dbclient.ts";
 import { ident } from "../../sql/identifier.ts";
@@ -21,6 +22,17 @@ export const roleExists = async (
   );
   return res.rows.length > 0;
 };
+
+/**
+ * `LOGIN` is set every time, so a login left `NOLOGIN` by a failed
+ * `deleteUser` can sign in again. Utility statements take no bind
+ * parameters, so the timestamp is escaped inline.
+ */
+const renderLoginUntil = (grantEndsAt: string): string =>
+  `WITH LOGIN VALID UNTIL ${escapeLiteral(new Date(grantEndsAt).toISOString())}`;
+
+const extendLogin = (client: PgClient, username: string, grantEndsAt: string) =>
+  client.raw(`ALTER ROLE ${ident(username)} ${renderLoginUntil(grantEndsAt)}`);
 
 /**
  * Returns the names whose permissions the connector's own identity holds:
@@ -210,7 +222,11 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
     };
   },
 
-  /** Returns the username if a role by that name exists, otherwise null. */
+  /**
+   * Writes even when only identifying: the framework's `provisionUser` calls
+   * `createUser` only for a missing login, so this is the one place an
+   * existing shared login's end can move.
+   */
   getUser: async (context: PgRequestContext, username: string) =>
     await withMethodContext(
       ctx,
@@ -219,29 +235,45 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       async ({ client, logger }) => {
         const exists = await roleExists(client, username);
         logger.debug({ exists }, "checked whether Postgres user exists");
-        return exists ? username : null;
+        if (!exists) return null;
+        await assertNotConnectorRole(client, context, [username]);
+        await extendLogin(client, username, context.grantEndsAt);
+        logger.info(
+          { grantEndsAt: context.grantEndsAt },
+          "moved Postgres user's login end"
+        );
+        return username;
       }
     ),
 
-  /** Creates a login role for the user, if one does not already exist. */
   createUser: async (context: PgRequestContext, username: string) =>
     await withMethodContext(
       ctx,
       context,
       { username },
       async ({ client, logger }) => {
-        if (!(await roleExists(client, username))) {
-          await client.raw(`CREATE ROLE ${ident(username)} WITH LOGIN`);
-          logger.info("created Postgres user");
+        const { grantEndsAt } = context;
+        await assertNotConnectorRole(client, context, [username]);
+        if (await roleExists(client, username)) {
+          await extendLogin(client, username, grantEndsAt);
+        } else {
+          await client.raw(
+            `CREATE ROLE ${ident(username)} ${renderLoginUntil(grantEndsAt)}`
+          );
         }
+        logger.info({ grantEndsAt }, "provisioned Postgres user");
         return username;
       }
     ),
 
   /**
-   * Drops the user's role, unless it is the connector's own identity or a role
-   * the connector inherits: dropping either would strip the connector's own
-   * permissions.
+   * `VALID UNTIL` and `REVOKE` act only at the next sign-in or statement, so
+   * open sessions are ended before the drop. `NOLOGIN` comes first, so no new
+   * session starts in between. Install validation's `signal_backend` step
+   * already checks that the manager may end sessions.
+   *
+   * Refuses the connector's own identity and any role the connector inherits:
+   * dropping either would strip the connector's own permissions.
    */
   deleteUser: async (context: PgRequestContext, username: string) =>
     await withMethodContext(
@@ -250,8 +282,37 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       { username },
       async ({ client, logger }) => {
         await assertNotConnectorRole(client, context, [username]);
+        // A session that survives must not keep the login alive, so the
+        // drop goes ahead and the failure is thrown after it.
+        let sessionsError: ConnectorError | undefined;
+        if (await roleExists(client, username)) {
+          await client.raw(`ALTER ROLE ${ident(username)} NOLOGIN`);
+          try {
+            const res = await client.raw<{ rows: { ended: boolean }[] }>(
+              "SELECT pg_terminate_backend(pid) AS ended FROM pg_stat_activity WHERE usename = ?",
+              [username]
+            );
+            const notEnded = res.rows.filter((row) => !row.ended).length;
+            if (notEnded > 0) {
+              sessionsError = new ConnectorError({
+                type: "unknown",
+                message:
+                  "Dropped the user, but failed to end its open sessions",
+                payload: { username, notEnded },
+              });
+            }
+          } catch (error) {
+            sessionsError = new ConnectorError({
+              type: "unknown",
+              message: "Dropped the user, but failed to end its open sessions",
+              payload: { username },
+              cause: error,
+            });
+          }
+        }
         await client.raw(`DROP ROLE IF EXISTS ${ident(username)}`);
         logger.info("dropped Postgres user");
+        if (sessionsError) throw sessionsError;
       }
     ),
 

@@ -19,9 +19,9 @@ scopes the secrets it can write.
   and password. The connector only reads it.
 - **Grantable role**: a role the manager holds `ADMIN OPTION` on, so one a grant can be approved
   for.
-- **Grant key**: 32 lowercase hex digits, random, chosen by P0.
-- **Grant login**: a login role the connector creates for exactly one grant, named
-  `p0v_<grant key>`.
+- **Grant key**: 32 lowercase hex digits, derived by P0 from the target and the principal.
+- **Grant login**: a login role named `p0v_<grant key>`, shared by one principal's active grants
+  on one target.
 
 ## Contract
 
@@ -69,14 +69,39 @@ can't log in, grants it the approved roles (`role`) or schema and table privileg
 grants it to the user's login. They act only on names that start with `p0`, and never on the
 manager or a role the manager inherits.
 
+### Shared login
+
+One grant login serves every active grant of one principal on one target. Each grant still gets
+its own access role, so only the login is shared. P0 holds a lock on the login while it
+provisions or deletes it, and the connector keeps no state about grants.
+
+- Every request to the `role` and `sql` accesses must carry `grantEndsAt` in its context: the
+  latest end among the login's active grants, as an ISO 8601 timestamp with an offset. A request
+  without it is refused before the connector connects. A login with no end is never created.
+- When the connector finds or creates the login, it sets `LOGIN` and sets `VALID UNTIL` from
+  `grantEndsAt`. This applies to `provisionUser` and to `identifyUser`.
+  - P0 provisions on each grant, and again when a grant leaves while others remain, so the end
+    follows the latest active grant.
+  - `LOGIN` is set every time, so a login left `NOLOGIN` by a failed `deleteUser` can sign in
+    again.
+- P0 calls `deleteUser` only after the last grant leaves. The connector:
+  1. Sets the login to `NOLOGIN`.
+  2. Ends its open sessions with `pg_terminate_backend`. Install validation checks that the
+     manager can do this (`signal_backend`), so `deleteUser` does not check again. If a
+     session does not end, the connector still drops the login, then the call fails.
+  3. Drops the login.
+
+  `VALID UNTIL` and `REVOKE` act only at the next sign-in or statement, so step 2 is what ends
+  access.
+
 ## Not implemented yet
 
 - `install.validation.get` parses its input and then throws
   `pg-vaulted install.validation.get is not implemented`.
 - The manager can't sign in on RDS. The client throws
   `pg-vaulted manager sign-in is not implemented`, because nothing reads the manager secret yet.
-- `createUser` makes a login with no password, as in `p0-connector-pg`. Logins with a password
-  kept in Secrets Manager are not built.
+- `createUser` makes a login with no password. The next PR adds the grant secret: the connector
+  is to set the login's password and store it in Secrets Manager.
 - The manager secret's value has no format yet.
 - The package depends on no Secrets Manager client.
 - No image is built: the service is not in `.github/workflows/docker.yaml`.
