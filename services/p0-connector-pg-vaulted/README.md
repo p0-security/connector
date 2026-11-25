@@ -15,10 +15,11 @@ scopes the secrets it can write.
 - **Target**: one PostgreSQL instance or cluster P0 manages. Its id in P0 is the target id.
 - **Manager**: the database login the connector uses for management operations. Its credential
   never reaches P0.
-- **Manager secret**: the AWS Secrets Manager secret that holds one target's manager username
-  and password. The connector only reads it.
-- **Grantable role**: a role the manager holds `ADMIN OPTION` on, so one a grant can be approved
-  for.
+- **Manager secret**: the AWS Secrets Manager secret that holds one target's manager username,
+  password and host. The connector only reads it.
+- **Grantable role**: a role the manager can grant, so one a grant can be approved for. From
+  PostgreSQL 16 that is a role it holds `ADMIN OPTION` on. Before 16, `CREATEROLE` also lets it
+  grant any role that is not superuser.
 - **Grant key**: 32 lowercase hex digits, derived by P0 from the target and the principal.
 - **Grant login**: a login role named `p0v_<grant key>`, shared by one principal's active grants
   on one target.
@@ -49,6 +50,13 @@ Anything else is refused: the ARN of any other secret, any other name, and a nam
 `p0manager` leaf. The connector's IAM, which the install's Terraform writes, limits which
 secrets the connector can read, so a request can name only a secret the customer gave the
 connector.
+
+The secret's value is a JSON object with a `username`, a `password` and a `host`. The connector
+signs in only when the secret's `host` is the request's host, ignoring case, and its `username`
+is the request's manager. A request names the secret and the host separately, so without this
+it could send the manager's password to a host the secret is not for. A secret RDS manages
+holds no `host`, so it is refused for now. The connector reads the secret in the region its ARN
+names, or else in its own region.
 
 The operation is to run these checks in order, and a failure names its check in `payload.step`
 (`PG_VAULTED_INSTALL_STEPS`):

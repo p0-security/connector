@@ -5,23 +5,42 @@ import {
 import awsCaBundle from "aws-ssl-profiles";
 import z from "zod";
 
+import { RDS_MANAGER_SECRET_ARN_PATTERN } from "../accesses/common/definition.ts";
 import type { PoolConfig, SslConfig } from "../dbclient.ts";
 import type { CloudConfig, Endpoint } from "./index.ts";
 
 const managerCredential = z.object({
   username: z.string().min(1),
   password: z.string().min(1),
+  host: z.string().min(1),
 });
+
+/** The secret's region: the one its ARN names, or else the connector's own,
+ * where a secret P0 names lives. */
+const secretRegion = (managerSecret: string) => {
+  const region =
+    RDS_MANAGER_SECRET_ARN_PATTERN.exec(managerSecret)?.groups?.region ??
+    process.env.AWS_REGION;
+  if (!region) {
+    throw new Error("pg-vaulted could not tell the manager secret's region");
+  }
+  return region;
+};
 
 /**
  * Reads the manager's username and password from `managerSecret`, in the
- * connector's own region. Errors leave out the value and the SDK's cause,
- * since either could hold the password.
+ * secret's region, once the secret's host is `host`: a request names the
+ * secret and the host apart, so it could otherwise send the password to a
+ * host it is not for. Errors leave out the value and the SDK's cause, since
+ * either could hold the password.
  */
-export const readManagerCredential = async (managerSecret: string) => {
+export const readManagerCredential = async (
+  managerSecret: string,
+  host: string
+) => {
   const secrets = await createSecretManagerClient({
     provider: "aws",
-    region: process.env.AWS_REGION ?? "",
+    region: secretRegion(managerSecret),
   });
   const { value } = await secrets
     .getSecretValue({ ref: managerSecret as SecretRef })
@@ -38,14 +57,30 @@ export const readManagerCredential = async (managerSecret: string) => {
   const credential = managerCredential.safeParse(json);
   if (!credential.success) {
     throw new Error(
-      "pg-vaulted's manager secret must be a JSON object with a username and a password"
+      "pg-vaulted's manager secret must be a JSON object with a username, a password and a host"
     );
   }
-  return credential.data;
+  if (credential.data.host.toLowerCase() !== host.toLowerCase()) {
+    throw new Error("pg-vaulted's manager secret is not for this host");
+  }
+  const { username, password } = credential.data;
+  return { username, password };
 };
 
-const fetchDbPassword = async (endpoint: Pick<Endpoint, "managerSecret">) =>
-  (await readManagerCredential(endpoint.managerSecret)).password;
+/** Returns the manager's password, once the secret's username is the
+ * request's too. */
+const fetchDbPassword = async (
+  endpoint: Pick<Endpoint, "host" | "managerSecret" | "user">
+) => {
+  const { username, password } = await readManagerCredential(
+    endpoint.managerSecret,
+    endpoint.host
+  );
+  if (username !== endpoint.user) {
+    throw new Error("pg-vaulted's manager secret is not for this username");
+  }
+  return password;
+};
 
 const sslConfig = async (): Promise<SslConfig> => {
   return {

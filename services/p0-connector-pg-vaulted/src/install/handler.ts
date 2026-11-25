@@ -8,9 +8,12 @@ import {
   withPgClient,
 } from "../accesses/common/handler.ts";
 import { readManagerCredential } from "../clouds/aws-rds.ts";
-import { installContext } from "../context.ts";
 import { toConnectorError } from "../postgres/errors.ts";
-import type { InstallValidation, PgVaultedInstallStep } from "./definition.ts";
+import {
+  type InstallValidation,
+  type PgVaultedInstallStep,
+  installContext,
+} from "./definition.ts";
 
 /** A failed check. It never carries the driver's message, which can quote
  * the server. */
@@ -35,34 +38,46 @@ export const router = (t: AnyConnectorTRPCInstance) => {
       .query(async ({ input, ctx }): Promise<InstallValidation> => {
         const { host, port, database, managerSecret } = input.target;
         const logger = ctx.logger.child({ host, port, database });
-        const { username } = await readManagerCredential(managerSecret).catch(
-          () => {
-            throw failedAt("manager_secret", host, {
-              type: "unknown",
-              message:
-                "The connector could not read the manager secret, or its value is not a JSON object with a username and a password.",
-              payload: {},
-            });
+        let username: string;
+        try {
+          ({ username } = await readManagerCredential(managerSecret, host));
+        } catch {
+          throw failedAt("manager_secret", host, {
+            type: "unknown",
+            message:
+              "The connector could not read the manager secret, its value is not a JSON object with a username, a password and a host, or its host is not the target's.",
+            payload: {},
+          });
+        }
+        // Opening the client reads the secret again, and listing the roles is
+        // the manager's first catalog read, so a failure in either counts as
+        // the sign-in's.
+        try {
+          return await withPgClient(
+            {
+              p0User: username,
+              host,
+              port,
+              database,
+              managerSecret,
+              cloud: "rds",
+            },
+            logger,
+            async (client) => {
+              await client.raw("SELECT 1");
+              const roles = await listGrantableRoles(client, logger);
+              return { grantableRoles: roles.map(({ key }) => key) };
+            }
+          );
+        } catch (error) {
+          const failure = toConnectorError(error);
+          // An unknown failure's error is kept only in the connector's own
+          // log, so support can still tell, say, a pg_hba rule from a bug.
+          if (failure.data.type === "unknown") {
+            logger.warn({ error }, "install check failed at sign_in");
           }
-        );
-        return await withPgClient(
-          {
-            p0User: username,
-            host,
-            port,
-            database,
-            managerSecret,
-            cloud: "rds",
-          },
-          logger,
-          async (client) => {
-            await client.raw("SELECT 1").catch((error: unknown) => {
-              throw failedAt("sign_in", host, toConnectorError(error).data);
-            });
-            const roles = await listGrantableRoles(client, logger);
-            return { grantableRoles: roles.map(({ key }) => key) };
-          }
-        );
+          throw failedAt("sign_in", host, failure.data);
+        }
       }),
   });
 };

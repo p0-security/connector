@@ -12,12 +12,10 @@ import type { connectorRouter } from "./router.ts";
 export type PgVaultedConnectorRouter = typeof connectorRouter;
 
 export {
-  type InstallContext as PgVaultedInstallContext,
-  type Target as PgVaultedTarget,
-} from "./context.ts";
-export {
   PG_VAULTED_INSTALL_STEPS,
+  type InstallContext as PgVaultedInstallContext,
   installValidation as pgVaultedInstallValidation,
   type InstallValidation as PgVaultedInstallValidation,
   type PgVaultedInstallStep,
+  type Target as PgVaultedTarget,
 } from "./install/definition.ts";
