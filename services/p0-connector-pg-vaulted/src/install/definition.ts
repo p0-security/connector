@@ -1,6 +1,25 @@
 // shape copied from services/p0-connector-snowflake-ai/src/install/definition.ts
 import { z } from "zod";
 
+import { pgClientParams } from "../accesses/common/definition.ts";
+
+/**
+ * One target: a PostgreSQL instance or cluster P0 manages, the database the
+ * manager connects to, and the secret that holds the manager's login.
+ */
+export const target = pgClientParams.pick({
+  host: true,
+  port: true,
+  database: true,
+  managerSecret: true,
+});
+
+export type Target = z.infer<typeof target>;
+
+export const installContext = z.object({ target });
+
+export type InstallContext = z.infer<typeof installContext>;
+
 /**
  * The checks install validation is to run, in the order it runs them, by the
  * name a failure reports in `payload.step`. P0 is to read these, so the set is
