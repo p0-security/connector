@@ -48,16 +48,16 @@ export const router = (t: AnyConnectorTRPCInstance) => {
       .query(async ({ input, ctx }): Promise<InstallValidation> => {
         const { host, port, database, managerSecret } = input.target;
         const logger = ctx.logger.child({ host, port, database });
-        const { username } = await readManagerCredential(
-          managerSecret,
-          host
-        ).catch(() => {
+        let username: string;
+        try {
+          ({ username } = await readManagerCredential(managerSecret, host));
+        } catch {
           throw failedAt(
             "manager_secret",
             host,
             "The connector could not read the manager secret, its value is not a JSON object with a username, a password and a host, or its host is not the target's."
           );
-        });
+        }
         return await withPgClient(
           {
             p0User: username,
@@ -69,14 +69,16 @@ export const router = (t: AnyConnectorTRPCInstance) => {
           },
           logger,
           async (client) => {
-            await client.raw("SELECT 1").catch((error: unknown) => {
+            try {
+              await client.raw("SELECT 1");
+            } catch (error) {
               throw failedAt(
                 "sign_in",
                 host,
                 "The manager could not sign in to the target's database.",
                 codeOf(error)
               );
-            });
+            }
             const roles = await listGrantableRoles(client, logger);
             return { grantableRoles: roles.map(({ key }) => key) };
           }
