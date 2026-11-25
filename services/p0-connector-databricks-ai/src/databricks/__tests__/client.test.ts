@@ -16,6 +16,7 @@ import {
   stubFetch,
 } from "../../__tests__/http.ts";
 import { AWS_JWT } from "../../__tests__/sts.ts";
+import { CONNECTOR_VERSION } from "../api.ts";
 import { assertNotOwnPrincipal, newDatabricksClient } from "../client.ts";
 
 vi.mock("@aws-sdk/client-sts", async (importOriginal) =>
@@ -127,7 +128,7 @@ describe("newDatabricksClient", () => {
         `${ACCOUNTS_URL}/api/2.0/accounts/${ACCOUNT_ID}/scim/v2/Users`
       );
       expect(call?.init.headers["User-Agent"]).toBe(
-        "p0-connector-databricks-ai/1.0.0 request/r-1"
+        `p0-connector-databricks-ai/${CONNECTOR_VERSION} request/r-1`
       );
     });
 
@@ -143,7 +144,7 @@ describe("newDatabricksClient", () => {
 
       const [call] = databricksCalls(fetchMock);
       expect(call?.init.headers["User-Agent"]).toBe(
-        "p0-connector-databricks-ai/1.0.0 request/r-2"
+        `p0-connector-databricks-ai/${CONNECTOR_VERSION} request/r-2`
       );
       expect(call?.init.headers["Content-Type"]).toBe("application/json");
       expect(call?.init.body).toBe(JSON.stringify({ changes: [] }));
@@ -162,7 +163,7 @@ describe("newDatabricksClient", () => {
       expect(calls).toHaveLength(3);
       for (const { init } of calls) {
         expect(init.headers["User-Agent"]).toBe(
-          "p0-connector-databricks-ai/1.0.0 request/r-3"
+          `p0-connector-databricks-ai/${CONNECTOR_VERSION} request/r-3`
         );
       }
     });

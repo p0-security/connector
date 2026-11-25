@@ -1,6 +1,6 @@
 {
   "name": "@p0security/p0-connector-jira-ai",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "P0 Jira (AI) connector (GCP Cloud Run)",
   "type": "module",
   "exports": {
