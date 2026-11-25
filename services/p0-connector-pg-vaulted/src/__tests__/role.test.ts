@@ -128,6 +128,8 @@ describe.skipIf("CI" in process.env)(
       // the connector, as granting to the connector itself would.
       const GROUP_ROLE = "p0_test_connector_group";
       const LOGIN_ROLE = "test_role_login";
+      // A role the connector user is a plain member of, without ADMIN OPTION.
+      const MEMBER_ROLE = "test_role_member_only";
       const connectorContext = {
         ...context,
         db: { ...context.db, p0User: CONNECTOR_USER },
@@ -141,6 +143,8 @@ describe.skipIf("CI" in process.env)(
         await rootClient.raw(`CREATE ROLE ??`, [GROUP_ROLE]);
         await rootClient.raw(`GRANT ?? TO ??`, [GROUP_ROLE, CONNECTOR_USER]);
         await rootClient.raw(`CREATE ROLE ?? WITH LOGIN`, [LOGIN_ROLE]);
+        await rootClient.raw(`CREATE ROLE ??`, [MEMBER_ROLE]);
+        await rootClient.raw(`GRANT ?? TO ??`, [MEMBER_ROLE, CONNECTOR_USER]);
         await rootClient.raw(`GRANT ?? TO ?? WITH ADMIN OPTION`, [
           SOURCE_ROLE,
           CONNECTOR_USER,
@@ -152,7 +156,12 @@ describe.skipIf("CI" in process.env)(
       });
 
       afterAll(async () => {
-        for (const role of [GROUP_ROLE, LOGIN_ROLE, CONNECTOR_USER]) {
+        for (const role of [
+          GROUP_ROLE,
+          LOGIN_ROLE,
+          MEMBER_ROLE,
+          CONNECTOR_USER,
+        ]) {
           await dropRole(role);
         }
       });
@@ -283,6 +292,24 @@ describe.skipIf("CI" in process.env)(
         for (const role of [CONNECTOR_USER, GROUP_ROLE, LOGIN_ROLE]) {
           expect(roles).not.toContain(role);
         }
+      });
+
+      it("Lists, as a manager that is not superuser, only the roles it can grant", async () => {
+        const roles = (
+          await newConnClient().list({
+            query: { type: "role", context: connectorContext.db },
+          })
+        ).map(({ key }) => key);
+        const {
+          rows: [{ version }],
+        } = await rootClient.raw<{ rows: [{ version: number }] }>(
+          `SELECT current_setting('server_version_num')::int AS version`
+        );
+
+        expect(roles).toContain(SOURCE_ROLE);
+        // Before PostgreSQL 16, CREATEROLE lets the manager grant a role it
+        // holds no ADMIN OPTION on.
+        expect(roles.includes(MEMBER_ROLE)).toBe(version < 160000);
       });
     });
 

@@ -17,8 +17,9 @@ scopes the secrets it can write.
   never reaches P0.
 - **Manager secret**: the AWS Secrets Manager secret that holds one target's manager username,
   password and host. The connector only reads it.
-- **Grantable role**: a role the manager holds `ADMIN OPTION` on, so one a grant can be approved
-  for.
+- **Grantable role**: a role the manager can grant, so one a grant can be approved for. From
+  PostgreSQL 16 that is a role it holds `ADMIN OPTION` on. Before 16, `CREATEROLE` also lets it
+  grant any role that is not superuser.
 - **Grant key**: 32 lowercase hex digits, random, chosen by P0.
 - **Grant login**: a login role the connector creates for exactly one grant, named
   `p0v_<grant key>`.

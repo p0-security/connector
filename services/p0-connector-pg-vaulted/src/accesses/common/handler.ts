@@ -72,13 +72,15 @@ export const assertNotConnectorRole = async (
 /**
  * The roles a `role` policy may grant: roles that cannot log in, are not
  * superuser, are not PostgreSQL's, RDS's or P0's own (`pg_*`, `rds*`, `p0*`),
- * and that the manager holds `ADMIN OPTION` on. A superuser can grant any
- * of them. From PostgreSQL 16 the manager can use only an `ADMIN OPTION`
+ * and that the manager can grant. A superuser can grant any of them. Before
+ * PostgreSQL 16 so can a manager with `CREATEROLE`, and otherwise the manager
+ * needs `ADMIN OPTION` on the role. From 16 it can use only an `ADMIN OPTION`
  * that it, or a role whose privileges it inherits, holds.
  */
 const grantableRolesSql = `SELECT r.rolname AS rolname
   FROM pg_roles r,
-    (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) me
+    (SELECT rolsuper, rolcreaterole FROM pg_roles
+      WHERE rolname = current_user) me
   WHERE NOT r.rolcanlogin
     AND NOT r.rolsuper
     AND r.rolname !~ '^(pg_|rds|[pP]0)'
@@ -89,7 +91,8 @@ const grantableRolesSql = `SELECT r.rolname AS rolname
           SELECT 1 FROM pg_auth_members m
           WHERE m.roleid = r.oid AND m.admin_option
             AND pg_has_role(current_user, m.member, 'USAGE'))
-        ELSE pg_has_role(current_user, r.oid, 'MEMBER WITH ADMIN OPTION')
+        ELSE me.rolcreaterole
+          OR pg_has_role(current_user, r.oid, 'MEMBER WITH ADMIN OPTION')
         END
     )`;
 
