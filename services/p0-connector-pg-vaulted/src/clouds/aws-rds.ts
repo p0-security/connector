@@ -8,22 +8,23 @@ import z from "zod";
 import type { PoolConfig, SslConfig } from "../dbclient.ts";
 import type { CloudConfig, Endpoint } from "./index.ts";
 
-const managerCredential = z.object({ password: z.string().min(1) });
+const managerCredential = z.object({
+  username: z.string().min(1),
+  password: z.string().min(1),
+});
 
 /**
- * Reads the manager's password from the secret the request names, in the
+ * Reads the manager's username and password from `managerSecret`, in the
  * connector's own region. Errors leave out the value and the SDK's cause,
  * since either could hold the password.
  */
-const fetchDbPassword = async (
-  endpoint: Pick<Endpoint, "managerSecret">
-): Promise<string> => {
+export const readManagerCredential = async (managerSecret: string) => {
   const secrets = await createSecretManagerClient({
     provider: "aws",
     region: process.env.AWS_REGION ?? "",
   });
   const { value } = await secrets
-    .getSecretValue({ ref: endpoint.managerSecret as SecretRef })
+    .getSecretValue({ ref: managerSecret as SecretRef })
     .catch(() => {
       throw new Error("pg-vaulted could not read the manager secret");
     });
@@ -37,11 +38,14 @@ const fetchDbPassword = async (
   const credential = managerCredential.safeParse(json);
   if (!credential.success) {
     throw new Error(
-      "pg-vaulted's manager secret must be a JSON object with a password"
+      "pg-vaulted's manager secret must be a JSON object with a username and a password"
     );
   }
-  return credential.data.password;
+  return credential.data;
 };
+
+const fetchDbPassword = async (endpoint: Pick<Endpoint, "managerSecret">) =>
+  (await readManagerCredential(endpoint.managerSecret)).password;
 
 const sslConfig = async (): Promise<SslConfig> => {
   return {

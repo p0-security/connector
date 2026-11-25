@@ -1,9 +1,15 @@
 import { createLogger } from "@p0security/connector-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { target } from "../../__tests__/fixtures.ts";
 import { t } from "../../router.ts";
 import { router } from "../handler.ts";
+
+vi.mock("../../clouds/aws-rds.ts", () => ({
+  readManagerCredential: async () => {
+    throw new Error("secret unreadable");
+  },
+}));
 
 const validation = () => router(t).createCaller({ logger: createLogger() });
 
@@ -19,9 +25,9 @@ describe("install validation", () => {
     ).rejects.toThrow("port");
   });
 
-  it("rejects as not implemented", async () => {
+  it("fails at manager_secret when the secret can't be read", async () => {
     await expect(validation().get({ target })).rejects.toThrow(
-      "pg-vaulted install.validation.get is not implemented"
+      "could not read the manager secret"
     );
   });
 
@@ -34,7 +40,7 @@ describe("install validation", () => {
   ])("accepts the manager secret %s", async (managerSecret) => {
     await expect(
       validation().get({ target: { ...target, managerSecret } })
-    ).rejects.toThrow("pg-vaulted install.validation.get is not implemented");
+    ).rejects.toThrow("could not read the manager secret");
   });
 
   it.each([
