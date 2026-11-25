@@ -49,26 +49,35 @@ export const router = (t: AnyConnectorTRPCInstance) => {
             payload: {},
           });
         }
-        return await withPgClient(
-          {
-            p0User: username,
-            host,
-            port,
-            database,
-            managerSecret,
-            cloud: "rds",
-          },
-          logger,
-          async (client) => {
-            try {
+        // Opening the client reads the secret again, and listing the roles is
+        // the manager's first catalog read, so a failure in either counts as
+        // the sign-in's.
+        try {
+          return await withPgClient(
+            {
+              p0User: username,
+              host,
+              port,
+              database,
+              managerSecret,
+              cloud: "rds",
+            },
+            logger,
+            async (client) => {
               await client.raw("SELECT 1");
-            } catch (error) {
-              throw failedAt("sign_in", host, toConnectorError(error).data);
+              const roles = await listGrantableRoles(client, logger);
+              return { grantableRoles: roles.map(({ key }) => key) };
             }
-            const roles = await listGrantableRoles(client, logger);
-            return { grantableRoles: roles.map(({ key }) => key) };
+          );
+        } catch (error) {
+          const failure = toConnectorError(error);
+          // An unknown failure's error is kept only in the connector's own
+          // log, so support can still tell, say, a pg_hba rule from a bug.
+          if (failure.data.type === "unknown") {
+            logger.warn({ error }, "install check failed at sign_in");
           }
-        );
+          throw failedAt("sign_in", host, failure.data);
+        }
       }),
   });
 };
