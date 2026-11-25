@@ -2,14 +2,30 @@ import { newZodResourceHierarchyParsers } from "@p0security/connector-core";
 import type { JsonValue } from "type-fest";
 import { z } from "zod";
 
-export const pgClientParams = z.object({
-  p0User: z.string(),
-  host: z.string(),
-  // 65535 is the highest TCP port (input validation only)
-  port: z.coerce.number().int().min(1).max(65535),
-  database: z.string(),
-  cloud: z.enum(["rds", "localhost"]).optional().default("rds"),
-});
+import {
+  isManagerSecretOfTarget,
+  managerSecret,
+  targetId,
+} from "../../context.ts";
+
+export const pgClientParams = z
+  .object({
+    p0User: z.string(),
+    host: z.string(),
+    // 65535 is the highest TCP port (input validation only)
+    port: z.coerce.number().int().min(1).max(65535),
+    database: z.string(),
+    managerSecret,
+    targetId,
+    cloud: z.enum(["rds", "localhost"]).optional().default("rds"),
+  })
+  .refine(
+    (params) => isManagerSecretOfTarget(params.managerSecret, params.targetId),
+    {
+      message: "managerSecret must be a secret of the target targetId",
+      path: ["managerSecret"],
+    }
+  );
 
 export const requestContext = z.object({
   requestId: z.string(),

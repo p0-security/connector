@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import { router } from "../accesses/role/handler.ts";
 import { newClient } from "../dbclient.ts";
 import { t } from "../router.ts";
+import { TARGET_ID, target } from "./fixtures.ts";
 
 // No live DB: a call that passes validation stops when it tries to connect.
 vi.mock("../dbclient.ts", () => ({
@@ -21,6 +22,8 @@ const context = {
     port: 5432,
     p0User: "p0_iam_manager",
     database: "postgres",
+    managerSecret: target.managerSecret,
+    targetId: TARGET_ID,
     cloud: "rds" as const,
   },
 };

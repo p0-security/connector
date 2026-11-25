@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { router } from "../accesses/role/handler.ts";
 import { t } from "../router.ts";
+import { TARGET_ID, target } from "./fixtures.ts";
 
 const P0_USER = "p0_iam_manager";
 
@@ -35,6 +36,8 @@ const context = {
     port: 5432,
     p0User: P0_USER,
     database: "postgres",
+    managerSecret: target.managerSecret,
+    targetId: TARGET_ID,
     cloud: "rds" as const,
   },
 };
