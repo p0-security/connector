@@ -8,11 +8,11 @@ import {
   it,
 } from "vitest";
 
+import { TARGET_ID, target } from "./fixtures.ts";
 import {
   PG_DATABASE,
   PG_HOST,
   PG_PORT,
-  PG_USER,
   dropRole,
   newPgClient,
   newSqlConnClient,
@@ -25,7 +25,8 @@ const context = {
     host: PG_HOST,
     database: PG_DATABASE,
     port: PG_PORT,
-    p0User: PG_USER,
+    managerSecret: target.managerSecret,
+    targetId: TARGET_ID,
     cloud: "localhost" as const,
   },
 };

@@ -38,7 +38,7 @@ export const RDS_MANAGER_SECRET_ARN_PATTERN = new RegExp(
  * names, or the ARN of a secret RDS manages. Anything else is refused. The
  * connector's IAM limits which secrets it can read.
  */
-const managerSecret = z
+export const managerSecret = z
   .string()
   .refine(
     (secret) =>
@@ -46,6 +46,26 @@ const managerSecret = z
       RDS_MANAGER_SECRET_ARN_PATTERN.test(secret),
     "managerSecret must be a name p0/install/postgres/<vpc id>/<target id>/p0manager, or the ARN of a secret RDS manages"
   );
+
+/** P0's id of a target. */
+export const targetId = z.string().regex(new RegExp(`^${TARGET_ID}$`));
+
+/**
+ * Whether `managerSecret` may sign in to the target `targetId`. A secret P0
+ * names must be under `targetId`. A secret RDS manages names no target, so
+ * nothing ties it to one.
+ */
+export const isManagerSecretOfTarget = (
+  managerSecret: string,
+  targetId: string
+) => {
+  if (RDS_MANAGER_SECRET_ARN_PATTERN.test(managerSecret)) return true;
+  const [, , , , secretTargetId] = managerSecret.split("/");
+  return (
+    MANAGER_SECRET_NAME_PATTERN.test(managerSecret) &&
+    secretTargetId === targetId
+  );
+};
 
 /**
  * One target: a PostgreSQL instance or cluster P0 manages, the database the

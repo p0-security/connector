@@ -63,7 +63,8 @@ export const newRoleLifecycle = async <
       host: string;
       port: number;
       database: string;
-      p0User: string;
+      managerSecret: string;
+      targetId: string;
       cloud: Cloud;
     };
   };
@@ -128,7 +129,8 @@ export const newSqlLifecycle = async <
       host: string;
       port: number;
       database: string;
-      p0User: string;
+      managerSecret: string;
+      targetId: string;
       cloud: Cloud;
     };
   };

@@ -1,0 +1,49 @@
+on:
+  pull_request:
+    paths:
+      - services/p0-connector-pg-vaulted/**
+      - packages/connector-core/**
+      - packages/secret-manager-client/**
+      - .yarn.lock
+      - .github/workflows/test-pg-vaulted-integration.yaml
+
+name: Test pg-vaulted integration
+
+jobs:
+  integration:
+    name: PostgreSQL 14 and 16
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v5
+      - name: Setup yarn
+        uses: ./.github/actions/yarn-setup
+      # Same reason as in test.yaml: Vitest resolves the workspace packages
+      # through their built `dist`.
+      - name: Build monorepo
+        run: yarn :build
+      # The unit tests answer catalog queries from an in-memory fake, so the
+      # next two steps are the only runs of the connector's SQL against
+      # PostgreSQL.
+      - name: Start PostgreSQL 14 and 16
+        working-directory: services/p0-connector-pg-vaulted
+        run: ./scripts/integration-db.sh up
+      - name: Run integration tests
+        working-directory: services/p0-connector-pg-vaulted
+        run: yarn test:integration --retry=0
+      # The role and sql suites skip when CI is set, as in test.yaml, which
+      # runs no database. These servers' superuser is the one they expect.
+      # Only on 16: the sql suite's injection checks assume a role has no
+      # CREATE on the public schema, which PUBLIC holds before PostgreSQL 15.
+      - name: Run the role and sql database tests on PostgreSQL 16
+        working-directory: services/p0-connector-pg-vaulted
+        run: >-
+          env -u CI PG_PORT=54316 yarn vitest run --retry=0
+          src/__tests__/role.test.ts src/__tests__/sql.test.ts
+      - name: Stop PostgreSQL
+        if: always()
+        working-directory: services/p0-connector-pg-vaulted
+        run: ./scripts/integration-db.sh down

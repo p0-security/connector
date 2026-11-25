@@ -6,13 +6,15 @@ import {
   describe,
   expect,
   it,
+  vi,
 } from "vitest";
 
+import { localConfig } from "../clouds/localdev.ts";
+import { TARGET_ID, target } from "./fixtures.ts";
 import {
   PG_DATABASE,
   PG_HOST,
   PG_PORT,
-  PG_USER,
   dropRole,
   newConnClient,
   newPgClient,
@@ -25,7 +27,8 @@ const context = {
     host: PG_HOST,
     database: PG_DATABASE,
     port: PG_PORT,
-    p0User: PG_USER,
+    managerSecret: target.managerSecret,
+    targetId: TARGET_ID,
     cloud: "localhost" as const,
   },
 };
@@ -118,7 +121,7 @@ describe.skipIf("CI" in process.env)(
     // granting a role to the connector's user or by granting a privileged role
     // that a bound user could then use.
     describe("Connector permission boundary", () => {
-      // Stands in for `p0_iam_manager`: a login role that can create roles and
+      // Stands in for the manager: a login role that can create roles and
       // whose `p0` prefix passes the namespace check.
       const CONNECTOR_USER = "p0_test_iam_manager";
       const RESOURCE = "p0_test_boundary_resource";
@@ -126,10 +129,17 @@ describe.skipIf("CI" in process.env)(
       // the connector, as granting to the connector itself would.
       const GROUP_ROLE = "p0_test_connector_group";
       const LOGIN_ROLE = "test_role_login";
-      const connectorContext = {
-        ...context,
-        db: { ...context.db, p0User: CONNECTOR_USER },
-      };
+      // A role that meets every rule of a grantable role but the manager's
+      // ADMIN OPTION on it.
+      const UNSHARED_ROLE = "test_role_unshared";
+
+      // Each test runs as the manager, which is not superuser.
+      beforeEach(() => {
+        vi.spyOn(localConfig, "fetchCredential").mockResolvedValue({
+          username: CONNECTOR_USER,
+          password: "psqlpass",
+        });
+      });
 
       beforeAll(async () => {
         await rootClient.raw(
@@ -139,18 +149,25 @@ describe.skipIf("CI" in process.env)(
         await rootClient.raw(`CREATE ROLE ??`, [GROUP_ROLE]);
         await rootClient.raw(`GRANT ?? TO ??`, [GROUP_ROLE, CONNECTOR_USER]);
         await rootClient.raw(`CREATE ROLE ?? WITH LOGIN`, [LOGIN_ROLE]);
-        await rootClient.raw(`GRANT ?? TO ?? WITH ADMIN OPTION`, [
-          SOURCE_ROLE,
-          CONNECTOR_USER,
-        ]);
+        await rootClient.raw(`CREATE ROLE ??`, [UNSHARED_ROLE]);
+        await rootClient.raw(
+          `GRANT ??, ??, pg_read_all_data TO ?? WITH ADMIN OPTION`,
+          [SOURCE_ROLE, LOGIN_ROLE, CONNECTOR_USER]
+        );
       });
 
       afterEach(async () => {
+        vi.restoreAllMocks();
         await dropRole(RESOURCE);
       });
 
       afterAll(async () => {
-        for (const role of [GROUP_ROLE, LOGIN_ROLE, CONNECTOR_USER]) {
+        for (const role of [
+          GROUP_ROLE,
+          LOGIN_ROLE,
+          UNSHARED_ROLE,
+          CONNECTOR_USER,
+        ]) {
           await dropRole(role);
         }
       });
@@ -158,7 +175,7 @@ describe.skipIf("CI" in process.env)(
       it("Refuses to bind an access resource to the connector's own user", async () => {
         await newConnClient().createAccessResource({
           resourceBody: RESOURCE,
-          context: connectorContext,
+          context,
         });
 
         await expect(
@@ -166,7 +183,7 @@ describe.skipIf("CI" in process.env)(
             userId: CONNECTOR_USER,
             userBody: CONNECTOR_USER,
             resourceId: RESOURCE,
-            context: connectorContext,
+            context,
           })
         ).rejects.toThrow(/connector's own identity/);
 
@@ -192,7 +209,7 @@ describe.skipIf("CI" in process.env)(
           newConnClient().deleteUser({
             userId: role,
             userBody: role,
-            context: connectorContext,
+            context,
           })
         ).rejects.toThrow(/connector's own identity/);
 
@@ -207,7 +224,7 @@ describe.skipIf("CI" in process.env)(
         await expect(
           newConnClient().createAccessResource({
             resourceBody: CONNECTOR_USER,
-            context: connectorContext,
+            context,
           })
         ).rejects.toThrow(/connector's own identity/);
 
@@ -215,7 +232,7 @@ describe.skipIf("CI" in process.env)(
           newConnClient().addPoliciesToResource({
             resourceId: CONNECTOR_USER,
             policies: [{ type: "role", rolename: SOURCE_ROLE }],
-            context: connectorContext,
+            context,
           })
         ).rejects.toThrow(/connector's own identity/);
       });
@@ -225,7 +242,7 @@ describe.skipIf("CI" in process.env)(
       it("Refuses to grant to a role the connector user inherits", async () => {
         await newConnClient().createAccessResource({
           resourceBody: RESOURCE,
-          context: connectorContext,
+          context,
         });
 
         await expect(
@@ -233,7 +250,7 @@ describe.skipIf("CI" in process.env)(
             userId: GROUP_ROLE,
             userBody: GROUP_ROLE,
             resourceId: RESOURCE,
-            context: connectorContext,
+            context,
           })
         ).rejects.toThrow(/connector's own identity/);
         expect(await roleIsMemberOf(GROUP_ROLE, RESOURCE)).toBe(false);
@@ -242,29 +259,31 @@ describe.skipIf("CI" in process.env)(
           newConnClient().addPoliciesToResource({
             resourceId: GROUP_ROLE,
             policies: [{ type: "role", rolename: SOURCE_ROLE }],
-            context: connectorContext,
+            context,
           })
         ).rejects.toThrow(/connector's own identity/);
         expect(await roleIsMemberOf(GROUP_ROLE, SOURCE_ROLE)).toBe(false);
       });
 
-      it("Grants a built-in role", async () => {
+      it("Grants a role the manager holds ADMIN OPTION on", async () => {
         await newConnClient().createAccessResource({
           resourceBody: RESOURCE,
           context,
         });
         await newConnClient().addPoliciesToResource({
           resourceId: RESOURCE,
-          policies: [{ type: "role", rolename: "pg_read_all_data" }],
+          policies: [{ type: "role", rolename: SOURCE_ROLE }],
           context,
         });
 
-        expect(await roleIsMemberOf(RESOURCE, "pg_read_all_data")).toBe(true);
+        expect(await roleIsMemberOf(RESOURCE, SOURCE_ROLE)).toBe(true);
       });
 
       it.each([
         ["a P0-managed role", CONNECTOR_USER],
         ["a login role", LOGIN_ROLE],
+        ["a built-in role", "pg_read_all_data"],
+        ["a role the manager holds no ADMIN OPTION on", UNSHARED_ROLE],
         ["a role that does not exist", "test_role_missing"],
       ])("Refuses to grant %s", async (_label, rolename) => {
         await newConnClient().createAccessResource({
@@ -289,11 +308,7 @@ describe.skipIf("CI" in process.env)(
           })
         ).map(({ key }) => key);
 
-        expect(roles).toContain(SOURCE_ROLE);
-        expect(roles).toContain("pg_read_all_data");
-        for (const role of [CONNECTOR_USER, GROUP_ROLE, LOGIN_ROLE]) {
-          expect(roles).not.toContain(role);
-        }
+        expect(roles).toEqual([SOURCE_ROLE]);
       });
     });
 

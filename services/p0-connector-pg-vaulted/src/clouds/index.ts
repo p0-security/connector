@@ -1,18 +1,26 @@
 import { throwAssertNever } from "@p0security/connector-core";
 
 import type { PoolConfig, SslConfig } from "../dbclient.ts";
+import type {
+  ManagerCredential,
+  ManagerSecretDependencies,
+} from "../manager.ts";
 import { awsRdsConfig } from "./aws-rds.ts";
 import { localConfig } from "./localdev.ts";
 
 export type Endpoint = {
-  user: string;
+  managerSecret: string;
   host: string;
   port: number;
   database: string;
 };
 
 export type CloudConfig = {
-  fetchDbPassword: (endpoint: Endpoint) => Promise<string>;
+  /** The username and password the connector signs in to `endpoint` with. */
+  fetchCredential: (
+    endpoint: Endpoint,
+    dependencies: ManagerSecretDependencies
+  ) => Promise<ManagerCredential>;
   poolConfig: () => Promise<PoolConfig>;
   sslConfig: () => Promise<SslConfig>;
 };

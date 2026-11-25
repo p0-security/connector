@@ -5,6 +5,7 @@ import {
 } from "@p0security/connector-core";
 
 import { newClient } from "../../dbclient.ts";
+import { type PgQuery, grantableRoles } from "../../postgres/catalog.ts";
 import { ident } from "../../sql/identifier.ts";
 import type { PgClientParams, PgRequestContext } from "./definition.ts";
 
@@ -24,7 +25,7 @@ export const roleExists = async (
 
 /**
  * Returns the names whose permissions the connector's own identity holds:
- * itself (`p0User` and the session user), and any role whose privileges it inherits or can
+ * itself (the current and the session user), and any role whose privileges it inherits or can
  * `SET ROLE` to. Granting a role to one of these would widen the connector's
  * own permissions. From PG16 a role's creator is an admin-only member of it,
  * so `MEMBER` is too broad there and only `USAGE` and `SET` count. A superuser
@@ -49,17 +50,13 @@ const connectorRolesSql = `SELECT rolname FROM pg_roles
  */
 export const assertNotConnectorRole = async (
   client: PgClient,
-  context: PgRequestContext,
   names: string[]
 ): Promise<void> => {
   const res = await client.raw<{ rows: { rolname: string }[] }>(
     connectorRolesSql,
     [names]
   );
-  const [reserved] = [
-    ...names.filter((name) => name === context.db.p0User),
-    ...res.rows.map(({ rolname }) => rolname),
-  ];
+  const [reserved] = res.rows.map(({ rolname }) => rolname);
   if (reserved) {
     throw new ConnectorError({
       type: "validation_error",
@@ -69,36 +66,32 @@ export const assertNotConnectorRole = async (
   }
 };
 
-/** The roles a `role` policy may grant: non-login roles P0 did not create. */
-const grantableRolesSql = `SELECT rolname FROM pg_roles
-  WHERE NOT rolcanlogin AND rolname NOT ILIKE 'p0%'`;
+const queryOf =
+  (client: PgClient): PgQuery =>
+  async (sql) =>
+    (await client.raw<{ rows: unknown[] }>(sql)).rows;
 
-/** Lists the roles a `role` policy may grant. */
+/** Lists the roles a `role` policy may grant: the grantable roles. */
 export const listGrantableRoles = async (client: PgClient, logger: Logger) => {
-  const res = await client.raw<{ rows: { rolname: string }[] }>(
-    grantableRolesSql
-  );
-  logger.debug({ count: res.rows.length }, "listed Postgres roles");
-  return res.rows.map(({ rolname }) => ({ key: rolname, value: rolname }));
+  const roles = await grantableRoles(queryOf(client));
+  logger.debug({ count: roles.length }, "listed Postgres roles");
+  return roles.map((rolname) => ({ key: rolname, value: rolname }));
 };
 
 /**
  * Rejects a `role` policy whose role `listGrantableRoles` would not offer, so a
- * request cannot grant the connector's role or another P0-managed one.
+ * request cannot grant the connector's role, a P0-managed one, or one the
+ * manager was not given to hand out.
  */
 export const assertGrantableRole = async (
   client: PgClient,
   rolename: string
 ): Promise<void> => {
-  const res = await client.raw<{ rows: unknown[] }>(
-    `${grantableRolesSql} AND rolname = ?`,
-    [rolename]
-  );
-  if (res.rows.length === 0) {
+  if (!(await grantableRoles(queryOf(client))).includes(rolename)) {
     throw new ConnectorError({
       type: "validation_error",
       message:
-        "Invalid Postgres role: only non-login roles that P0 did not create can be granted",
+        "Invalid Postgres role: only a role that cannot log in, is not superuser, is not PostgreSQL's, RDS's or P0's own, and that the manager holds ADMIN OPTION on can be granted",
       payload: { rolename },
     });
   }
@@ -144,7 +137,7 @@ export const withPgClient = async <O>(
       host: params.host,
       port: params.port,
       database: params.database,
-      user: params.p0User,
+      managerSecret: params.managerSecret,
     },
     params.cloud
   );
@@ -228,7 +221,7 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       context,
       { username },
       async ({ client, logger }) => {
-        await assertNotConnectorRole(client, context, [username]);
+        await assertNotConnectorRole(client, [username]);
         await client.raw(`DROP ROLE IF EXISTS ${ident(username)}`);
         logger.info("dropped Postgres user");
       }
@@ -244,7 +237,7 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       context,
       { rolename },
       async ({ client, logger }) => {
-        await assertNotConnectorRole(client, context, [rolename]);
+        await assertNotConnectorRole(client, [rolename]);
         if (!(await roleExists(client, rolename))) {
           await client.raw(`CREATE ROLE ${ident(rolename)}`);
           logger.info("created Postgres role");
@@ -260,7 +253,7 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       context,
       { rolename },
       async ({ client, logger }) => {
-        await assertNotConnectorRole(client, context, [rolename]);
+        await assertNotConnectorRole(client, [rolename]);
         await client.raw(`DROP ROLE IF EXISTS ${ident(rolename)}`);
         logger.info("dropped Postgres role");
       }
@@ -277,7 +270,7 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       context,
       { rolename, username },
       async ({ client, logger }) => {
-        await assertNotConnectorRole(client, context, [rolename, username]);
+        await assertNotConnectorRole(client, [rolename, username]);
         await client.raw(`GRANT ${ident(rolename)} TO ${ident(username)}`);
         logger.info("granted Postgres role to user");
       }
@@ -294,7 +287,7 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       context,
       { rolename, username },
       async ({ client, logger }) => {
-        await assertNotConnectorRole(client, context, [rolename, username]);
+        await assertNotConnectorRole(client, [rolename, username]);
         await client.raw(`REVOKE ${ident(rolename)} FROM ${ident(username)}`);
         logger.info("revoked Postgres role from user");
       }
