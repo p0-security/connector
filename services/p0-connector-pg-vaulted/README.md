@@ -69,8 +69,6 @@ can't log in, grants it the approved roles (`role`) or schema and table privileg
 grants it to the user's login. They act only on names that start with `p0`, and never on the
 manager or a role the manager inherits.
 
-`scripts/compare-with-pg.sh` prints how each copied file differs from its original.
-
 ## Not implemented yet
 
 - `install.validation.get` parses its input and then throws

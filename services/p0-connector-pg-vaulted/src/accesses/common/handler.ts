@@ -60,7 +60,7 @@ export const assertNotConnectorRole = async (
     ...names.filter((name) => name === context.db.p0User),
     ...res.rows.map(({ rolname }) => rolname),
   ];
-  if (reserved !== undefined) {
+  if (reserved) {
     throw new ConnectorError({
       type: "validation_error",
       message: "Invalid Postgres role: the connector's own identity",
