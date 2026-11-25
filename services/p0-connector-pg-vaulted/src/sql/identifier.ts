@@ -25,6 +25,10 @@ const IDENTIFIER_GUARDS: readonly {
   },
 ];
 
+/** Whether {@link ident} accepts `name`. */
+export const isIdentifier = (name: string) =>
+  !IDENTIFIER_GUARDS.some((guard) => guard.rejects(name));
+
 export const ident = (name: string): string => {
   for (const guard of IDENTIFIER_GUARDS) {
     if (guard.rejects(name)) {

@@ -129,12 +129,17 @@ describe.skipIf("CI" in process.env)(
       // the connector, as granting to the connector itself would.
       const GROUP_ROLE = "p0_test_connector_group";
       const LOGIN_ROLE = "test_role_login";
-      /** The connector signs in as `CONNECTOR_USER` until the test ends. */
-      const signInAsConnectorUser = () =>
+      // A role that meets every rule of a grantable role but the manager's
+      // ADMIN OPTION on it.
+      const UNSHARED_ROLE = "test_role_unshared";
+
+      // Each test runs as the manager, which is not superuser.
+      beforeEach(() => {
         vi.spyOn(localConfig, "fetchCredential").mockResolvedValue({
           username: CONNECTOR_USER,
           password: "psqlpass",
         });
+      });
 
       beforeAll(async () => {
         await rootClient.raw(
@@ -144,10 +149,11 @@ describe.skipIf("CI" in process.env)(
         await rootClient.raw(`CREATE ROLE ??`, [GROUP_ROLE]);
         await rootClient.raw(`GRANT ?? TO ??`, [GROUP_ROLE, CONNECTOR_USER]);
         await rootClient.raw(`CREATE ROLE ?? WITH LOGIN`, [LOGIN_ROLE]);
-        await rootClient.raw(`GRANT ?? TO ?? WITH ADMIN OPTION`, [
-          SOURCE_ROLE,
-          CONNECTOR_USER,
-        ]);
+        await rootClient.raw(`CREATE ROLE ??`, [UNSHARED_ROLE]);
+        await rootClient.raw(
+          `GRANT ??, ??, pg_read_all_data TO ?? WITH ADMIN OPTION`,
+          [SOURCE_ROLE, LOGIN_ROLE, CONNECTOR_USER]
+        );
       });
 
       afterEach(async () => {
@@ -156,13 +162,17 @@ describe.skipIf("CI" in process.env)(
       });
 
       afterAll(async () => {
-        for (const role of [GROUP_ROLE, LOGIN_ROLE, CONNECTOR_USER]) {
+        for (const role of [
+          GROUP_ROLE,
+          LOGIN_ROLE,
+          UNSHARED_ROLE,
+          CONNECTOR_USER,
+        ]) {
           await dropRole(role);
         }
       });
 
       it("Refuses to bind an access resource to the connector's own user", async () => {
-        signInAsConnectorUser();
         await newConnClient().createAccessResource({
           resourceBody: RESOURCE,
           context,
@@ -195,7 +205,6 @@ describe.skipIf("CI" in process.env)(
         ["the connector's own user", CONNECTOR_USER],
         ["a role the connector inherits", GROUP_ROLE],
       ])("Refuses to delete %s", async (_label, role) => {
-        signInAsConnectorUser();
         await expect(
           newConnClient().deleteUser({
             userId: role,
@@ -212,7 +221,6 @@ describe.skipIf("CI" in process.env)(
       });
 
       it("Refuses to grant a policy to the connector's own user", async () => {
-        signInAsConnectorUser();
         await expect(
           newConnClient().createAccessResource({
             resourceBody: CONNECTOR_USER,
@@ -232,7 +240,6 @@ describe.skipIf("CI" in process.env)(
       // The `p0` prefix check alone would let a P0-named role the connector
       // belongs to be named as the user.
       it("Refuses to grant to a role the connector user inherits", async () => {
-        signInAsConnectorUser();
         await newConnClient().createAccessResource({
           resourceBody: RESOURCE,
           context,
@@ -258,23 +265,25 @@ describe.skipIf("CI" in process.env)(
         expect(await roleIsMemberOf(GROUP_ROLE, SOURCE_ROLE)).toBe(false);
       });
 
-      it("Grants a built-in role", async () => {
+      it("Grants a role the manager holds ADMIN OPTION on", async () => {
         await newConnClient().createAccessResource({
           resourceBody: RESOURCE,
           context,
         });
         await newConnClient().addPoliciesToResource({
           resourceId: RESOURCE,
-          policies: [{ type: "role", rolename: "pg_read_all_data" }],
+          policies: [{ type: "role", rolename: SOURCE_ROLE }],
           context,
         });
 
-        expect(await roleIsMemberOf(RESOURCE, "pg_read_all_data")).toBe(true);
+        expect(await roleIsMemberOf(RESOURCE, SOURCE_ROLE)).toBe(true);
       });
 
       it.each([
         ["a P0-managed role", CONNECTOR_USER],
         ["a login role", LOGIN_ROLE],
+        ["a built-in role", "pg_read_all_data"],
+        ["a role the manager holds no ADMIN OPTION on", UNSHARED_ROLE],
         ["a role that does not exist", "test_role_missing"],
       ])("Refuses to grant %s", async (_label, rolename) => {
         await newConnClient().createAccessResource({
@@ -299,11 +308,7 @@ describe.skipIf("CI" in process.env)(
           })
         ).map(({ key }) => key);
 
-        expect(roles).toContain(SOURCE_ROLE);
-        expect(roles).toContain("pg_read_all_data");
-        for (const role of [CONNECTOR_USER, GROUP_ROLE, LOGIN_ROLE]) {
-          expect(roles).not.toContain(role);
-        }
+        expect(roles).toEqual([SOURCE_ROLE]);
       });
     });
 
