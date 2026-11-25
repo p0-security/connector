@@ -3150,6 +3150,7 @@ __metadata:
   resolution: "@p0security/p0-connector-pg-vaulted@workspace:services/p0-connector-pg-vaulted"
   dependencies:
     "@p0security/connector-core": "workspace:^"
+    "@p0security/connector-secret-manager-client": "workspace:^"
     "@trivago/prettier-plugin-sort-imports": "npm:^5.2.2"
     "@trpc/server": "npm:^11.10.0"
     "@types/pg": "npm:^8"
