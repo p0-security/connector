@@ -128,6 +128,8 @@ describe.skipIf("CI" in process.env)(
       // the connector, as granting to the connector itself would.
       const GROUP_ROLE = "p0_test_connector_group";
       const LOGIN_ROLE = "test_role_login";
+      // A role the connector user is a plain member of, without ADMIN OPTION.
+      const MEMBER_ROLE = "test_role_member_only";
       const connectorContext = {
         ...context,
         db: { ...context.db, p0User: CONNECTOR_USER },
@@ -141,6 +143,8 @@ describe.skipIf("CI" in process.env)(
         await rootClient.raw(`CREATE ROLE ??`, [GROUP_ROLE]);
         await rootClient.raw(`GRANT ?? TO ??`, [GROUP_ROLE, CONNECTOR_USER]);
         await rootClient.raw(`CREATE ROLE ?? WITH LOGIN`, [LOGIN_ROLE]);
+        await rootClient.raw(`CREATE ROLE ??`, [MEMBER_ROLE]);
+        await rootClient.raw(`GRANT ?? TO ??`, [MEMBER_ROLE, CONNECTOR_USER]);
         await rootClient.raw(`GRANT ?? TO ?? WITH ADMIN OPTION`, [
           SOURCE_ROLE,
           CONNECTOR_USER,
@@ -152,7 +156,12 @@ describe.skipIf("CI" in process.env)(
       });
 
       afterAll(async () => {
-        for (const role of [GROUP_ROLE, LOGIN_ROLE, CONNECTOR_USER]) {
+        for (const role of [
+          GROUP_ROLE,
+          LOGIN_ROLE,
+          MEMBER_ROLE,
+          CONNECTOR_USER,
+        ]) {
           await dropRole(role);
         }
       });
@@ -250,23 +259,10 @@ describe.skipIf("CI" in process.env)(
         expect(await roleIsMemberOf(GROUP_ROLE, SOURCE_ROLE)).toBe(false);
       });
 
-      it("Grants a built-in role", async () => {
-        await newConnClient().createAccessResource({
-          resourceBody: RESOURCE,
-          context,
-        });
-        await newConnClient().addPoliciesToResource({
-          resourceId: RESOURCE,
-          policies: [{ type: "role", rolename: "pg_read_all_data" }],
-          context,
-        });
-
-        expect(await roleIsMemberOf(RESOURCE, "pg_read_all_data")).toBe(true);
-      });
-
       it.each([
         ["a P0-managed role", CONNECTOR_USER],
         ["a login role", LOGIN_ROLE],
+        ["a built-in role", "pg_read_all_data"],
         ["a role that does not exist", "test_role_missing"],
       ])("Refuses to grant %s", async (_label, rolename) => {
         await newConnClient().createAccessResource({
@@ -292,10 +288,28 @@ describe.skipIf("CI" in process.env)(
         ).map(({ key }) => key);
 
         expect(roles).toContain(SOURCE_ROLE);
-        expect(roles).toContain("pg_read_all_data");
+        expect(roles).not.toContain("pg_read_all_data");
         for (const role of [CONNECTOR_USER, GROUP_ROLE, LOGIN_ROLE]) {
           expect(roles).not.toContain(role);
         }
+      });
+
+      it("Lists, as a manager that is not superuser, only the roles it can grant", async () => {
+        const roles = (
+          await newConnClient().list({
+            query: { type: "role", context: connectorContext.db },
+          })
+        ).map(({ key }) => key);
+        const {
+          rows: [{ version }],
+        } = await rootClient.raw<{ rows: [{ version: number }] }>(
+          `SELECT current_setting('server_version_num')::int AS version`
+        );
+
+        expect(roles).toContain(SOURCE_ROLE);
+        // Before PostgreSQL 16, CREATEROLE lets the manager grant a role it
+        // holds no ADMIN OPTION on.
+        expect(roles.includes(MEMBER_ROLE)).toBe(version < 160000);
       });
     });
 
