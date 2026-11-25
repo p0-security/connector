@@ -26,10 +26,15 @@
   "dependencies": {
     "@p0security/connector-core": "workspace:^",
     "@trpc/server": "^11.10.0",
+    "aws-ssl-profiles": "^1.1.2",
+    "knex": "^3.1.0",
+    "pg": "^8.18.0",
+    "type-fest": "^5.4.1",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@trivago/prettier-plugin-sort-imports": "^5.2.2",
+    "@types/pg": "^8",
     "esbuild": "^0.27.2",
     "prettier": "^3.6.2",
     "typescript": "^5.9.2",

@@ -5,6 +5,8 @@ import {
 } from "@p0security/connector-core";
 
 import pgVaultedConnectorPackageJson from "../package.json" with { type: "json" };
+import { router as roleRouter } from "./accesses/role/handler.ts";
+import { router as sqlRouter } from "./accesses/sql/handler.ts";
 import { router as validationRouter } from "./install/handler.ts";
 
 export const t = newConnectorTRPC();
@@ -14,7 +16,7 @@ export const baseProcedure = t.procedure;
 const installRouter = router({ validation: validationRouter(t) });
 
 export const connectorRouter = newConnectorRouter("pg-vaulted" as const, t, {
-  accesses: {},
+  accesses: { role: roleRouter(t), sql: sqlRouter(t) },
   install: installRouter,
   metadata: newMetadataRouter(
     t,
