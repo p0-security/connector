@@ -5,7 +5,16 @@ import {
 } from "@p0security/connector-core";
 import { escapeLiteral } from "pg";
 
+import { getConfig } from "../../clouds/index.ts";
 import { newClient } from "../../dbclient.ts";
+import {
+  deleteGrantSecret,
+  generateGrantPassword,
+  grantSecretRef,
+  hasGrantSecret,
+  renderScramVerifier,
+  writeGrantSecret,
+} from "../../grant-secret.ts";
 import { ident } from "../../sql/identifier.ts";
 import type { PgClientParams, PgRequestContext } from "./definition.ts";
 
@@ -30,6 +39,11 @@ export const roleExists = async (
  */
 const renderLoginUntil = (grantEndsAt: string): string =>
   `WITH LOGIN VALID UNTIL ${escapeLiteral(new Date(grantEndsAt).toISOString())}`;
+
+const grantSecretManager = async (context: PgRequestContext) => {
+  const { cloud, managerSecret } = context.db;
+  return await getConfig(cloud).secretManager(managerSecret);
+};
 
 const extendLogin = (client: PgClient, username: string, grantEndsAt: string) =>
   client.raw(`ALTER ROLE ${ident(username)} ${renderLoginUntil(grantEndsAt)}`);
@@ -229,6 +243,9 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
    * Writes even when only identifying: the framework's `provisionUser` calls
    * `createUser` only for a missing login, so this is the one place an
    * existing shared login's end can move.
+   *
+   * A login without its secret counts as missing. Nobody can have read its
+   * password, so `createUser` can safely set a new one.
    */
   getUser: async (context: PgRequestContext, username: string) =>
     await withMethodContext(
@@ -239,6 +256,13 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
         const exists = await roleExists(client, username);
         logger.debug({ exists }, "checked whether Postgres user exists");
         if (!exists) return null;
+        const secrets = await grantSecretManager(context);
+        if (
+          !(await hasGrantSecret(secrets, grantSecretRef(context, username)))
+        ) {
+          logger.warn("Postgres user has no grant secret");
+          return null;
+        }
         await assertNotConnectorRole(client, context, [username]);
         await extendLogin(client, username, context.grantEndsAt);
         logger.info(
@@ -249,6 +273,11 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       }
     ),
 
+  /**
+   * The secret is written before the password is set, and deleted if either
+   * step fails. A secret then always holds its login's current password, and
+   * a failed call leaves the login looking missing to `getUser`.
+   */
   createUser: async (context: PgRequestContext, username: string) =>
     await withMethodContext(
       ctx,
@@ -257,12 +286,24 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
       async ({ client, logger }) => {
         const { grantEndsAt } = context;
         await assertNotConnectorRole(client, context, [username]);
-        if (await roleExists(client, username)) {
-          await extendLogin(client, username, grantEndsAt);
-        } else {
-          await client.raw(
-            `CREATE ROLE ${ident(username)} ${renderLoginUntil(grantEndsAt)}`
+        const secrets = await grantSecretManager(context);
+        const ref = grantSecretRef(context, username);
+        const password = generateGrantPassword();
+        const options = `${renderLoginUntil(grantEndsAt)} PASSWORD ${escapeLiteral(renderScramVerifier(password))}`;
+        try {
+          await writeGrantSecret(secrets, ref, password);
+          const verb = (await roleExists(client, username))
+            ? "ALTER"
+            : "CREATE";
+          await client.raw(`${verb} ROLE ${ident(username)} ${options}`);
+        } catch (error) {
+          await deleteGrantSecret(secrets, ref).catch((deleteError: unknown) =>
+            logger.error(
+              { error: deleteError },
+              "failed to delete grant secret after a failed provision"
+            )
           );
+          throw error;
         }
         logger.info({ grantEndsAt }, "provisioned Postgres user");
         return username;
@@ -332,6 +373,9 @@ export const newCommonPgPrimitives = (ctx: ConnectorContext) => ({
         }
         await client.raw(`DROP ROLE IF EXISTS ${ident(username)}`);
         logger.info("dropped Postgres user");
+        const secrets = await grantSecretManager(context);
+        await deleteGrantSecret(secrets, grantSecretRef(context, username));
+        logger.info("deleted grant secret");
         if (sessionsError) throw sessionsError;
       }
     ),

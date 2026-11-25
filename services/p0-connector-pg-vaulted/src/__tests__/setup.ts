@@ -61,6 +61,7 @@ export const newRoleLifecycle = async <
   context: {
     requestId: string;
     grantEndsAt: string;
+    grantSecretPrefix: string;
     db: {
       host: string;
       port: number;
@@ -128,6 +129,7 @@ export const newSqlLifecycle = async <
   context: {
     requestId: string;
     grantEndsAt: string;
+    grantSecretPrefix: string;
     db: {
       host: string;
       port: number;

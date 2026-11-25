@@ -121,8 +121,16 @@ const poolConfig = async (): Promise<PoolConfig> => {
   };
 };
 
+/** Grant secrets live in the manager secret's region. */
+const secretManager = async (managerSecret: string) =>
+  await createSecretManagerClient({
+    provider: "aws",
+    region: secretRegion(managerSecret),
+  });
+
 export const awsRdsConfig: CloudConfig = {
   fetchDbPassword,
   poolConfig,
   sslConfig,
+  secretManager,
 };

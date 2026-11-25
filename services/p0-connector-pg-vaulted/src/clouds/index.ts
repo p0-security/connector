@@ -1,4 +1,5 @@
 import { throwAssertNever } from "@p0security/connector-core";
+import type { SecretManagerClient } from "@p0security/connector-secret-manager-client";
 
 import type { PoolConfig, SslConfig } from "../dbclient.ts";
 import { awsRdsConfig } from "./aws-rds.ts";
@@ -16,6 +17,7 @@ export type CloudConfig = {
   fetchDbPassword: (endpoint: Endpoint) => Promise<string>;
   poolConfig: () => Promise<PoolConfig>;
   sslConfig: () => Promise<SslConfig>;
+  secretManager: (managerSecret: string) => Promise<SecretManagerClient>;
 };
 
 export type Cloud = "localhost" | "rds";
