@@ -16,7 +16,7 @@ import {
 } from "./definition.ts";
 
 /** A failed check. It never carries the driver's message, which can quote
- * the server. */
+ * the server, only the connector's own words. */
 const failedAt = (
   step: PgVaultedInstallStep,
   host: string,
@@ -41,7 +41,10 @@ export const router = (t: AnyConnectorTRPCInstance) => {
         let username: string;
         try {
           ({ username } = await readManagerCredential(managerSecret, host));
-        } catch {
+        } catch (error) {
+          if (error instanceof ConnectorError) {
+            throw failedAt("manager_secret", host, error.data);
+          }
           throw failedAt("manager_secret", host, {
             type: "unknown",
             message:

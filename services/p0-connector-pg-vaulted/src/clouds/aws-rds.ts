@@ -1,8 +1,11 @@
 import {
+  DBClusterNotFoundFault,
+  DBInstanceNotFoundFault,
   DescribeDBClustersCommand,
   DescribeDBInstancesCommand,
   RDSClient,
 } from "@aws-sdk/client-rds";
+import { ConnectorError } from "@p0security/connector-core";
 import {
   type SecretRef,
   createSecretManagerClient,
@@ -33,10 +36,36 @@ const secretRegion = (managerSecret: string) => {
   return region;
 };
 
+const RDS_DESCRIBE_PERMISSIONS =
+  "rds:DescribeDBInstances and rds:DescribeDBClusters";
+
+/** Why asking RDS failed. The two not-found faults mean the host's first
+ * label names no instance or cluster of the secret's, so the host is not one
+ * of its endpoints. Anything else is the connector's own failure, and an
+ * operator needs to see it as such. */
+const rdsLookupFailure = (error: unknown): ConnectorError | undefined => {
+  if (
+    error instanceof DBInstanceNotFoundFault ||
+    error instanceof DBClusterNotFoundFault
+  ) {
+    return undefined;
+  }
+  const name = error instanceof Error ? error.name : "unknown";
+  return new ConnectorError({
+    type:
+      name === "AccessDenied" || name === "AccessDeniedException"
+        ? "insufficient_privileges"
+        : "unknown",
+    message: `pg-vaulted could not ask RDS whether the manager secret is for this host. The connector needs ${RDS_DESCRIBE_PERMISSIONS}.`,
+    payload: { error: name },
+  });
+};
+
 /**
- * Whether `host` is an endpoint of the RDS instance or cluster whose master
- * user secret is `managerSecret`. A secret RDS manages holds no host, so RDS
- * is asked, by the identifier that is the host's first label.
+ * Whether `host` is the endpoint of the RDS instance, or the writer endpoint
+ * of the cluster, whose master user secret is `managerSecret`. A secret RDS
+ * manages holds no host, so RDS is asked, by the identifier that is the
+ * host's first label. Throws a ConnectorError when RDS cannot be asked.
  */
 const isRdsSecretFor = async (
   managerSecret: string,
@@ -48,24 +77,32 @@ const isRdsSecretFor = async (
   const [identifier] = host.split(".");
   const wanted = host.toLowerCase();
   const isWanted = (endpoint?: string) => endpoint?.toLowerCase() === wanted;
-  if (kind === "db") {
-    const { DBInstances = [] } = await rds.send(
-      new DescribeDBInstancesCommand({ DBInstanceIdentifier: identifier })
+  try {
+    if (kind === "db") {
+      const { DBInstances = [] } = await rds.send(
+        new DescribeDBInstancesCommand({ DBInstanceIdentifier: identifier })
+      );
+      return DBInstances.some(
+        (instance) =>
+          instance.MasterUserSecret?.SecretArn === managerSecret &&
+          isWanted(instance.Endpoint?.Address)
+      );
+    }
+    const { DBClusters = [] } = await rds.send(
+      new DescribeDBClustersCommand({ DBClusterIdentifier: identifier })
     );
-    return DBInstances.some(
-      (instance) =>
-        instance.MasterUserSecret?.SecretArn === managerSecret &&
-        isWanted(instance.Endpoint?.Address)
+    return DBClusters.some(
+      (cluster) =>
+        cluster.MasterUserSecret?.SecretArn === managerSecret &&
+        // The reader endpoint cannot run CREATE ROLE, so a reader host must
+        // fail install, not the first grant.
+        isWanted(cluster.Endpoint)
     );
+  } catch (error) {
+    const failure = rdsLookupFailure(error);
+    if (failure) throw failure;
+    return false;
   }
-  const { DBClusters = [] } = await rds.send(
-    new DescribeDBClustersCommand({ DBClusterIdentifier: identifier })
-  );
-  return DBClusters.some(
-    (cluster) =>
-      cluster.MasterUserSecret?.SecretArn === managerSecret &&
-      (isWanted(cluster.Endpoint) || isWanted(cluster.ReaderEndpoint))
-  );
 };
 
 /**
@@ -73,8 +110,9 @@ const isRdsSecretFor = async (
  * secret's region, once the secret is for `host`: a request names the secret
  * and the host apart, so it could otherwise send the password to a host it is
  * not for. A secret P0 names holds its host. For a secret RDS manages, RDS is
- * asked before the secret is read. Errors leave out the value and the SDK's
- * cause, since either could hold the password.
+ * asked before the secret is read, and a failure to ask throws a
+ * ConnectorError naming the permissions it needs. Errors leave out the value
+ * and the SDK's cause, since either could hold the password.
  */
 export const readManagerCredential = async (
   managerSecret: string,
@@ -88,7 +126,7 @@ export const readManagerCredential = async (
       rdsSecret.kind,
       region,
       host
-    ).catch(() => false);
+    );
     if (!isFor) {
       throw new Error(
         "pg-vaulted could not confirm the manager secret is for this host"
