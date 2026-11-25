@@ -28,21 +28,22 @@ const secretRegion = (managerSecret: string) => {
 };
 
 /**
- * Reads the manager's password from the secret the request names, in the
- * secret's region, once the secret's username and host are the request's: a
- * request names the secret and the host apart, so it could otherwise send the
- * password to a host it is not for. Errors leave out the value and the SDK's
- * cause, since either could hold the password.
+ * Reads the manager's username and password from `managerSecret`, in the
+ * secret's region, once the secret's host is `host`: a request names the
+ * secret and the host apart, so it could otherwise send the password to a
+ * host it is not for. Errors leave out the value and the SDK's cause, since
+ * either could hold the password.
  */
-const fetchDbPassword = async (
-  endpoint: Pick<Endpoint, "host" | "managerSecret" | "user">
-): Promise<string> => {
+export const readManagerCredential = async (
+  managerSecret: string,
+  host: string
+) => {
   const secrets = await createSecretManagerClient({
     provider: "aws",
-    region: secretRegion(endpoint.managerSecret),
+    region: secretRegion(managerSecret),
   });
   const { value } = await secrets
-    .getSecretValue({ ref: endpoint.managerSecret as SecretRef })
+    .getSecretValue({ ref: managerSecret as SecretRef })
     .catch(() => {
       throw new Error("pg-vaulted could not read the manager secret");
     });
@@ -59,14 +60,24 @@ const fetchDbPassword = async (
       "pg-vaulted's manager secret must be a JSON object with a username, a password and a host"
     );
   }
-  const { username, password, host } = credential.data;
-  if (
-    username !== endpoint.user ||
-    host.toLowerCase() !== endpoint.host.toLowerCase()
-  ) {
-    throw new Error(
-      "pg-vaulted's manager secret is not for this username and host"
-    );
+  if (credential.data.host.toLowerCase() !== host.toLowerCase()) {
+    throw new Error("pg-vaulted's manager secret is not for this host");
+  }
+  const { username, password } = credential.data;
+  return { username, password };
+};
+
+/** Returns the manager's password, once the secret's username is the
+ * request's too. */
+const fetchDbPassword = async (
+  endpoint: Pick<Endpoint, "host" | "managerSecret" | "user">
+) => {
+  const { username, password } = await readManagerCredential(
+    endpoint.managerSecret,
+    endpoint.host
+  );
+  if (username !== endpoint.user) {
+    throw new Error("pg-vaulted's manager secret is not for this username");
   }
   return password;
 };
