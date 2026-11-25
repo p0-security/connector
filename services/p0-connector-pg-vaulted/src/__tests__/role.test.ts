@@ -250,23 +250,10 @@ describe.skipIf("CI" in process.env)(
         expect(await roleIsMemberOf(GROUP_ROLE, SOURCE_ROLE)).toBe(false);
       });
 
-      it("Grants a built-in role", async () => {
-        await newConnClient().createAccessResource({
-          resourceBody: RESOURCE,
-          context,
-        });
-        await newConnClient().addPoliciesToResource({
-          resourceId: RESOURCE,
-          policies: [{ type: "role", rolename: "pg_read_all_data" }],
-          context,
-        });
-
-        expect(await roleIsMemberOf(RESOURCE, "pg_read_all_data")).toBe(true);
-      });
-
       it.each([
         ["a P0-managed role", CONNECTOR_USER],
         ["a login role", LOGIN_ROLE],
+        ["a built-in role", "pg_read_all_data"],
         ["a role that does not exist", "test_role_missing"],
       ])("Refuses to grant %s", async (_label, rolename) => {
         await newConnClient().createAccessResource({
@@ -292,7 +279,7 @@ describe.skipIf("CI" in process.env)(
         ).map(({ key }) => key);
 
         expect(roles).toContain(SOURCE_ROLE);
-        expect(roles).toContain("pg_read_all_data");
+        expect(roles).not.toContain("pg_read_all_data");
         for (const role of [CONNECTOR_USER, GROUP_ROLE, LOGIN_ROLE]) {
           expect(roles).not.toContain(role);
         }

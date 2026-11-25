@@ -69,9 +69,29 @@ export const assertNotConnectorRole = async (
   }
 };
 
-/** The roles a `role` policy may grant: non-login roles P0 did not create. */
-const grantableRolesSql = `SELECT rolname FROM pg_roles
-  WHERE NOT rolcanlogin AND rolname NOT ILIKE 'p0%'`;
+/**
+ * The roles a `role` policy may grant: roles that cannot log in, are not
+ * superuser, are not PostgreSQL's, RDS's or P0's own (`pg_*`, `rds*`, `p0*`),
+ * and that the manager holds `ADMIN OPTION` on. A superuser can grant any
+ * of them. From PostgreSQL 16 the manager can use only an `ADMIN OPTION`
+ * that it, or a role whose privileges it inherits, holds.
+ */
+const grantableRolesSql = `SELECT r.rolname AS rolname
+  FROM pg_roles r,
+    (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) me
+  WHERE NOT r.rolcanlogin
+    AND NOT r.rolsuper
+    AND r.rolname !~ '^(pg_|rds|[pP]0)'
+    AND (
+      me.rolsuper
+      OR CASE WHEN current_setting('server_version_num')::int >= 160000
+        THEN EXISTS (
+          SELECT 1 FROM pg_auth_members m
+          WHERE m.roleid = r.oid AND m.admin_option
+            AND pg_has_role(current_user, m.member, 'USAGE'))
+        ELSE pg_has_role(current_user, r.oid, 'MEMBER WITH ADMIN OPTION')
+        END
+    )`;
 
 /** Lists the roles a `role` policy may grant. */
 export const listGrantableRoles = async (client: PgClient, logger: Logger) => {
@@ -91,14 +111,14 @@ export const assertGrantableRole = async (
   rolename: string
 ): Promise<void> => {
   const res = await client.raw<{ rows: unknown[] }>(
-    `${grantableRolesSql} AND rolname = ?`,
+    `${grantableRolesSql} AND r.rolname = ?`,
     [rolename]
   );
   if (res.rows.length === 0) {
     throw new ConnectorError({
       type: "validation_error",
       message:
-        "Invalid Postgres role: only non-login roles that P0 did not create can be granted",
+        "Invalid Postgres role: only the roles the connector lists as grantable can be granted",
       payload: { rolename },
     });
   }
