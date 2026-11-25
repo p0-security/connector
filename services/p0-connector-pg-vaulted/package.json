@@ -21,7 +21,8 @@
     "bundle": "yarn clean && yarn typecheck && yarn just-bundle && yarn zip-lambda",
     "zip-lambda": "cd dist && zip -r index.zip *.mjs* && du -sh index.zip",
     "build-within-docker": "yarn typecheck && yarn just-bundle",
-    "build": "tsc --build"
+    "build": "tsc --build",
+    "test:integration": "vitest run --config vitest.integration.config.ts"
   },
   "dependencies": {
     "@p0security/connector-core": "workspace:^",
