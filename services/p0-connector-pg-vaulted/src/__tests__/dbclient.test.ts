@@ -281,3 +281,17 @@ describe("newClient on localhost", () => {
     expect((built[0]?.connection as Knex.PgConnectionConfig).ssl).toBe(false);
   });
 });
+
+describe("a client whose connection fails", () => {
+  it("rejects with the driver's error", async () => {
+    const client = await newClient(
+      { host: "127.0.0.1", port: 1, database, managerSecret: MANAGER_SECRET },
+      "localhost"
+    );
+    clients.push(client);
+
+    const error = await errorOf(client.raw("SELECT 1"));
+
+    expect(error).toMatchObject({ code: "ECONNREFUSED" });
+  });
+});
