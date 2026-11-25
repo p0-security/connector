@@ -2,6 +2,12 @@ import jwt from "jsonwebtoken";
 import { type KeyObject, createPublicKey } from "node:crypto";
 import { z } from "zod";
 
+import {
+  TokenRefusal,
+  type TokenVerifier,
+  failedCheck,
+} from "../http/middlewares/bearer.ts";
+
 const ENTRA_AUTHORITY = "https://login.microsoftonline.com";
 
 // Entra rolls its signing keys over, so refetch the key set when a token names
@@ -98,6 +104,23 @@ const newJwksKeyResolver = (jwksUri: string) => {
 };
 
 /**
+ * The start of each error the key lookup below and `jsonwebtoken` 9.x throw for
+ * a token they refuse, with the check it names. Only the name is logged. Any
+ * other error is logged as "Token verification failed".
+ */
+const ENTRA_CHECKS = [
+  ["Token signing key ", "unknown kid"],
+  ["Failed to fetch ", "key set fetch failed"],
+  ["jwt signature is required", "no signature"],
+  ["invalid algorithm", "wrong algorithm"],
+  ["invalid signature", "invalid signature"],
+  ["jwt not active", "not yet valid"],
+  ["jwt expired", "expired"],
+  ["jwt audience invalid", "wrong aud"],
+  ["jwt issuer invalid", "wrong iss"],
+] as const;
+
+/**
  * Verifies the Entra v2 access tokens the Control plane sends a Connector on Azure.
  *
  * Checks the signature against the tenant's JWKS, then `iss`, `aud`, `azp`, `exp`
@@ -106,32 +129,58 @@ const newJwksKeyResolver = (jwksUri: string) => {
  * misconfigured.
  *
  * @returns a function that resolves `true` for a valid token, and otherwise
- * resolves `false` or throws
+ * throws: a `TokenRefusal` naming the check for a failure it recognises, never
+ * the token
  */
 export const verifyEntraToken = ({
   tenantId,
   clientId,
-}: EntraInvokerConfig) => {
+}: EntraInvokerConfig): TokenVerifier => {
   const issuer = entraIssuer(tenantId);
   const getKey = newJwksKeyResolver(entraJwksUri(tenantId));
+  const fail = (check: string) =>
+    new TokenRefusal(`Entra token refused: ${check}`);
 
   return async (token: string) => {
-    const decoded = jwt.decode(token, { complete: true });
-    if (!decoded?.header.kid) {
-      return false;
+    let decoded: jwt.Jwt | null;
+    try {
+      decoded = jwt.decode(token, { complete: true });
+    } catch {
+      // A header with `typ` "JWT" makes the payload be parsed as JSON, which
+      // throws if it isn't. The parse error quotes the payload, so drop it.
+      throw fail("not a JWT");
     }
-    const key = await getKey(decoded.header.kid);
-    // Checks the signature, `iss`, `aud`, `exp` and `nbf`, and throws on any failure.
-    const payload = jwt.verify(token, key, {
-      algorithms: ["RS256"],
-      issuer,
-      audience: clientId,
-    });
+    if (!decoded) {
+      throw fail("not a JWT");
+    }
+    const { kid } = decoded.header;
+    if (!kid) {
+      throw fail("no kid");
+    }
+    let payload: jwt.JwtPayload | string;
+    try {
+      const key = await getKey(kid);
+      // Checks the signature, `iss`, `aud`, `exp` and `nbf`, and throws on any failure.
+      payload = jwt.verify(token, key, {
+        algorithms: ["RS256"],
+        issuer,
+        audience: clientId,
+      });
+    } catch (err) {
+      const check = failedCheck(err, ENTRA_CHECKS);
+      if (check) {
+        throw fail(check);
+      }
+      throw err;
+    }
     if (typeof payload === "string") {
-      return false;
+      throw fail("payload is not a JSON object");
     }
     // The token is for the Connector's own app registration, so the caller and
     // the audience are the same app.
-    return payload.azp === clientId;
+    if (payload.azp !== clientId) {
+      throw fail("wrong azp");
+    }
+    return true;
   };
 };

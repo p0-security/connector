@@ -99,7 +99,7 @@ run();
 ```
 
 **Any other host**: use `newCustomAppHttpServer` the same way. It serves the same routes as
-the Cloud Run server, and always checks the token's audience:
+the Cloud Run server, and by default also checks the token's audience:
 
 ```ts
 import { newCustomAppHttpServer } from "@p0security/connector-sdk";
@@ -133,6 +133,30 @@ delete it.
   to the exact string P0 shows when you register the connector. It names both your connector and
   your P0 organization, so copy it rather than building it. `run()` throws before binding a port if
   it's unset, empty, or has leading or trailing whitespace.
+- **Behind a trusted proxy**: if an API gateway in front of the connector authenticates P0 and
+  replaces the `Authorization` header with its own credential, set `CONNECTOR_AUTH=trusted-proxy`.
+  P0 then also sends its own short-lived identity token as `X-P0-Authorization: Bearer <token>`,
+  and the connector checks that instead of `Authorization`, which it ignores. Set
+  `CONNECTOR_AUDIENCE` as above, and `CONNECTOR_IDENTITY_JWKS` to the JSON Web Key Set P0 gives
+  you: one or two RSA keys of at least 2048 bits, each with its own `kid` and `alg` `RS256`. Two
+  keys let P0 rotate its key without downtime. The token must be `RS256`, signed with the key its
+  `kid` names, and have `iss` `p0`, `aud` exactly `CONNECTOR_AUDIENCE` and a `sub`. It must not be
+  expired, must not have an `iat` in the future, and must live at most 15 minutes (`exp` minus
+  `iat`); the connector allows 60 seconds of clock skew, so keep the host's clock in sync. Every
+  path except `GET /health` needs the token, so a request without a valid one gets a `403`, on an
+  unknown path too. A JSON body is parsed before the token is checked, though, so one that isn't
+  valid JSON gets a `400`, and one over 5 MB a `413`, whatever the token. The `403` body is only
+  `{"error": {"message": "Unauthorized", "publicMessage": "P0 could not properly identify you."}}`;
+  the log says which check failed, never the token. The connector fetches nothing to check the
+  token, and `INVOKER_SA_EMAIL` isn't needed. `run()` throws before binding a port if either
+  variable is missing or invalid. The server listens on `127.0.0.1` by default, `/health` included:
+  point the proxy at `127.0.0.1`, not `localhost`, which may resolve to `::1`. Set
+  `CONNECTOR_BIND_ADDRESS` to an IP address to listen elsewhere; an address other than `127.x.x.x`
+  or `::1` logs a warning at startup.
+- For `newCustomAppHttpServer`, `CONNECTOR_AUTH` defaults to `google-id-token`, the check described
+  under **Any other host**. Any value other than `google-id-token` or `trusted-proxy` makes `run()`
+  throw. `CONNECTOR_BIND_ADDRESS` works in both modes, and `run()` throws if it's set to anything
+  but an IP address, such as a host name; `google-id-token` listens on every interface by default.
 - **AWS (Lambda)**: `newCustomAppLambdaHandler` returns your handler directly. There is no
   bearer-token check here — a Lambda invoke payload carries no caller identity to check, so the
   boundary is purely `lambda:InvokeFunction` IAM on the role P0 assumes to call you. Grant that role

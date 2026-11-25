@@ -1,10 +1,8 @@
 import type { AnyRouter } from "@trpc/server";
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 
-import {
-  newGoogleIdTokenVerifier,
-  serveGoogleIdTokenConnector,
-} from "./google-id-token-connector.ts";
+import { newGoogleIdTokenVerifier } from "./google-id-token-connector.ts";
+import { serveTrpcConnector } from "./trpc-server.ts";
 
 /**
  * Creates a Cloud Run service that exposes a tRPC router over Express at
@@ -33,5 +31,5 @@ export const runCloudRunConnector = <T>(
   // Read the environment before serving, so a misconfigured connector fails to
   // start rather than answering every request with a 403.
   const verify = newGoogleIdTokenVerifier();
-  return serveGoogleIdTokenConnector(moduleName, router, createContext, verify);
+  return serveTrpcConnector({ moduleName, router, createContext, verify });
 };

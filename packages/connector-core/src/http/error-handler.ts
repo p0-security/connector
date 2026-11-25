@@ -1,7 +1,7 @@
 import type { ErrorRequestHandler } from "express";
 import { pino } from "pino";
 
-import { BaseError } from "./types/error.ts";
+import { BaseError, isPublicError } from "./types/error.ts";
 
 const logger = pino({
   level: process.env.LOG_LEVEL || "info",
@@ -42,16 +42,19 @@ const clientErrorStatus = (error: unknown) => {
 export const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
   logger.error({ error }, "Error processing request");
 
-  let status;
-  switch (error.type) {
-    case "auth":
-      status = 403;
-      break;
-    // TODO: Identify and handle upstream errors
-    default:
-      status = clientErrorStatus(error) ?? 500;
+  if (error.type === "auth") {
+    // The log above names the failed check. The refused caller learns only
+    // that it was refused: no cause and no stack.
+    return res.status(403).json({
+      error: {
+        message: "Unauthorized",
+        publicMessage: isPublicError(error) ? error.publicMessage : undefined,
+      },
+    });
   }
 
+  // TODO: Identify and handle upstream errors
+  const status = clientErrorStatus(error) ?? 500;
   const serializedError = serializeError(error);
   return res.status(status).json({ error: serializedError });
 };
