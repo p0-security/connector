@@ -45,6 +45,10 @@ export const router = (t: AnyConnectorTRPCInstance) => {
           if (error instanceof ConnectorError) {
             throw failedAt("manager_secret", host, error.data);
           }
+          // The error says which check failed and never holds the secret's
+          // value, so support can tell a host mismatch from a secret that
+          // isn't JSON.
+          logger.warn({ error }, "install check failed at manager_secret");
           throw failedAt("manager_secret", host, {
             type: "unknown",
             message:

@@ -106,4 +106,33 @@ describe("readManagerCredential for a secret RDS manages", () => {
     expect(data.payload).toEqual({ error: "AccessDenied" });
     expect(getSecretValue).not.toHaveBeenCalled();
   });
+
+  it("reports a throttled lookup as RDS's failure, not a missing permission", async () => {
+    send.mockRejectedValue(
+      Object.assign(new Error("slow down"), { name: "Throttling" })
+    );
+
+    const error = await readManagerCredential(
+      INSTANCE_SECRET,
+      INSTANCE_HOST
+    ).catch((e: unknown) => e);
+    const { data } = error as ConnectorError;
+    expect(data.type).toBe("rate_limited");
+    expect(data.message).not.toContain("rds:Describe");
+    expect(data.payload).toEqual({ error: "Throttling" });
+    expect(getSecretValue).not.toHaveBeenCalled();
+  });
+
+  it("refuses a host whose first label RDS rejects as an identifier", async () => {
+    send.mockRejectedValue(
+      Object.assign(new Error("bad identifier"), {
+        name: "InvalidParameterValue",
+      })
+    );
+
+    await expect(
+      readManagerCredential(INSTANCE_SECRET, "10.0.1.5")
+    ).rejects.toThrow("could not confirm the manager secret is for this host");
+    expect(getSecretValue).not.toHaveBeenCalled();
+  });
 });

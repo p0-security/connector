@@ -39,10 +39,11 @@ const secretRegion = (managerSecret: string) => {
 const RDS_DESCRIBE_PERMISSIONS =
   "rds:DescribeDBInstances and rds:DescribeDBClusters";
 
-/** Why asking RDS failed. The two not-found faults mean the host's first
- * label names no instance or cluster of the secret's, so the host is not one
- * of its endpoints. Anything else is the connector's own failure, and an
- * operator needs to see it as such. */
+/** Why asking RDS failed. The two not-found faults, and a first label RDS
+ * rejects as an identifier, mean the host names no instance or cluster of
+ * the secret's, so the host is not one of its endpoints. A refused call
+ * names the permissions it needs. Anything else is RDS's own failure, and an
+ * operator needs to see it as such, not as a wrong host or a missing grant. */
 const rdsLookupFailure = (error: unknown): ConnectorError | undefined => {
   if (
     error instanceof DBInstanceNotFoundFault ||
@@ -51,12 +52,17 @@ const rdsLookupFailure = (error: unknown): ConnectorError | undefined => {
     return undefined;
   }
   const name = error instanceof Error ? error.name : "unknown";
+  if (name === "InvalidParameterValue") return undefined;
+  const denied = name === "AccessDenied" || name === "AccessDeniedException";
   return new ConnectorError({
-    type:
-      name === "AccessDenied" || name === "AccessDeniedException"
-        ? "insufficient_privileges"
+    type: denied
+      ? "insufficient_privileges"
+      : name.startsWith("Throttling")
+        ? "rate_limited"
         : "unknown",
-    message: `pg-vaulted could not ask RDS whether the manager secret is for this host. The connector needs ${RDS_DESCRIBE_PERMISSIONS}.`,
+    message: denied
+      ? `pg-vaulted may not ask RDS whether the manager secret is for this host. The connector needs ${RDS_DESCRIBE_PERMISSIONS}.`
+      : "pg-vaulted could not ask RDS whether the manager secret is for this host",
     payload: { error: name },
   });
 };
