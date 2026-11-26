@@ -16,7 +16,7 @@ import {
 } from "./definition.ts";
 
 /** A failed check. It never carries the driver's message, which can quote
- * the server. */
+ * the server, only the connector's own words. */
 const failedAt = (
   step: PgVaultedInstallStep,
   host: string,
@@ -41,11 +41,21 @@ export const router = (t: AnyConnectorTRPCInstance) => {
         let username: string;
         try {
           ({ username } = await readManagerCredential(managerSecret, host));
-        } catch {
+        } catch (error) {
+          if (error instanceof ConnectorError) {
+            throw failedAt("manager_secret", host, error.data);
+          }
+          // Only the message, which names the failed check and never holds
+          // the secret's value, so support can tell a host mismatch from a
+          // secret that isn't JSON without a cause ever reaching the log.
+          logger.warn(
+            { reason: error instanceof Error ? error.message : "unknown" },
+            "install check failed at manager_secret"
+          );
           throw failedAt("manager_secret", host, {
             type: "unknown",
             message:
-              "The connector could not read the manager secret, its value is not a JSON object with a username, a password and a host, or its host is not the target's.",
+              "The connector could not read the manager secret, its value is not a JSON object with a username and a password, or the secret is not for the target's host.",
             payload: {},
           });
         }

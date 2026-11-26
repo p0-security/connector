@@ -30,10 +30,10 @@ export const MANAGER_SECRET_NAME_PATTERN = new RegExp(
  * The full ARN of a manager secret RDS manages, in the `aws`, `aws-cn` or
  * `aws-us-gov` partition. RDS names the secret `rds!db-<uuid>` or
  * `rds!cluster-<uuid>`, and Secrets Manager adds a suffix of six characters.
- * The `region` group is the secret's region.
+ * The `region` group is the secret's region, and `kind` is `db` or `cluster`.
  */
 export const RDS_MANAGER_SECRET_ARN_PATTERN = new RegExp(
-  `^arn:aws(-cn|-us-gov)?:secretsmanager:(?<region>${REGION}):\\d{12}:secret:rds!(db|cluster)-${UUID}-[A-Za-z0-9]{6}$`
+  `^arn:aws(-cn|-us-gov)?:secretsmanager:(?<region>${REGION}):\\d{12}:secret:rds!(?<kind>db|cluster)-${UUID}-[A-Za-z0-9]{6}$`
 );
 
 /**

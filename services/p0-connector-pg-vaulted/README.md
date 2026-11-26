@@ -57,8 +57,11 @@ The secret's value is a JSON object with a `username`, a `password` and a `host`
 signs in only when the secret's `host` is the request's host, ignoring case, and its `username`
 is the request's manager. A request names the secret and the host separately, so without this
 it could send the manager's password to a host the secret is not for. A secret RDS manages
-holds no `host`, so it is refused for now. The connector reads the secret in the region its ARN
-names, or else in its own region.
+holds no `host`, so for one the connector asks RDS, before it reads the secret, whether the
+host is an endpoint of the instance or cluster the secret belongs to. It finds that instance or
+cluster by the host's first label, so the host must be RDS's own endpoint, not another DNS name.
+This takes `rds:DescribeDBInstances` and `rds:DescribeDBClusters`. The connector reads the
+secret in the region its ARN names, or else in its own region.
 
 The operation is to run these checks in order, and a failure names its check in `payload.step`
 (`PG_VAULTED_INSTALL_STEPS`):
